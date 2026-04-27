@@ -1,0 +1,112 @@
+<section>
+  <h2>Overall</h2>
+  <p>
+    Status:
+    <span class="{% if report.overall_ok %}ok{% else %}bad{% endif %}">
+      {{ "HEALTHY" if report.overall_ok else "NEEDS ATTENTION" }}
+    </span>
+    <span class="muted">— agent v{{ report.agent_version }}</span>
+  </p>
+</section>
+
+<section>
+  <h2>Config</h2>
+  <p>
+    {% if report.config_ok %}
+    <span class="ok">OK</span>
+    {% else %}
+    <span class="bad">FAIL</span>
+    {% endif %}
+    <code>{{ report.config_path }}</code>
+  </p>
+  {% if report.config_error %}<p class="bad">{{ report.config_error }}</p>{% endif %}
+</section>
+
+<section>
+  <h2>Skyline</h2>
+  {% if report.skyline_path %}
+    {% if report.skyline_clickonce %}
+    <p class="bad">FAIL ClickOnce install at <code>{{ report.skyline_path }}</code> — install the MSI build.</p>
+    {% else %}
+    <p class="ok">OK <code>{{ report.skyline_path }}</code></p>
+    {% endif %}
+  {% else %}
+  <p class="bad">FAIL SkylineCmd.exe not found</p>
+  {% endif %}
+  <p class="muted">Version: {{ report.skyline_version or "unknown" }}</p>
+</section>
+
+<section>
+  <h2>Templates</h2>
+  {% if report.templates %}
+  <table>
+    <thead><tr><th>Name</th><th>Path</th><th>Hash</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for t in report.templates %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td><code>{{ t.path }}</code></td>
+        <td>{% if t.hash %}<code>{{ t.hash[:16] }}...</code>{% endif %}</td>
+        <td class="{% if t.exists %}ok{% else %}bad{% endif %}">
+          {{ "OK" if t.exists else "MISSING" }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No instruments configured.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Instruments</h2>
+  {% if report.instruments %}
+  <table>
+    <thead><tr><th>ID</th><th>Watch path</th><th>Accessible</th></tr></thead>
+    <tbody>
+      {% for i in report.instruments %}
+      <tr>
+        <td>{{ i.id }}</td>
+        <td><code>{{ i.watch_path }}</code></td>
+        <td class="{% if i.accessible %}ok{% else %}bad{% endif %}">
+          {{ "yes" if i.accessible else "no" }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No instruments configured.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Cloud</h2>
+  {% if report.cert_thumbprint_set_but_unsupported %}
+  <p class="bad">FAIL certificate_thumbprint is set but mTLS is not supported in v1.</p>
+  {% endif %}
+  <p>Auth mode: <strong>{{ report.cloud_auth_mode }}</strong></p>
+  {% if report.cloud_endpoint %}<p>Endpoint: <code>{{ report.cloud_endpoint }}</code></p>{% endif %}
+  <p>
+    Reachable:
+    {% if report.cloud_reachable is true %}
+    <span class="ok">yes</span>
+    {% elif report.cloud_reachable is false %}
+    <span class="bad">no</span>
+    {% else %}
+    <span class="muted">not checked</span>
+    {% endif %}
+  </p>
+</section>
+
+<section>
+  <h2>Spool</h2>
+  <p>
+    Writable:
+    <span class="{% if report.spool_writable %}ok{% else %}bad{% endif %}">
+      {{ "yes" if report.spool_writable else "no" }}
+    </span>
+  </p>
+  <p>Pending: {{ report.pending_count }} &middot; Failed: {{ report.failed_count }}</p>
+</section>

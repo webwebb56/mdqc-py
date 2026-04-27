@@ -1,0 +1,36 @@
+{% if entries %}
+<table>
+  <thead>
+    <tr>
+      <th>Failed at</th>
+      <th>Instrument</th>
+      <th>Path</th>
+      <th>Reason</th>
+      <th>Retries</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in entries %}
+    <tr>
+      <td>{{ e.failed_at.isoformat(timespec="seconds") }}</td>
+      <td>{{ e.instrument_id or "" }}</td>
+      <td><code>{{ e.path }}</code></td>
+      <td>{{ e.reason }}</td>
+      <td>{{ e.retry_count }}</td>
+      <td>
+        <button hx-post="/failed/retry/{{ e.path }}"
+                hx-target="#failed-body"
+                hx-swap="innerHTML">Retry</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<form hx-post="/failed/clear" hx-target="#failed-body" hx-swap="innerHTML"
+      hx-confirm="Clear all failed entries?">
+  <button type="submit" class="btn-danger">Clear all</button>
+</form>
+{% else %}
+<p class="muted">No failed files.</p>
+{% endif %}

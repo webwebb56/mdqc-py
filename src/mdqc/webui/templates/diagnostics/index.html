@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics — MD QC Agent{% endblock %}
+{% block content %}
+<h1>Diagnostics</h1>
+<div id="diag-body">
+  {% include "diagnostics/_report.html" %}
+</div>
+<form hx-post="/diagnostics/refresh" hx-target="#diag-body" hx-swap="innerHTML">
+  <button type="submit" class="btn-primary">Re-run (with cloud check)</button>
+</form>
+{% endblock %}

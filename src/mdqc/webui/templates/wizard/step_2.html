@@ -1,0 +1,21 @@
+<h2>Step 2 — Instrument ID and watch path</h2>
+<p>Give this instrument a stable identifier and the directory the agent should monitor.</p>
+<form hx-post="/wizard/step/2" hx-target="#wizard-body" hx-swap="innerHTML">
+  <label>Instrument ID
+    <input type="text" name="instrument_id" required value="{{ data.instrument_id or "" }}" placeholder="e.g. QExactive-01">
+  </label>
+  <label>Watch path
+    <input type="text" name="watch_path" required value="{{ data.watch_path or "" }}" placeholder="D:\Data">
+  </label>
+  {% if suggested_paths %}
+  <p class="muted">Likely paths on this machine:</p>
+  <ul>
+    {% for p in suggested_paths %}
+    <li><code>{{ p }}</code></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <div style="margin-top:1rem;">
+    <button type="submit" class="btn-primary">Next</button>
+  </div>
+</form>

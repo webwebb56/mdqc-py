@@ -1,0 +1,22 @@
+<h2>Step 3 — Skyline</h2>
+{% if detected_skyline %}
+<p>Detected SkylineCmd at: <code>{{ detected_skyline }}</code></p>
+{% else %}
+<p class="warn">SkylineCmd was not auto-detected. Provide the full path below.</p>
+{% endif %}
+<form hx-post="/wizard/step/3" hx-target="#wizard-body" hx-swap="innerHTML">
+  <label>SkylineCmd path (leave blank to use detected)
+    <input type="text" name="skyline_path" value="{{ data.skyline_path or "" }}" placeholder="C:\Program Files\Skyline\SkylineCmd.exe">
+  </label>
+  {% if common_skyline_paths %}
+  <p class="muted">Common locations:</p>
+  <ul>
+    {% for p in common_skyline_paths %}
+    <li><code>{{ p }}</code></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <div style="margin-top:1rem;">
+    <button type="submit" class="btn-primary">Next</button>
+  </div>
+</form>

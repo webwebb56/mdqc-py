@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}MD QC Agent{% endblock %}</title>
+    <link rel="icon" href="/static/icon.png" type="image/png">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/htmx.min.js" defer></script>
+    <script>
+      (function () {
+        try {
+          var url = new URL(window.location.href);
+          var token = url.searchParams.get("token");
+          if (token) {
+            document.cookie =
+              "mdqc_session=" + token + "; Path=/; SameSite=Lax";
+            url.searchParams.delete("token");
+            history.replaceState({}, "", url.pathname + (url.search ? url.search : "") + url.hash);
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" class="brand">
+        <img src="/static/icon.png" alt="" width="24" height="24">
+        <span>Mass Dynamics QC Agent</span>
+      </a>
+      <nav>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/wizard">Wizard</a>
+        <a href="/diagnostics">Diagnostics</a>
+        <a href="/failed">Failed</a>
+        <a href="/logs">Logs</a>
+      </nav>
+    </header>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+    <footer>
+      <small>MD QC Agent &middot; v{{ agent_version | default("0.0.0") }}</small>
+    </footer>
+  </body>
+</html>

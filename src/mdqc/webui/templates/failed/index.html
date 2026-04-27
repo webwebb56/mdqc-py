@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Failed files — MD QC Agent{% endblock %}
+{% block content %}
+<h1>Failed files</h1>
+<div id="failed-body">
+  {% include "failed/_table.html" %}
+</div>
+{% endblock %}

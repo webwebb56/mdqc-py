@@ -1,0 +1,34 @@
+{% if activity %}
+<table>
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Instrument</th>
+      <th>File</th>
+      <th>Result</th>
+      <th>Targets</th>
+      <th>Duration</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in activity %}
+    <tr>
+      <td>{{ a.timestamp.isoformat(timespec="seconds") if a.timestamp else "" }}</td>
+      <td>{{ a.instrument_id or "" }}</td>
+      <td><code>{{ a.path }}</code></td>
+      <td class="{% if a.result.value == 'SUCCESS' %}ok{% elif a.result.value == 'FAILED' %}bad{% else %}warn{% endif %}">
+        {{ a.result.value if a.result.value is defined else a.result }}
+      </td>
+      <td>
+        {% if a.targets_found is not none and a.targets_expected is not none %}
+        {{ a.targets_found }} / {{ a.targets_expected }}
+        {% endif %}
+      </td>
+      <td>{% if a.extraction_time_ms %}{{ a.extraction_time_ms }} ms{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No activity yet.</p>
+{% endif %}

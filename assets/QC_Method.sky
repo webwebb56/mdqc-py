@@ -1,0 +1,480 @@
+<?xml version="1.0" encoding="utf-8"?>
+<srm_settings format_version="25.11" software_version="Skyline-daily (64-bit) 26.0.9.032 (e672b40dd)">
+  <settings_summary name="Default">
+    <peptide_settings>
+      <enzyme name="Trypsin" cut="KR" no_cut="P" sense="C" />
+      <digest_settings max_missed_cleavages="0" />
+      <peptide_prediction use_measured_rts="true" measured_rt_window="2" />
+      <peptide_filter start="25" min_length="8" max_length="25" auto_select="true">
+        <peptide_exclusions />
+      </peptide_filter>
+      <peptide_libraries pick="filter" />
+      <peptide_modifications max_variable_mods="3" max_neutral_losses="1">
+        <static_modifications>
+          <static_modification name="Carbamidomethyl (C)" aminoacid="C" formula="H3C2NO" unimod_id="4" short_name="CAM" />
+        </static_modifications>
+        <heavy_modifications />
+      </peptide_modifications>
+    </peptide_settings>
+    <transition_settings>
+      <transition_prediction precursor_mass_type="Monoisotopic" fragment_mass_type="Monoisotopic" optimize_by="None" />
+      <transition_filter precursor_charges="2,3" product_charges="1,2" precursor_adducts="[M+H]" product_adducts="[M+]" fragment_types="y,b,p" small_molecule_fragment_types="f" fragment_range_first="m/z &gt; precursor" fragment_range_last="6 ions" precursor_mz_window="0" exclusion_use_dia_window="true" auto_select="true">
+        <measured_ion name="N-terminal to Proline" cut="P" sense="N" min_length="3" />
+      </transition_filter>
+      <transition_libraries ion_match_tolerance="0.05" min_ion_count="4" ion_count="6" pick_from="all" />
+      <transition_integration integrate_all="true" />
+      <transition_instrument min_mz="200" max_mz="1500" mz_match_tolerance="0.055" />
+      <transition_full_scan acquisition_method="DIA" product_mass_analyzer="tof" product_res="30000" precursor_isotopes="Count" precursor_isotope_filter="3" precursor_mass_analyzer="centroided" precursor_res="10">
+        <isotope_enrichments name="Default">
+          <atom_percent_enrichment symbol="H'">0.98</atom_percent_enrichment>
+          <atom_percent_enrichment symbol="C'">0.995</atom_percent_enrichment>
+          <atom_percent_enrichment symbol="N'">0.995</atom_percent_enrichment>
+          <atom_percent_enrichment symbol="O&quot;">0.99</atom_percent_enrichment>
+          <atom_percent_enrichment symbol="O'">0.99</atom_percent_enrichment>
+          <atom_percent_enrichment symbol="Cl'">0.99</atom_percent_enrichment>
+          <atom_percent_enrichment symbol="Br'">0.99</atom_percent_enrichment>
+        </isotope_enrichments>
+        <isolation_scheme name="Astral_HeLaQC_200SPD">
+          <isolation_window start="380.422799984932" end="382.423700015068" />
+          <isolation_window start="382.423709984932" end="384.42461001506797" />
+          <isolation_window start="386.425509984932" end="388.426410015068" />
+          <isolation_window start="390.427409984932" end="392.428310015068" />
+          <isolation_window start="392.428289984932" end="394.429190015068" />
+          <isolation_window start="400.431889984932" end="402.432790015068" />
+          <isolation_window start="402.432809984932" end="404.433710015068" />
+          <isolation_window start="412.437389984932" end="414.438290015068" />
+          <isolation_window start="414.43829998493203" end="416.439200015068" />
+          <isolation_window start="422.441899984932" end="424.442800015068" />
+          <isolation_window start="424.442789984932" end="426.443690015068" />
+          <isolation_window start="428.444589984932" end="430.445490015068" />
+          <isolation_window start="430.44551003624" end="432.44650996376" />
+          <isolation_window start="432.446509984932" end="434.447410015068" />
+          <isolation_window start="436.448309984932" end="438.449210015068" />
+          <isolation_window start="440.450109984932" end="442.451010015068" />
+          <isolation_window start="442.450999984932" end="444.451900015068" />
+          <isolation_window start="444.451909984932" end="446.452810015068" />
+          <isolation_window start="446.452799984932" end="448.453700015068" />
+          <isolation_window start="454.456489984932" end="456.457390015068" />
+          <isolation_window start="456.457409984932" end="458.458310015068" />
+          <isolation_window start="458.458289984932" end="460.459190015068" />
+          <isolation_window start="460.459209984932" end="462.460110015068" />
+          <isolation_window start="464.461009984932" end="466.461910015068" />
+          <isolation_window start="466.461889984932" end="468.462790015068" />
+          <isolation_window start="470.463689984932" end="472.464590015068" />
+          <isolation_window start="472.46459003624" end="474.46558996375995" />
+          <isolation_window start="474.46560998493203" end="476.466510015068" />
+          <isolation_window start="478.467409984932" end="480.46831001506797" />
+          <isolation_window start="482.46918998493203" end="484.470090015068" />
+          <isolation_window start="494.47460003624" end="496.47559996376" />
+          <isolation_window start="496.475589984932" end="498.476490015068" />
+          <isolation_window start="500.477389984932" end="502.478290015068" />
+          <isolation_window start="504.479189984932" end="506.480090015068" />
+          <isolation_window start="506.480109984932" end="508.481010015068" />
+          <isolation_window start="514.48369003624" end="516.48468996376" />
+          <isolation_window start="516.484719984932" end="518.48562001506809" />
+          <isolation_window start="526.48916998493189" end="528.490070015068" />
+          <isolation_window start="528.490089984932" end="530.49099001506806" />
+          <isolation_window start="536.49370003623994" end="538.49469996376" />
+          <isolation_window start="538.494729984932" end="540.49563001506806" />
+          <isolation_window start="542.49649998493192" end="544.497400015068" />
+          <isolation_window start="544.49740998493189" end="546.498310015068" />
+          <isolation_window start="546.498329984932" end="548.49923001506806" />
+          <isolation_window start="550.50009998493192" end="552.501000015068" />
+          <isolation_window start="556.50280003623993" end="558.50379996376" />
+          <isolation_window start="564.506509984932" end="566.5074100150681" />
+          <isolation_window start="568.508279984932" end="570.50918001506807" />
+          <isolation_window start="576.511879984932" end="578.51278001506807" />
+          <isolation_window start="588.517369984932" end="590.51827001506808" />
+          <isolation_window start="590.51828998493193" end="592.519190015068" />
+          <isolation_window start="594.520119984932" end="596.52102001506807" />
+          <isolation_window start="598.52190003623991" end="600.52289996376" />
+          <isolation_window start="602.52377998493193" end="604.524680015068" />
+          <isolation_window start="608.52652998493193" end="610.527430015068" />
+          <isolation_window start="612.52829998493189" end="614.529200015068" />
+          <isolation_window start="614.529209984932" end="616.53011001506809" />
+          <isolation_window start="618.530979984932" end="620.531880015068" />
+          <isolation_window start="624.5337899849319" end="626.534690015068" />
+          <isolation_window start="626.534709984932" end="628.53561001506807" />
+          <isolation_window start="630.53647998493193" end="632.537380015068" />
+          <isolation_window start="632.53738998493191" end="634.538290015068" />
+          <isolation_window start="640.54098998493191" end="642.541890015068" />
+          <isolation_window start="642.54192003624" end="644.54291996376" />
+          <isolation_window start="644.54287998493191" end="646.543780015068" />
+          <isolation_window start="646.543799984932" end="648.54470001506809" />
+          <isolation_window start="650.545569984932" end="652.546470015068" />
+          <isolation_window start="652.5464899849319" end="654.547390015068" />
+          <isolation_window start="654.547399984932" end="656.54830001506809" />
+          <isolation_window start="658.549169984932" end="660.55007001506806" />
+          <isolation_window start="660.5500899849319" end="662.550990015068" />
+          <isolation_window start="664.5519799849319" end="666.552880015068" />
+          <isolation_window start="670.5547299849319" end="672.555630015068" />
+          <isolation_window start="678.5583299849319" end="680.559230015068" />
+          <isolation_window start="682.560099984932" end="684.56100001506809" />
+          <isolation_window start="690.56381998493191" end="692.564720015068" />
+          <isolation_window start="702.569189984932" end="704.5700900150681" />
+          <isolation_window start="704.57012003623993" end="706.57111996376" />
+          <isolation_window start="708.571999984932" end="710.57290001506806" />
+          <isolation_window start="712.573829984932" end="714.5747300150681" />
+          <isolation_window start="716.575599984932" end="718.57650001506806" />
+          <isolation_window start="722.578289984932" end="724.57919001506809" />
+          <isolation_window start="726.58013003624" end="728.58112996376008" />
+          <isolation_window start="728.581089984932" end="730.58199001506807" />
+          <isolation_window start="732.58291998493189" end="734.583820015068" />
+          <isolation_window start="738.58560998493192" end="740.586510015068" />
+          <isolation_window start="740.586529984932" end="742.58743001506809" />
+          <isolation_window start="744.588299984932" end="746.58920001506806" />
+          <isolation_window start="746.58922003624" end="748.59021996376009" />
+          <isolation_window start="754.59286998493189" end="756.593770015068" />
+          <isolation_window start="756.593789984932" end="758.59469001506807" />
+          <isolation_window start="758.59469998493194" end="760.595600015068" />
+          <isolation_window start="760.595619984932" end="762.59652001506811" />
+          <isolation_window start="764.597389984932" end="766.59829001506807" />
+          <isolation_window start="766.59829998493194" end="768.599200015068" />
+          <isolation_window start="768.59917003623991" end="770.60016996376" />
+          <isolation_window start="772.6011099849319" end="774.602010015068" />
+          <isolation_window start="774.602029984932" end="776.60293001506807" />
+          <isolation_window start="778.60379998493192" end="780.604700015068" />
+          <isolation_window start="784.606479984932" end="786.60738001506809" />
+          <isolation_window start="792.610209984932" end="794.61111001506811" />
+          <isolation_window start="796.611979984932" end="798.61288001506807" />
+          <isolation_window start="804.615579984932" end="806.61648001506808" />
+          <isolation_window start="816.621069984932" end="818.62197001506809" />
+          <isolation_window start="818.62198998493193" end="820.622890015068" />
+          <isolation_window start="822.623819984932" end="824.62472001506808" />
+          <isolation_window start="826.62558998493193" end="828.626490015068" />
+          <isolation_window start="830.62743003624" end="832.62842996376" />
+          <isolation_window start="836.63022998493193" end="838.631130015068" />
+          <isolation_window start="840.63199998493189" end="842.632900015068" />
+          <isolation_window start="842.632909984932" end="844.63381001506809" />
+          <isolation_window start="846.634679984932" end="848.63558001506806" />
+          <isolation_window start="852.63738003624" end="854.63837996376" />
+          <isolation_window start="854.638399984932" end="856.6393000150681" />
+          <isolation_window start="858.640169984932" end="860.64107001506807" />
+          <isolation_window start="860.64108998493191" end="862.641990015068" />
+          <isolation_window start="868.64468998493192" end="870.645590015068" />
+          <isolation_window start="870.645609984932" end="872.64651001506809" />
+          <isolation_window start="872.64647003624" end="874.64746996376" />
+          <isolation_window start="874.647499984932" end="876.64840001506809" />
+          <isolation_window start="878.64932998493191" end="880.650230015068" />
+          <isolation_window start="880.65017998493192" end="882.651080015068" />
+          <isolation_window start="882.651099984932" end="884.6520000150681" />
+          <isolation_window start="886.652869984932" end="888.65377001506806" />
+          <isolation_window start="888.6537899849319" end="890.654690015068" />
+          <isolation_window start="892.655619984932" end="894.656520015068" />
+          <isolation_window start="898.65841998493192" end="900.659320015068" />
+          <isolation_window start="906.66202998493191" end="908.662930015068" />
+          <isolation_window start="910.663799984932" end="912.66470001506809" />
+          <isolation_window start="918.66751998493191" end="920.668420015068" />
+          <isolation_window start="930.672889984932" end="932.67379001506811" />
+          <isolation_window start="932.673809984932" end="934.67471001506806" />
+          <isolation_window start="936.67559003624" end="938.67658996376008" />
+          <isolation_window start="940.677529984932" end="942.6784300150681" />
+          <isolation_window start="944.679299984932" end="946.68020001506807" />
+          <isolation_window start="950.6819799849319" end="952.682880015068" />
+          <isolation_window start="954.68381998493192" end="956.684720015068" />
+          <isolation_window start="956.68468003623991" end="958.68567996376" />
+          <isolation_window start="960.68661998493189" end="962.687520015068" />
+          <isolation_window start="966.68930998493192" end="968.690210015068" />
+          <isolation_window start="968.6902199849319" end="970.691120015068" />
+          <isolation_window start="972.691989984932" end="974.69289001506809" />
+          <isolation_window start="974.69290998493193" end="976.693810015068" />
+          <isolation_window start="384.424599984932" end="386.425500015068" />
+          <isolation_window start="388.42641003624004" end="390.42740996376" />
+          <isolation_window start="394.429209984932" end="396.430110015068" />
+          <isolation_window start="396.430089984932" end="398.430990015068" />
+          <isolation_window start="398.431009984932" end="400.431910015068" />
+          <isolation_window start="404.433689984932" end="406.434590015068" />
+          <isolation_window start="406.434609984932" end="408.435510015068" />
+          <isolation_window start="408.435489984932" end="410.436390015068" />
+          <isolation_window start="410.43639003624" end="412.43738996376" />
+          <isolation_window start="416.439189984932" end="418.440090015068" />
+          <isolation_window start="418.440099984932" end="420.44100001506797" />
+          <isolation_window start="420.440989984932" end="422.441890015068" />
+          <isolation_window start="426.443699984932" end="428.444600015068" />
+          <isolation_window start="434.447399984932" end="436.448300015068" />
+          <isolation_window start="438.449199984932" end="440.450100015068" />
+          <isolation_window start="448.453709984932" end="450.454610015068" />
+          <isolation_window start="450.45459998493203" end="452.455500015068" />
+          <isolation_window start="452.45549003624" end="454.45648996375996" />
+          <isolation_window start="462.460089984932" end="464.460990015068" />
+          <isolation_window start="468.462809984932" end="470.463710015068" />
+          <isolation_window start="476.466499984932" end="478.467400015068" />
+          <isolation_window start="480.468299984932" end="482.469200015068" />
+          <isolation_window start="484.470099984932" end="486.471000015068" />
+          <isolation_window start="486.470989984932" end="488.47189001506797" />
+          <isolation_window start="488.471899984932" end="490.472800015068" />
+          <isolation_window start="490.472789984932" end="492.473690015068" />
+          <isolation_window start="492.473699984932" end="494.474600015068" />
+          <isolation_window start="498.476509984932" end="500.477410015068" />
+          <isolation_window start="502.478309984932" end="504.479210015068" />
+          <isolation_window start="508.480999984932" end="510.481900015068" />
+          <isolation_window start="510.48190998493203" end="512.482810015068" />
+          <isolation_window start="512.482829984932" end="514.48373001506809" />
+          <isolation_window start="518.485569984932" end="520.48647001506811" />
+          <isolation_window start="520.486489984932" end="522.48739001506806" />
+          <isolation_window start="522.48739998493193" end="524.488300015068" />
+          <isolation_window start="524.488319984932" end="526.4892200150681" />
+          <isolation_window start="530.49100998493191" end="532.491910015068" />
+          <isolation_window start="532.491919984932" end="534.49282001506811" />
+          <isolation_window start="534.492779984932" end="536.49368001506809" />
+          <isolation_window start="540.495579984932" end="542.49648001506807" />
+          <isolation_window start="548.499179984932" end="550.50008001506808" />
+          <isolation_window start="552.5010099849319" end="554.501910015068" />
+          <isolation_window start="554.501929984932" end="556.50283001506807" />
+          <isolation_window start="558.503819984932" end="560.50472001506807" />
+          <isolation_window start="560.504679984932" end="562.50558001506806" />
+          <isolation_window start="562.50558998493193" end="564.506490015068" />
+          <isolation_window start="566.507419984932" end="568.50832001506808" />
+          <isolation_window start="570.50918998493194" end="572.510090015068" />
+          <isolation_window start="572.510109984932" end="574.51101001506811" />
+          <isolation_window start="574.511019984932" end="576.51192001506809" />
+          <isolation_window start="578.51281003624" end="580.51380996376008" />
+          <isolation_window start="580.513769984932" end="582.51467001506808" />
+          <isolation_window start="582.51468998493192" end="584.515590015068" />
+          <isolation_window start="584.5155999849319" end="586.516500015068" />
+          <isolation_window start="586.516519984932" end="588.51742001506807" />
+          <isolation_window start="592.5191999849319" end="594.520100015068" />
+          <isolation_window start="596.520969984932" end="598.52187001506809" />
+          <isolation_window start="600.52292998493192" end="602.523830015068" />
+          <isolation_window start="604.524699984932" end="606.52560001506811" />
+          <isolation_window start="606.525609984932" end="608.52651001506808" />
+          <isolation_window start="610.52737998493194" end="612.528280015068" />
+          <isolation_window start="616.53012998493193" end="618.531030015068" />
+          <isolation_window start="620.53191003624" end="622.53290996376006" />
+          <isolation_window start="622.53287998493192" end="624.533780015068" />
+          <isolation_window start="628.53561998493194" end="630.536520015068" />
+          <isolation_window start="634.538309984932" end="636.53921001506808" />
+          <isolation_window start="636.539219984932" end="638.540120015068" />
+          <isolation_window start="638.54007998493194" end="640.540980015068" />
+          <isolation_window start="648.54471998493193" end="650.545620015068" />
+          <isolation_window start="656.54831998493194" end="658.549220015068" />
+          <isolation_window start="662.55101003624" end="664.55200996376" />
+          <isolation_window start="666.552889984932" end="668.5537900150681" />
+          <isolation_window start="668.553809984932" end="670.554710015068" />
+          <isolation_window start="672.55557998493191" end="674.556480015068" />
+          <isolation_window start="674.556499984932" end="676.55740001506808" />
+          <isolation_window start="676.557409984932" end="678.55831001506806" />
+          <isolation_window start="680.55917998493192" end="682.560080015068" />
+          <isolation_window start="684.56102003623994" end="686.56201996376" />
+          <isolation_window start="686.561989984932" end="688.56289001506809" />
+          <isolation_window start="688.562899984932" end="690.56380001506807" />
+          <isolation_window start="692.56466998493192" end="694.565570015068" />
+          <isolation_window start="694.565589984932" end="696.5664900150681" />
+          <isolation_window start="696.56650998493194" end="698.567410015068" />
+          <isolation_window start="698.56741998493192" end="700.568320015068" />
+          <isolation_window start="700.56827998493191" end="702.569180015068" />
+          <isolation_window start="706.571079984932" end="708.57198001506811" />
+          <isolation_window start="710.57290998493193" end="712.573810015068" />
+          <isolation_window start="714.57467998493189" end="716.575580015068" />
+          <isolation_window start="718.57651998493191" end="720.577420015068" />
+          <isolation_window start="720.57736998493192" end="722.578270015068" />
+          <isolation_window start="724.579199984932" end="726.58010001506807" />
+          <isolation_window start="730.58200998493191" end="732.582910015068" />
+          <isolation_window start="734.583779984932" end="736.5846800150681" />
+          <isolation_window start="736.584689984932" end="738.58559001506808" />
+          <isolation_window start="742.587379984932" end="744.58828001506811" />
+          <isolation_window start="748.590189984932" end="750.59109001506806" />
+          <isolation_window start="750.59109998493193" end="752.592000015068" />
+          <isolation_window start="752.592019984932" end="754.5929200150681" />
+          <isolation_window start="762.5964699849319" end="764.597370015068" />
+          <isolation_window start="770.60019998493192" end="772.601100015068" />
+          <isolation_window start="776.602879984932" end="778.60378001506808" />
+          <isolation_window start="780.6047099849319" end="782.605610015068" />
+          <isolation_window start="782.605629984932" end="784.60653001506807" />
+          <isolation_window start="786.60739998493193" end="788.608300015068" />
+          <isolation_window start="788.60833003624" end="790.60932996376" />
+          <isolation_window start="790.60928998493193" end="792.610190015068" />
+          <isolation_window start="794.611119984932" end="796.61202001506808" />
+          <isolation_window start="798.61288998493194" end="800.613790015068" />
+          <isolation_window start="800.61380998493189" end="802.614710015068" />
+          <isolation_window start="802.614719984932" end="804.61562001506809" />
+          <isolation_window start="806.616489984932" end="808.617390015068" />
+          <isolation_window start="808.6174099849319" end="810.618310015068" />
+          <isolation_window start="810.61827003624" end="812.61926996376008" />
+          <isolation_window start="812.6192999849319" end="814.620200015068" />
+          <isolation_window start="814.620219984932" end="816.62112001506807" />
+          <isolation_window start="820.62289998493191" end="822.623800015068" />
+          <isolation_window start="824.624669984932" end="826.62557001506809" />
+          <isolation_window start="828.62649998493191" end="830.627400015068" />
+          <isolation_window start="832.628399984932" end="834.62930001506811" />
+          <isolation_window start="834.629309984932" end="836.63021001506809" />
+          <isolation_window start="838.631079984932" end="840.631980015068" />
+          <isolation_window start="844.63382998493194" end="846.634730015068" />
+          <isolation_window start="848.6355999849319" end="850.636500015068" />
+          <isolation_window start="850.636509984932" end="852.6374100150681" />
+          <isolation_window start="856.639319984932" end="858.640220015068" />
+          <isolation_window start="862.642009984932" end="864.64291001506808" />
+          <isolation_window start="864.642919984932" end="866.64382001506806" />
+          <isolation_window start="866.64377998493194" end="868.644680015068" />
+          <isolation_window start="876.648409984932" end="878.64931001506807" />
+          <isolation_window start="884.65201998493194" end="886.652920015068" />
+          <isolation_window start="890.654699984932" end="892.6556000150681" />
+          <isolation_window start="894.65648003623994" end="896.65747996376" />
+          <isolation_window start="896.657509984932" end="898.658410015068" />
+          <isolation_window start="900.65927998493191" end="902.660180015068" />
+          <isolation_window start="902.66018998493189" end="904.661090015068" />
+          <isolation_window start="904.661109984932" end="906.66201001506806" />
+          <isolation_window start="908.66287998493192" end="910.663780015068" />
+          <isolation_window start="912.664709984932" end="914.66561001506807" />
+          <isolation_window start="914.66558003623993" end="916.66657996376" />
+          <isolation_window start="916.666599984932" end="918.66750001506807" />
+          <isolation_window start="920.66836998493193" end="922.669270015068" />
+          <isolation_window start="922.669289984932" end="924.6701900150681" />
+          <isolation_window start="924.670199984932" end="926.67110001506808" />
+          <isolation_window start="926.67111998493192" end="928.672020015068" />
+          <isolation_window start="928.67196998493193" end="930.672870015068" />
+          <isolation_window start="934.67471998493193" end="936.675620015068" />
+          <isolation_window start="938.67660998493193" end="940.677510015068" />
+          <isolation_window start="942.67837998493189" end="944.679280015068" />
+          <isolation_window start="946.68020998493193" end="948.681110015068" />
+          <isolation_window start="948.681129984932" end="950.68203001506811" />
+          <isolation_window start="952.682899984932" end="954.68380001506807" />
+          <isolation_window start="958.68570998493192" end="960.686610015068" />
+          <isolation_window start="962.687479984932" end="964.68838001506811" />
+          <isolation_window start="964.688389984932" end="966.68929001506808" />
+          <isolation_window start="970.69107998493189" end="972.691980015068" />
+          <isolation_window start="976.69381998493191" end="978.694720015068" />
+          <isolation_window start="978.69469003624" end="980.69568996376006" />
+        </isolation_scheme>
+      </transition_full_scan>
+    </transition_settings>
+    <data_settings audit_logging="false" />
+  </settings_summary>
+  <peptide_list label_name="HeLa_50common_QC" auto_manage_children="false">
+    <peptide auto_manage_children="true" sequence="AAVPSGASTGIYEALELR" modified_sequence="AAVPSGASTGIYEALELR" calc_neutral_pep_mass="1803.936680" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1803.936680" precursor_mz="902.975616" auto_manage_children="true" collision_energy="0" modified_sequence="AAVPSGASTGIYEALELR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="AGGPTTPLSPTR" modified_sequence="AGGPTTPLSPTR" calc_neutral_pep_mass="1153.609139" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1153.609139" precursor_mz="577.811846" auto_manage_children="true" collision_energy="0" modified_sequence="AGGPTTPLSPTR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="AGTGVDNVDLEAATR" modified_sequence="AGTGVDNVDLEAATR" calc_neutral_pep_mass="1487.721602" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1487.721602" precursor_mz="744.868077" auto_manage_children="true" collision_energy="0" modified_sequence="AGTGVDNVDLEAATR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="AVFVDLEPTVIDEVR" modified_sequence="AVFVDLEPTVIDEVR" calc_neutral_pep_mass="1700.898503" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1700.898503" precursor_mz="851.456528" auto_manage_children="true" collision_energy="0" modified_sequence="AVFVDLEPTVIDEVR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="DVNAAIATIK" modified_sequence="DVNAAIATIK" calc_neutral_pep_mass="1014.570961" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1014.570961" precursor_mz="508.292757" auto_manage_children="true" collision_energy="0" modified_sequence="DVNAAIATIK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="DYGVLLEGSGLALR" modified_sequence="DYGVLLEGSGLALR" calc_neutral_pep_mass="1461.782745" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1461.782745" precursor_mz="731.898649" auto_manage_children="true" collision_energy="0" modified_sequence="DYGVLLEGSGLALR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="EAVGDLLDAFK" modified_sequence="EAVGDLLDAFK" calc_neutral_pep_mass="1176.602655" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1176.602655" precursor_mz="589.308604" auto_manage_children="true" collision_energy="0" modified_sequence="EAVGDLLDAFK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="EEASDYLELDTIK" modified_sequence="EEASDYLELDTIK" calc_neutral_pep_mass="1524.719535" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1524.719535" precursor_mz="763.367044" auto_manage_children="true" collision_energy="0" modified_sequence="EEASDYLELDTIK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="EFHLNESGDPSSK" modified_sequence="EFHLNESGDPSSK" calc_neutral_pep_mass="1445.642286" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1445.642286" precursor_mz="723.828419" auto_manage_children="true" collision_energy="0" modified_sequence="EFHLNESGDPSSK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="EGLELPEDEEEK" modified_sequence="EGLELPEDEEEK" calc_neutral_pep_mass="1415.630385" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1415.630385" precursor_mz="708.822469" auto_manage_children="true" collision_energy="0" modified_sequence="EGLELPEDEEEK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="EVFEDAAEIR" modified_sequence="EVFEDAAEIR" calc_neutral_pep_mass="1177.561518" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1177.561518" precursor_mz="589.788035" auto_manage_children="true" collision_energy="0" modified_sequence="EVFEDAAEIR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="FYALSASFEPFSNK" modified_sequence="FYALSASFEPFSNK" calc_neutral_pep_mass="1606.766759" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1606.766759" precursor_mz="804.390656" auto_manage_children="true" collision_energy="0" modified_sequence="FYALSASFEPFSNK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="GILFVGSGVSGGEEGAR" modified_sequence="GILFVGSGVSGGEEGAR" calc_neutral_pep_mass="1590.800186" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1590.800186" precursor_mz="796.407369" auto_manage_children="true" collision_energy="0" modified_sequence="GILFVGSGVSGGEEGAR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="GTDVNVFNTILTTR" modified_sequence="GTDVNVFNTILTTR" calc_neutral_pep_mass="1549.810023" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1549.810023" precursor_mz="775.912288" auto_manage_children="true" collision_energy="0" modified_sequence="GTDVNVFNTILTTR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="GVDEATIIDILTK" modified_sequence="GVDEATIIDILTK" calc_neutral_pep_mass="1386.760613" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1386.760613" precursor_mz="694.387583" auto_manage_children="true" collision_energy="0" modified_sequence="GVDEATIIDILTK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="GVDEVTIVNILTNR" modified_sequence="GVDEVTIVNILTNR" calc_neutral_pep_mass="1541.841322" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1541.841322" precursor_mz="771.927937" auto_manage_children="true" collision_energy="0" modified_sequence="GVDEVTIVNILTNR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="HFVALSTNTTK" modified_sequence="HFVALSTNTTK" calc_neutral_pep_mass="1217.640438" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1217.640438" precursor_mz="609.827495" auto_manage_children="true" collision_energy="0" modified_sequence="HFVALSTNTTK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="IAIYELLFK" modified_sequence="IAIYELLFK" calc_neutral_pep_mass="1108.653234" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1108.653234" precursor_mz="555.333893" auto_manage_children="true" collision_energy="0" modified_sequence="IAIYELLFK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="ILGADTSVDLEETGR" modified_sequence="ILGADTSVDLEETGR" calc_neutral_pep_mass="1574.778782" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1574.778782" precursor_mz="788.396667" auto_manage_children="true" collision_energy="0" modified_sequence="ILGADTSVDLEETGR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="ISSDLDGHPVPK" modified_sequence="ISSDLDGHPVPK" calc_neutral_pep_mass="1263.645916" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1263.645916" precursor_mz="632.830234" auto_manage_children="true" collision_energy="0" modified_sequence="ISSDLDGHPVPK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="ITPSYVAFTPEGER" modified_sequence="ITPSYVAFTPEGER" calc_neutral_pep_mass="1565.772575" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1565.772575" precursor_mz="783.893564" auto_manage_children="true" collision_energy="0" modified_sequence="ITPSYVAFTPEGER" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="LAPITSDPTEATAVGAVEASFK" modified_sequence="LAPITSDPTEATAVGAVEASFK" calc_neutral_pep_mass="2174.110682" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="2174.110682" precursor_mz="1088.062617" auto_manage_children="true" collision_energy="0" modified_sequence="LAPITSDPTEATAVGAVEASFK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="LATNAAVTVLR" modified_sequence="LATNAAVTVLR" calc_neutral_pep_mass="1127.666259" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1127.666259" precursor_mz="564.840406" auto_manage_children="true" collision_energy="0" modified_sequence="LATNAAVTVLR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="LDVTSVEDYK" modified_sequence="LDVTSVEDYK" calc_neutral_pep_mass="1167.565935" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1167.565935" precursor_mz="584.790244" auto_manage_children="true" collision_energy="0" modified_sequence="LDVTSVEDYK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="LFIGGLSFETTDESLR" modified_sequence="LFIGGLSFETTDESLR" calc_neutral_pep_mass="1783.899231" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1783.899231" precursor_mz="892.956892" auto_manage_children="true" collision_energy="0" modified_sequence="LFIGGLSFETTDESLR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="LIAPVAEEEATVPNNK" modified_sequence="LIAPVAEEEATVPNNK" calc_neutral_pep_mass="1693.888666" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1693.888666" precursor_mz="847.951609" auto_manage_children="true" collision_energy="0" modified_sequence="LIAPVAEEEATVPNNK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="LVPLLDTGDIIIDGGNSEYR" modified_sequence="LVPLLDTGDIIIDGGNSEYR" calc_neutral_pep_mass="2159.111015" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="2159.111015" precursor_mz="1080.562784" auto_manage_children="true" collision_energy="0" modified_sequence="LVPLLDTGDIIIDGGNSEYR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="NLEPEWAAAASEVK" modified_sequence="NLEPEWAAAASEVK" calc_neutral_pep_mass="1513.741273" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1513.741273" precursor_mz="757.877913" auto_manage_children="true" collision_energy="0" modified_sequence="NLEPEWAAAASEVK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="NPDDITNEEYGEFYK" modified_sequence="NPDDITNEEYGEFYK" calc_neutral_pep_mass="1832.774090" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1832.774090" precursor_mz="917.394321" auto_manage_children="true" collision_energy="0" modified_sequence="NPDDITNEEYGEFYK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="NVTELNEPLSNEER" modified_sequence="NVTELNEPLSNEER" calc_neutral_pep_mass="1642.779842" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1642.779842" precursor_mz="822.397197" auto_manage_children="true" collision_energy="0" modified_sequence="NVTELNEPLSNEER" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="PFAIDIFPVTNK" modified_sequence="PFAIDIFPVTNK" calc_neutral_pep_mass="1360.739089" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1360.739089" precursor_mz="681.376821" auto_manage_children="true" collision_energy="0" modified_sequence="PFAIDIFPVTNK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="PVSSAASVYAGAGGSGSR" modified_sequence="PVSSAASVYAGAGGSGSR" calc_neutral_pep_mass="1579.759049" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1579.759049" precursor_mz="790.886801" auto_manage_children="true" collision_energy="0" modified_sequence="PVSSAASVYAGAGGSGSR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="SEHPGLSIGDTAK" modified_sequence="SEHPGLSIGDTAK" calc_neutral_pep_mass="1310.646645" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1310.646645" precursor_mz="656.330599" auto_manage_children="true" collision_energy="0" modified_sequence="SEHPGLSIGDTAK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="SEPIPESNDGPVK" modified_sequence="SEPIPESNDGPVK" calc_neutral_pep_mass="1367.656874" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1367.656874" precursor_mz="684.835713" auto_manage_children="true" collision_energy="0" modified_sequence="SEPIPESNDGPVK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="STGGAPTFNVTVTK" modified_sequence="STGGAPTFNVTVTK" calc_neutral_pep_mass="1378.709247" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1378.709247" precursor_mz="690.361900" auto_manage_children="true" collision_energy="0" modified_sequence="STGGAPTFNVTVTK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="TDYNASVSVPDSSGPER" modified_sequence="TDYNASVSVPDSSGPER" calc_neutral_pep_mass="1779.791136" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1779.791136" precursor_mz="890.902844" auto_manage_children="true" collision_energy="0" modified_sequence="TDYNASVSVPDSSGPER" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="TFVNITPAEVGVLVGK" modified_sequence="TFVNITPAEVGVLVGK" calc_neutral_pep_mass="1642.929410" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1642.929410" precursor_mz="822.471981" auto_manage_children="true" collision_energy="0" modified_sequence="TFVNITPAEVGVLVGK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="TGAIVDVPVGEELLGR" modified_sequence="TGAIVDVPVGEELLGR" calc_neutral_pep_mass="1623.883188" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1623.883188" precursor_mz="812.948870" auto_manage_children="true" collision_energy="0" modified_sequence="TGAIVDVPVGEELLGR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="TGEAIVDAALSALR" modified_sequence="TGEAIVDAALSALR" calc_neutral_pep_mass="1385.751445" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1385.751445" precursor_mz="693.882999" auto_manage_children="true" collision_energy="0" modified_sequence="TGEAIVDAALSALR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="TITLEVEPSDTIENVK" modified_sequence="TITLEVEPSDTIENVK" calc_neutral_pep_mass="1786.920026" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1786.920026" precursor_mz="894.467289" auto_manage_children="true" collision_energy="0" modified_sequence="TITLEVEPSDTIENVK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="VNPTVFFDIAVDGEPLGR" modified_sequence="VNPTVFFDIAVDGEPLGR" calc_neutral_pep_mass="1944.994529" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1944.994529" precursor_mz="973.504541" auto_manage_children="true" collision_energy="0" modified_sequence="VNPTVFFDIAVDGEPLGR" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="VVGDVAYDEAK" modified_sequence="VVGDVAYDEAK" calc_neutral_pep_mass="1164.566270" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1164.566270" precursor_mz="583.290411" auto_manage_children="true" collision_energy="0" modified_sequence="VVGDVAYDEAK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="VVLAYEPVWAIGTGK" modified_sequence="VVLAYEPVWAIGTGK" calc_neutral_pep_mass="1601.881732" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1601.881732" precursor_mz="801.948142" auto_manage_children="true" collision_energy="0" modified_sequence="VVLAYEPVWAIGTGK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="VVVAENFDEIVNNENK" modified_sequence="VVVAENFDEIVNNENK" calc_neutral_pep_mass="1831.895206" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1831.895206" precursor_mz="916.954879" auto_manage_children="true" collision_energy="0" modified_sequence="VVVAENFDEIVNNENK" />
+    </peptide>
+    <peptide auto_manage_children="true" sequence="YSLEPVAVELK" modified_sequence="YSLEPVAVELK" calc_neutral_pep_mass="1246.680905" num_missed_cleavages="0">
+      <precursor charge="2" calc_neutral_mass="1246.680905" precursor_mz="624.347729" auto_manage_children="true" collision_energy="0" modified_sequence="YSLEPVAVELK" />
+    </peptide>
+  </peptide_list>
+</srm_settings>

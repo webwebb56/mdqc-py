@@ -1,0 +1,13 @@
+<h2>Step 1 — Instrument vendor</h2>
+<p>Select the vendor of the mass spectrometer this agent will watch.</p>
+<form hx-post="/wizard/step/1" hx-target="#wizard-body" hx-swap="innerHTML">
+  {% for v in vendors %}
+  <label>
+    <input type="radio" name="vendor" value="{{ v }}" {% if data.vendor == v %}checked{% endif %} required>
+    {{ v.title() }}
+  </label>
+  {% endfor %}
+  <div style="margin-top:1rem;">
+    <button type="submit" class="btn-primary">Next</button>
+  </div>
+</form>

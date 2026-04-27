@@ -1,0 +1,20 @@
+<h2>Step 5 — Output mode</h2>
+<form hx-post="/wizard/step/5" hx-target="#wizard-body" hx-swap="innerHTML">
+  <label>
+    <input type="radio" name="output_mode" value="cloud" {% if data.output_mode != "local" %}checked{% endif %}>
+    Cloud upload (requires API token)
+  </label>
+  <label>API token
+    <input type="text" name="api_token" value="{{ data.api_token or "" }}" placeholder="paste token from MD console">
+  </label>
+  <label>
+    <input type="radio" name="output_mode" value="local" {% if data.output_mode == "local" %}checked{% endif %}>
+    Local-only mode (no cloud auth, payloads stay on disk)
+  </label>
+  <div style="margin-top:1rem;">
+    <button type="submit" class="btn-primary"
+            hx-post="/wizard/save" hx-target="#wizard-body" hx-swap="innerHTML">
+      Save and start watching
+    </button>
+  </div>
+</form>

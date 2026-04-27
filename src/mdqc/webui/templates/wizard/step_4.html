@@ -1,0 +1,10 @@
+<h2>Step 4 — Skyline template</h2>
+<p>Bundled default: <code>{{ bundled_template }}</code></p>
+<form hx-post="/wizard/step/4" hx-target="#wizard-body" hx-swap="innerHTML">
+  <label>Custom template path (leave blank to use bundled)
+    <input type="text" name="template_path" value="{{ data.template_path or "" }}" placeholder="C:\Path\To\Custom.sky">
+  </label>
+  <div style="margin-top:1rem;">
+    <button type="submit" class="btn-primary">Next</button>
+  </div>
+</form>

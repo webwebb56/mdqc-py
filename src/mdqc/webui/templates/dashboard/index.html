@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — MD QC Agent{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<section class="panel">
+  <h2>Service</h2>
+  <div class="grid">
+    <div class="metric">
+      <div class="label">Status</div>
+      <div class="value {% if paused %}warn{% else %}ok{% endif %}">
+        {% if paused %}Paused{% else %}Running{% endif %}
+      </div>
+    </div>
+    <div class="metric">
+      <div class="label">Agent ID</div>
+      <div class="value" style="font-size:1em;">{{ agent_id }}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Uptime</div>
+      <div class="value" style="font-size:1em;">{{ uptime }}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Cloud</div>
+      <div class="value" style="font-size:1em;">{{ cloud_mode }}</div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Queue</h2>
+  <div id="queue" hx-get="/dashboard/queue" hx-trigger="every 5s" hx-swap="innerHTML">
+    {% include "dashboard/queue_fragment.html" %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Instruments ({{ instruments | length }})</h2>
+  {% if instruments %}
+  <table>
+    <thead><tr><th>ID</th><th>Vendor</th><th>Watch path</th><th>Template</th></tr></thead>
+    <tbody>
+      {% for i in instruments %}
+      <tr>
+        <td>{{ i.id }}</td>
+        <td>{{ i.vendor.value if i.vendor.value is defined else i.vendor }}</td>
+        <td><code>{{ i.watch_path }}</code></td>
+        <td><code>{{ i.template }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No instruments configured. <a href="/wizard">Run the setup wizard</a>.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Recent activity</h2>
+  <div id="activity" hx-get="/dashboard/activity" hx-trigger="every 10s" hx-swap="innerHTML">
+    {% include "dashboard/activity_fragment.html" %}
+  </div>
+</section>
+{% endblock %}

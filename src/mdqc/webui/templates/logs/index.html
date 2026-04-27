@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Logs — MD QC Agent{% endblock %}
+{% block content %}
+<h1>Logs</h1>
+<p class="muted">Tailing <code>{{ log_path }}</code></p>
+<pre id="log" class="log">{% for line in lines %}{{ line }}{% endfor %}</pre>
+<script>
+  (function () {
+    if (typeof EventSource === "undefined") return;
+    var es = new EventSource("/logs/stream");
+    var pre = document.getElementById("log");
+    es.onmessage = function (ev) {
+      pre.appendChild(document.createTextNode(ev.data + "\n"));
+      pre.scrollTop = pre.scrollHeight;
+    };
+    es.onerror = function () {
+      es.close();
+    };
+  })();
+</script>
+{% endblock %}

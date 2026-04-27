@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<views>
+  <view name="MD_QC_Report" rowsource="pwiz.Skyline.Model.Databinding.Entities.Precursor" sublist="Results!*" uimode="proteomic">
+    <!-- Identity + context -->
+    <column name="Peptide.Protein.Name" />
+    <column name="Peptide.Sequence" />
+    <column name="Peptide.ModifiedSequence" />
+    <column name="Mz" />
+    <column name="Charge" />
+    <!-- Retention-time metrics (match Evosep's rt / min_start_time / max_end_time / fwhm) -->
+    <column name="Results!*.Value.BestRetentionTime" />
+    <column name="Results!*.Value.PredictedRetentionTime" />
+    <column name="Results!*.Value.MinStartTime" />
+    <column name="Results!*.Value.MaxEndTime" />
+    <column name="Results!*.Value.MaxFwhm" />
+    <!-- Intensity: Evosep splits TotalArea into MS1 vs fragment -->
+    <column name="Results!*.Value.TotalAreaMs1" />
+    <column name="Results!*.Value.TotalAreaFragment" />
+    <column name="Results!*.Value.TotalArea" />
+    <column name="Results!*.Value.MaxHeight" />
+    <!-- Background (also split MS1 vs fragment) -->
+    <column name="Results!*.Value.TotalBackgroundMs1" />
+    <column name="Results!*.Value.TotalBackgroundFragment" />
+    <!-- Quality / dot products -->
+    <column name="Results!*.Value.IsotopeDotProduct" />
+    <column name="Results!*.Value.LibraryDotProduct" />
+    <column name="Results!*.Value.AverageMassErrorPPM" />
+    <!-- Acquisition -->
+    <column name="Results!*.Value.PrecursorResult.ResultFile.FileName" />
+  </view>
+</views>

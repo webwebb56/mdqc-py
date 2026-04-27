@@ -1,0 +1,132 @@
+"""Filename-based run classification."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from mdqc.types import (
+    ClassificationSource,
+    Confidence,
+    ControlType,
+    RunClassification,
+    WellPosition,
+)
+
+# Explicit delimiter classes — see AGENT_NOTES § Classifier (\b matches at
+# underscore in Python but not in Rust; use explicit delimiters for parity
+# and to handle real `..`/`.-` token separators.)
+_DELIM_BEFORE = r"(?:^|[_\-\s.])"
+_DELIM_AFTER = r"(?:$|[_\-\s.])"
+
+_SSC0_RE = re.compile(rf"{_DELIM_BEFORE}(SSC[_-]?0|SSC){_DELIM_AFTER}", re.IGNORECASE)
+_QCA_RE = re.compile(rf"{_DELIM_BEFORE}(QC[_-]?A|QCA){_DELIM_AFTER}", re.IGNORECASE)
+_QCB_RE = re.compile(rf"{_DELIM_BEFORE}(QC[_-]?B|QCB){_DELIM_AFTER}", re.IGNORECASE)
+_BLANK_RE = re.compile(rf"{_DELIM_BEFORE}(BLANK|BLK){_DELIM_AFTER}", re.IGNORECASE)
+_WELL_RE = re.compile(
+    rf"{_DELIM_BEFORE}([A-H])(1[0-2]|0?[1-9]){_DELIM_AFTER}", re.IGNORECASE
+)
+_PLATE_RE = re.compile(
+    rf"{_DELIM_BEFORE}(plate[_-]?\w+|plt[_-]?\w+|P\d{{2,}}){_DELIM_AFTER}",
+    re.IGNORECASE,
+)
+_DATE_RE = re.compile(r"\d{4}[-_]\d{2}[-_]\d{2}")
+
+
+def classify_file(path: Path) -> RunClassification:
+    return classify_filename(path.name)
+
+
+def classify_filename(name: str) -> RunClassification:
+    stem = _strip_vendor_ext(name)
+    control_type, source = _extract_control_type(stem)
+    well = _extract_well(stem)
+    plate = _extract_plate(stem)
+    instrument = _extract_instrument(stem)
+    confidence = _confidence(control_type, well, source)
+    return RunClassification(
+        control_type=control_type,
+        well_position=well,
+        instrument_id=instrument,
+        plate_id=plate,
+        confidence=confidence,
+        source=source,
+    )
+
+
+def _strip_vendor_ext(name: str) -> str:
+    lower = name.lower()
+    for ext in (".raw", ".d", ".wiff", ".wiff.scan"):
+        if lower.endswith(ext):
+            return name[: -len(ext)]
+    return name
+
+
+def _extract_control_type(
+    stem: str,
+) -> tuple[ControlType, ClassificationSource]:
+    if _SSC0_RE.search(stem):
+        return ControlType.SSC0, ClassificationSource.FILENAME
+    if _QCA_RE.search(stem):
+        return ControlType.QC_A, ClassificationSource.FILENAME
+    if _QCB_RE.search(stem):
+        return ControlType.QC_B, ClassificationSource.FILENAME
+    if _BLANK_RE.search(stem):
+        return ControlType.BLANK, ClassificationSource.FILENAME
+    well = _extract_well(stem)
+    if well is not None:
+        inferred = _infer_from_well(well)
+        if inferred is not ControlType.SAMPLE:
+            return inferred, ClassificationSource.POSITION
+    return ControlType.SAMPLE, ClassificationSource.DEFAULT
+
+
+def _extract_well(stem: str) -> WellPosition | None:
+    for m in _WELL_RE.finditer(stem):
+        well = WellPosition.parse(f"{m.group(1)}{m.group(2)}")
+        if well is not None:
+            return well
+    return None
+
+
+def _extract_plate(stem: str) -> str | None:
+    m = _PLATE_RE.search(stem)
+    return m.group(1) if m else None
+
+
+def _extract_instrument(stem: str) -> str | None:
+    # Leading [A-Z0-9_]+ token before the first control/well/date marker.
+    candidates: list[int] = []
+    for pat in (_SSC0_RE, _QCA_RE, _QCB_RE, _BLANK_RE, _WELL_RE, _DATE_RE):
+        m = pat.search(stem)
+        if m is not None:
+            candidates.append(m.start())
+    if not candidates:
+        return None
+    cut = min(candidates)
+    head = stem[:cut].rstrip("_-. ")
+    if not head:
+        return None
+    m = re.match(r"^([A-Za-z0-9]+)", head)
+    return m.group(1) if m else None
+
+
+def _infer_from_well(well: WellPosition) -> ControlType:
+    if well.row == "A":
+        if well.column in (1, 2):
+            return ControlType.QC_A
+        if well.column in (3, 4):
+            return ControlType.QC_B
+    return ControlType.SAMPLE
+
+
+def _confidence(
+    control_type: ControlType,
+    well: WellPosition | None,
+    source: ClassificationSource,
+) -> Confidence:
+    if source is ClassificationSource.FILENAME and control_type.is_qc():
+        return Confidence.HIGH if well is not None else Confidence.MEDIUM
+    if source is ClassificationSource.POSITION:
+        return Confidence.MEDIUM
+    return Confidence.LOW

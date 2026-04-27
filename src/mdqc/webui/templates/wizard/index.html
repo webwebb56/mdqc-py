@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Setup Wizard — MD QC Agent{% endblock %}
+{% block content %}
+<h1>First-run setup</h1>
+<div class="steps">
+  {% for n in range(1, 6) %}
+  <div class="step {% if n == step %}active{% elif n < step %}done{% endif %}">
+    {{ n }}. {{ step_titles[n - 1] }}
+  </div>
+  {% endfor %}
+</div>
+<div id="wizard-body" class="panel">
+  {% include "wizard/step_" ~ step ~ ".html" %}
+</div>
+{% endblock %}

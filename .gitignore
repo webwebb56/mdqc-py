@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+sdist/
+wheels/
+.installed.cfg
+MANIFEST
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# PyInstaller
+*.spec.bak
+*.manifest
+
+# Local config / secrets
+config.local.toml
+.env
+.env.local
+
+# Local dev artifacts
+spool_local/
+logs_local/
+
+# Frozen build artifacts (user re-builds locally or in CI)
+src/mdqc/_assets_bundle/
