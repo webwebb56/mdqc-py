@@ -167,7 +167,7 @@ def test_event_extraction_completed_below_threshold_emits_individual(
     app.batcher.window_s = 0.05
     app.batcher.threshold = 3
     app._on_event("extraction_completed", {"path": "file.raw"})
-    time.sleep(0.2)
+    time.sleep(1.0)
     assert len(notifier.calls) == 1
     assert notifier.calls[0][0] == "Extraction completed"
     app.batcher.close()

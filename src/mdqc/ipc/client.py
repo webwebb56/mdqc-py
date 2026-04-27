@@ -204,7 +204,7 @@ class IpcClient:
         response.raise_for_status()
 
     def reprocess(self, path: Path) -> None:
-        response = self._request("POST", "/api/reprocess", json_body={"path": str(path)})
+        response = self._request("POST", "/api/reprocess", json_body={"path": path.as_posix()})
         response.raise_for_status()
 
     def retry_failed(self, path: str) -> int:
