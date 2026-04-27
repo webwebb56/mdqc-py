@@ -433,8 +433,15 @@ class TrayApp:
                     self._client = None
 
 
+def run_tray() -> None:
+    """Entry point: create and run the tray app."""
+    app = TrayApp()
+    app.run()
+
+
 __all__ = [
     "TrayApp",
+    "run_tray",
     "_open_url",
     "parse_sse_stream",
 ]
