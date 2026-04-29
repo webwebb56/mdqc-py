@@ -441,7 +441,7 @@ def run_tray() -> None:
 
 __all__ = [
     "TrayApp",
-    "run_tray",
     "_open_url",
     "parse_sse_stream",
+    "run_tray",
 ]
