@@ -624,6 +624,14 @@ async def main_async(*, service_mode: bool) -> int:
         extra={"port": actual_port, "service_mode": service_mode, "agent_id": state.agent_id},
     )
 
+    if not service_mode:
+        import sys
+        print(
+            f"\n  Web UI: http://127.0.0.1:{actual_port}/?token={state.token}\n",
+            file=sys.stderr,
+            flush=True,
+        )
+
     exit_code = 0
     try:
         await state.stop_event.wait()
