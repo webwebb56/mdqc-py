@@ -30,6 +30,16 @@
 </section>
 
 <section class="panel">
+  <h2>Local QC Plots <span style="font-size:0.7em; color:var(--muted); font-weight:normal;">(prototype)</span></h2>
+  <div id="streamlit-status"
+       hx-get="/dashboard/streamlit"
+       hx-trigger="every 15s"
+       hx-swap="innerHTML">
+    {% include "dashboard/streamlit_fragment.html" %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>Queue</h2>
   <div id="queue" hx-get="/dashboard/queue" hx-trigger="every 5s" hx-swap="innerHTML">
     {% include "dashboard/queue_fragment.html" %}

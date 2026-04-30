@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
@@ -12,6 +13,9 @@ from mdqc.config import paths
 from mdqc.webui._deps import common_context, get_state, get_templates
 
 router = APIRouter()
+
+STREAMLIT_PORT = 8501
+_STREAMLIT_HEALTH_URL = f"http://127.0.0.1:{STREAMLIT_PORT}/_stcore/health"
 
 
 def _queue_counts(state: Any) -> dict[str, int]:
@@ -91,7 +95,16 @@ def _cloud_mode(state: Any) -> str:
     return "local-only"
 
 
-def _dashboard_context(request: Request) -> dict[str, Any]:
+async def _streamlit_running() -> bool:
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(_STREAMLIT_HEALTH_URL, timeout=1.0)
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
+async def _dashboard_context(request: Request) -> dict[str, Any]:
     state = get_state(request)
     cfg = getattr(state, "cfg", None)
     instruments = list(cfg.instruments) if cfg is not None else []
@@ -107,6 +120,8 @@ def _dashboard_context(request: Request) -> dict[str, Any]:
             "instruments": instruments,
             "queue": _queue_counts(state),
             "activity": activity,
+            "streamlit_running": await _streamlit_running(),
+            "streamlit_port": STREAMLIT_PORT,
         }
     )
     return ctx
@@ -125,7 +140,7 @@ async def root(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(request, "wizard/index.html", ctx)
     templates = get_templates(request)
     return templates.TemplateResponse(
-        request, "dashboard/index.html", _dashboard_context(request)
+        request, "dashboard/index.html", await _dashboard_context(request)
     )
 
 
@@ -133,7 +148,7 @@ async def root(request: Request) -> HTMLResponse:
 async def dashboard(request: Request) -> HTMLResponse:
     templates = get_templates(request)
     return templates.TemplateResponse(
-        request, "dashboard/index.html", _dashboard_context(request)
+        request, "dashboard/index.html", await _dashboard_context(request)
     )
 
 
@@ -141,8 +156,17 @@ async def dashboard(request: Request) -> HTMLResponse:
 async def status_fragment(request: Request) -> HTMLResponse:
     templates = get_templates(request)
     return templates.TemplateResponse(
-        request, "dashboard/status_fragment.html", _dashboard_context(request)
+        request, "dashboard/status_fragment.html", await _dashboard_context(request)
     )
+
+
+@router.get("/dashboard/streamlit", response_class=HTMLResponse)
+async def streamlit_fragment(request: Request) -> HTMLResponse:
+    templates = get_templates(request)
+    ctx = common_context(request)
+    ctx["streamlit_running"] = await _streamlit_running()
+    ctx["streamlit_port"] = STREAMLIT_PORT
+    return templates.TemplateResponse(request, "dashboard/streamlit_fragment.html", ctx)
 
 
 @router.get("/dashboard/queue", response_class=HTMLResponse)

@@ -1,0 +1,30 @@
+<div class="grid">
+  <div class="metric">
+    <div class="label">Status</div>
+    <div class="value {% if streamlit_running %}ok{% else %}muted{% endif %}">
+      {% if streamlit_running %}Running{% else %}Offline{% endif %}
+    </div>
+  </div>
+  <div class="metric">
+    <div class="label">Port</div>
+    <div class="value" style="font-size:1em;">{{ streamlit_port }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">URL</div>
+    <div class="value" style="font-size:0.9em;">
+      {% if streamlit_running %}
+      <a href="http://localhost:{{ streamlit_port }}" target="_blank" rel="noopener">
+        localhost:{{ streamlit_port }} ↗
+      </a>
+      {% else %}
+      <span class="muted">—</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if not streamlit_running %}
+<div style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border); font-size:0.85em; color:var(--muted);">
+  Start with: <code>streamlit run src/mdqc/plots/app.py</code>
+</div>
+{% endif %}
