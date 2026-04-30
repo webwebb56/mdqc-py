@@ -67,6 +67,13 @@ tray = [
     "pillow>=10.2",
     "winsdk>=1.0.0b10; sys_platform == 'win32'",
 ]
+plots = [
+    # QC trend plots prototype — run with: streamlit run src/mdqc/plots/app.py
+    # Install with: pip install mdqc[plots]
+    "streamlit>=1.35",
+    "plotly>=5.20",
+    "pandas>=2.0",
+]
 dev = [
     "ruff>=0.3",
     "mypy>=1.9",
