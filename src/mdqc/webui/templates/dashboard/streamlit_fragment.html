@@ -23,8 +23,40 @@
   </div>
 </div>
 
-{% if not streamlit_running %}
-<div style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border); font-size:0.85em; color:var(--muted);">
-  Start with: <code>streamlit run src/mdqc/plots/app.py</code>
+<div class="control-bar">
+  {% if streamlit_running %}
+  <button class="btn btn-secondary"
+          hx-post="/dashboard/streamlit/stop"
+          hx-target="#streamlit-status"
+          hx-swap="innerHTML"
+          hx-indicator="#streamlit-spinner">
+    ⏹ Stop
+  </button>
+  <a href="http://localhost:{{ streamlit_port }}" target="_blank" rel="noopener"
+     class="btn btn-primary">
+    Open ↗
+  </a>
+  {% else %}
+  <button class="btn btn-primary"
+          hx-post="/dashboard/streamlit/start"
+          hx-target="#streamlit-status"
+          hx-swap="innerHTML"
+          hx-indicator="#streamlit-spinner"
+          {% if not streamlit_app_exists %}disabled title="plots/app.py not found"{% endif %}>
+    ▶ Start
+  </button>
+  {% endif %}
+  <span id="streamlit-spinner" class="htmx-indicator muted" style="font-size:0.85em;">
+    Working…
+  </span>
+</div>
+
+{% if streamlit_error %}
+<div style="margin-top:0.5rem; font-size:0.85em; color:var(--bad);">✗ {{ streamlit_error }}</div>
+{% endif %}
+
+{% if not streamlit_running and not streamlit_app_exists %}
+<div style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border); font-size:0.82em; color:var(--muted);">
+  Plots app not yet created at <code>src/mdqc/plots/app.py</code>
 </div>
 {% endif %}

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -16,6 +19,9 @@ router = APIRouter()
 
 STREAMLIT_PORT = 8501
 _STREAMLIT_HEALTH_URL = f"http://127.0.0.1:{STREAMLIT_PORT}/_stcore/health"
+_PLOTS_APP = Path(__file__).parent.parent / "plots" / "app.py"
+
+_streamlit_proc: subprocess.Popen[bytes] | None = None
 
 
 def _queue_counts(state: Any) -> dict[str, int]:
@@ -104,6 +110,16 @@ async def _streamlit_running() -> bool:
         return False
 
 
+async def _streamlit_ctx() -> dict[str, Any]:
+    running = await _streamlit_running()
+    return {
+        "streamlit_running": running,
+        "streamlit_port": STREAMLIT_PORT,
+        "streamlit_app_exists": _PLOTS_APP.exists(),
+        "streamlit_managed": _streamlit_proc is not None and _streamlit_proc.poll() is None,
+    }
+
+
 async def _dashboard_context(request: Request) -> dict[str, Any]:
     state = get_state(request)
     cfg = getattr(state, "cfg", None)
@@ -120,10 +136,9 @@ async def _dashboard_context(request: Request) -> dict[str, Any]:
             "instruments": instruments,
             "queue": _queue_counts(state),
             "activity": activity,
-            "streamlit_running": await _streamlit_running(),
-            "streamlit_port": STREAMLIT_PORT,
         }
     )
+    ctx.update(await _streamlit_ctx())
     return ctx
 
 
@@ -164,8 +179,58 @@ async def status_fragment(request: Request) -> HTMLResponse:
 async def streamlit_fragment(request: Request) -> HTMLResponse:
     templates = get_templates(request)
     ctx = common_context(request)
-    ctx["streamlit_running"] = await _streamlit_running()
-    ctx["streamlit_port"] = STREAMLIT_PORT
+    ctx.update(await _streamlit_ctx())
+    return templates.TemplateResponse(request, "dashboard/streamlit_fragment.html", ctx)
+
+
+@router.post("/dashboard/streamlit/start", response_class=HTMLResponse)
+async def streamlit_start(request: Request) -> HTMLResponse:
+    global _streamlit_proc
+    templates = get_templates(request)
+    ctx = common_context(request)
+    error: str | None = None
+
+    already_running = await _streamlit_running()
+    if not already_running:
+        if not _PLOTS_APP.exists():
+            error = f"App not found: {_PLOTS_APP}"
+        else:
+            try:
+                _streamlit_proc = subprocess.Popen(
+                    [
+                        sys.executable, "-m", "streamlit", "run",
+                        str(_PLOTS_APP),
+                        "--server.port", str(STREAMLIT_PORT),
+                        "--server.headless", "true",
+                        "--server.address", "127.0.0.1",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception as exc:
+                error = str(exc)
+
+    ctx.update(await _streamlit_ctx())
+    ctx["streamlit_error"] = error
+    return templates.TemplateResponse(request, "dashboard/streamlit_fragment.html", ctx)
+
+
+@router.post("/dashboard/streamlit/stop", response_class=HTMLResponse)
+async def streamlit_stop(request: Request) -> HTMLResponse:
+    global _streamlit_proc
+    templates = get_templates(request)
+    ctx = common_context(request)
+
+    if _streamlit_proc is not None:
+        _streamlit_proc.terminate()
+        try:
+            _streamlit_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _streamlit_proc.kill()
+        _streamlit_proc = None
+
+    ctx.update(await _streamlit_ctx())
+    ctx["streamlit_error"] = None
     return templates.TemplateResponse(request, "dashboard/streamlit_fragment.html", ctx)
 
 
