@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 import tomli_w
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse
 
 from mdqc.config import paths
 from mdqc.config.schema import (
@@ -40,14 +40,8 @@ class SectionStatus:
     state: str  # "ok" | "bad" | "muted"
     message: str
 
-    @property
-    def dot(self) -> str:
-        return "●"
 
-
-def _status_instrument(inst: InstrumentConfig | None) -> SectionStatus:
-    if inst is None:
-        return SectionStatus("bad", "No instrument configured")
+def _status_instrument(inst: InstrumentConfig) -> SectionStatus:
     try:
         accessible = inst.watch_path.exists() and inst.watch_path.is_dir()
     except OSError:
@@ -55,6 +49,20 @@ def _status_instrument(inst: InstrumentConfig | None) -> SectionStatus:
     if not accessible:
         return SectionStatus("bad", f"Watch path not accessible: {inst.watch_path}")
     return SectionStatus("ok", "Watch path accessible")
+
+
+def _status_template(inst: InstrumentConfig) -> SectionStatus:
+    name = inst.template
+    candidate = Path(name)
+    if candidate.is_absolute():
+        if candidate.exists():
+            return SectionStatus("ok", str(candidate))
+        return SectionStatus("bad", f"Not found: {candidate}")
+    for base in (paths.methods_dir(), paths.templates_dir()):
+        p = base / name
+        if p.exists():
+            return SectionStatus("ok", str(p))
+    return SectionStatus("bad", f"Not found: {name}")
 
 
 def _status_skyline(cfg: Config) -> SectionStatus:
@@ -67,22 +75,6 @@ def _status_skyline(cfg: Config) -> SectionStatus:
     return SectionStatus("ok", str(found))
 
 
-def _status_template(inst: InstrumentConfig | None) -> SectionStatus:
-    if inst is None:
-        return SectionStatus("bad", "No instrument configured")
-    name = inst.template
-    candidate = Path(name)
-    if candidate.is_absolute():
-        if candidate.exists():
-            return SectionStatus("ok", str(candidate))
-        return SectionStatus("bad", f"Template not found: {candidate}")
-    for base in (paths.methods_dir(), paths.templates_dir()):
-        p = base / name
-        if p.exists():
-            return SectionStatus("ok", str(p))
-    return SectionStatus("bad", f"Template not found: {name}")
-
-
 def _status_cloud(cfg: Config) -> SectionStatus:
     if cfg.cloud.certificate_thumbprint and not cfg.cloud.api_token:
         return SectionStatus("bad", "Certificate thumbprint set but mTLS not supported in v1 — add an API token")
@@ -91,17 +83,26 @@ def _status_cloud(cfg: Config) -> SectionStatus:
     return SectionStatus("muted", "Local-only (no upload)")
 
 
+def _instruments_ctx(instruments: list[InstrumentConfig]) -> list[dict[str, Any]]:
+    result = []
+    for i, inst in enumerate(instruments):
+        result.append({
+            "idx": i,
+            "inst": inst,
+            "status": _status_instrument(inst),
+            "status_template": _status_template(inst),
+        })
+    return result
+
+
 def _settings_context(cfg: Config, saved: bool = False, error: str | None = None) -> dict[str, Any]:
-    inst = cfg.instruments[0] if cfg.instruments else None
     return {
         "cfg": cfg,
-        "inst": inst,
+        "instruments_ctx": _instruments_ctx(cfg.instruments),
         "vendors": VENDORS,
         "log_levels": LOG_LEVELS,
         "priorities": PRIORITIES,
-        "status_instrument": _status_instrument(inst),
         "status_skyline": _status_skyline(cfg),
-        "status_template": _status_template(inst),
         "status_cloud": _status_cloud(cfg),
         "saved": saved,
         "error": error,
@@ -120,6 +121,38 @@ def _write_config(cfg: Config) -> None:
     os.replace(tmp, target)
 
 
+def _parse_instruments(form: dict[str, Any]) -> list[InstrumentConfig]:
+    # Collect all instrument indices from field names like instrument_id_0, vendor_1, etc.
+    indices: set[int] = set()
+    for key in form:
+        for prefix in ("instrument_id_", "vendor_", "watch_path_", "file_pattern_", "template_"):
+            if key.startswith(prefix):
+                suffix = key[len(prefix):]
+                if suffix.isdigit():
+                    indices.add(int(suffix))
+
+    instruments = []
+    for idx in sorted(indices):
+        raw_id = str(form.get(f"instrument_id_{idx}", "")).strip()
+        raw_vendor = str(form.get(f"vendor_{idx}", "thermo"))
+        raw_path = str(form.get(f"watch_path_{idx}", "")).strip()
+        raw_pattern = str(form.get(f"file_pattern_{idx}", "*")).strip()
+        raw_template = str(form.get(f"template_{idx}", "QC_Method.sky")).strip()
+
+        if not raw_id and not raw_path:
+            continue  # skip completely empty rows
+
+        instruments.append(InstrumentConfig(
+            id=raw_id or f"instrument-{idx + 1}",
+            vendor=Vendor(raw_vendor if raw_vendor in VENDORS else "thermo"),
+            watch_path=Path(raw_path or "."),
+            file_pattern=raw_pattern or "*",
+            template=raw_template or "QC_Method.sky",
+        ))
+
+    return instruments
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_get(request: Request) -> HTMLResponse:
     state = get_state(request)
@@ -129,50 +162,28 @@ async def settings_get(request: Request) -> HTMLResponse:
 
 
 @router.post("/settings", response_class=HTMLResponse)
-async def settings_post(
-    request: Request,
-    # Instrument
-    instrument_id: str = Form(""),
-    vendor: str = Form("thermo"),
-    watch_path: str = Form(""),
-    file_pattern: str = Form("*"),
-    template: str = Form("QC_Method.sky"),
-    # Skyline
-    skyline_path: str = Form("auto"),
-    skyline_timeout: int = Form(900),
-    skyline_priority: str = Form("below_normal"),
-    # Cloud
-    cloud_endpoint: str = Form(""),
-    api_token: str = Form(""),
-    # Agent
-    log_level: str = Form("info"),
-    enable_toasts: bool = Form(False),
-) -> HTMLResponse:
+async def settings_post(request: Request) -> HTMLResponse:
     state = get_state(request)
     error: str | None = None
 
     try:
-        if vendor not in VENDORS:
-            vendor = "thermo"
+        raw_form = await request.form()
+        form: dict[str, Any] = dict(raw_form)
+
+        log_level = str(form.get("log_level", "info"))
         if log_level not in LOG_LEVELS:
             log_level = "info"
+        skyline_priority = str(form.get("skyline_priority", "below_normal"))
         if skyline_priority not in PRIORITIES:
             skyline_priority = "below_normal"
 
-        instrument_id = instrument_id.strip() or "instrument-1"
-        watch_path = watch_path.strip() or "."
-        template = template.strip() or "QC_Method.sky"
-        skyline_path = skyline_path.strip() or "auto"
-        api_token = api_token.strip() or None
-        cloud_endpoint = cloud_endpoint.strip() or "https://qc-ingest.massdynamics.com/v1/"
+        skyline_path = str(form.get("skyline_path", "auto")).strip() or "auto"
+        skyline_timeout = int(form.get("skyline_timeout", 900) or 900)
+        api_token = str(form.get("api_token", "")).strip() or None
+        cloud_endpoint = str(form.get("cloud_endpoint", "")).strip() or "https://qc-ingest.massdynamics.com/v1/"
+        enable_toasts = "enable_toasts" in form
 
-        instrument = InstrumentConfig(
-            id=instrument_id,
-            vendor=Vendor(vendor),
-            watch_path=Path(watch_path),
-            file_pattern=file_pattern.strip() or "*",
-            template=template,
-        )
+        instruments = _parse_instruments(form)
 
         cfg = Config(
             agent=AgentConfig(log_level=log_level, enable_toast_notifications=enable_toasts),
@@ -184,12 +195,12 @@ async def settings_post(
             ),
             watcher=WatcherConfig(),
             spool=SpoolConfig(),
-            instruments=[instrument],
+            instruments=instruments,
         )
 
         _write_config(cfg)
         state.cfg = cfg
-        log.info("settings_saved", extra={"path": str(paths.config_path())})
+        log.info("settings_saved", extra={"path": str(paths.config_path()), "instruments": len(instruments)})
 
     except Exception as exc:
         log.warning("settings_save_failed", extra={"error": str(exc)})

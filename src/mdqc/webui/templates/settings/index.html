@@ -19,8 +19,8 @@
   .section-heading h2 { margin: 0; font-size: 1.05em; }
 
   .dot { font-size: 1.1em; line-height: 1; }
-  .dot.ok  { color: var(--good); }
-  .dot.bad { color: var(--bad); }
+  .dot.ok    { color: var(--good); }
+  .dot.bad   { color: var(--bad); }
   .dot.muted { color: var(--muted); }
 
   .status-msg { font-size: 0.82em; margin-left: auto; }
@@ -62,6 +62,46 @@
   }
   .token-row { display: flex; gap: 0.5rem; align-items: center; }
   .token-row input { flex: 1; max-width: 400px; }
+
+  .instrument-panel {
+    position: relative;
+  }
+  .instrument-panel .remove-btn {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: none;
+    border: 1px solid var(--bad);
+    color: var(--bad);
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8em;
+    cursor: pointer;
+    line-height: 1.4;
+  }
+  .instrument-panel .remove-btn:hover {
+    background: #fdf0f0;
+  }
+  .add-instrument-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.9em;
+    cursor: pointer;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 1rem;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .add-instrument-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 </style>
 
 {% if saved %}
@@ -75,69 +115,128 @@
   <h1>Settings</h1>
 </div>
 
-<form method="post" action="/settings">
+<form method="post" action="/settings" id="settings-form">
 
-  {# ── Instrument ─────────────────────────────────────────────────────── #}
-  <section class="panel">
-    <div class="section-heading">
-      <span class="dot {{ status_instrument.state }}">●</span>
-      <h2>Instrument</h2>
-      <span class="status-msg {{ status_instrument.state }}">{{ status_instrument.message }}</span>
-    </div>
-
-    <div class="field-row">
-      <label for="instrument_id">Instrument ID</label>
-      <div>
-        <input type="text" id="instrument_id" name="instrument_id"
-               value="{{ inst.id if inst else '' }}" placeholder="e.g. Astral_0001">
-        <div class="field-hint">Unique name for this instrument — used in payload metadata.</div>
+  {# ── Instruments ────────────────────────────────────────────────────── #}
+  <div id="instruments-container">
+    {% for ic in instruments_ctx %}
+    <section class="panel instrument-panel" data-idx="{{ ic.idx }}">
+      <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
+      <div class="section-heading">
+        <span class="dot {{ ic.status.state }}">●</span>
+        <h2>Instrument {% if instruments_ctx | length > 1 %}{{ loop.index }}{% endif %}</h2>
+        <span class="status-msg {{ ic.status.state }}">{{ ic.status.message }}</span>
       </div>
-    </div>
 
-    <div class="field-row">
-      <label for="vendor">Vendor</label>
-      <select id="vendor" name="vendor">
-        {% for v in vendors %}
-        <option value="{{ v }}" {% if inst and inst.vendor.value == v %}selected{% endif %}>
-          {{ v | capitalize }}
-        </option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="field-row">
-      <label for="watch_path">Watch path</label>
-      <div>
-        <input type="text" id="watch_path" name="watch_path"
-               value="{{ inst.watch_path if inst else '' }}"
-               placeholder="e.g. D:\Data">
-        <div class="field-hint">Directory the agent monitors for new raw files.</div>
-      </div>
-    </div>
-
-    <div class="field-row">
-      <label for="file_pattern">File pattern</label>
-      <div>
-        <input type="text" id="file_pattern" name="file_pattern"
-               value="{{ inst.file_pattern if inst else '*' }}"
-               placeholder="*.raw">
-        <div class="field-hint">Glob pattern for files to pick up (e.g. <code>*.raw</code>, <code>*.d</code>).</div>
-      </div>
-    </div>
-
-    <div class="field-row">
-      <label for="template">Template</label>
-      <div>
-        <input type="text" id="template" name="template"
-               value="{{ inst.template if inst else 'QC_Method.sky' }}"
-               placeholder="QC_Method.sky">
-        <div class="field-hint">
-          Skyline template filename or absolute path.
-          Status: <span class="{{ status_template.state }}">{{ status_template.message }}</span>
+      <div class="field-row">
+        <label>Instrument ID</label>
+        <div>
+          <input type="text" name="instrument_id_{{ ic.idx }}"
+                 value="{{ ic.inst.id }}" placeholder="e.g. Astral_0001">
+          <div class="field-hint">Unique name — used in payload metadata.</div>
         </div>
       </div>
-    </div>
-  </section>
+
+      <div class="field-row">
+        <label>Vendor</label>
+        <select name="vendor_{{ ic.idx }}">
+          {% for v in vendors %}
+          <option value="{{ v }}" {% if ic.inst.vendor.value == v %}selected{% endif %}>
+            {{ v | capitalize }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field-row">
+        <label>Watch path</label>
+        <div>
+          <input type="text" name="watch_path_{{ ic.idx }}"
+                 value="{{ ic.inst.watch_path }}" placeholder="e.g. D:\Data">
+          <div class="field-hint">Directory the agent monitors for new raw files.</div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>File pattern</label>
+        <div>
+          <input type="text" name="file_pattern_{{ ic.idx }}"
+                 value="{{ ic.inst.file_pattern }}" placeholder="*.raw">
+          <div class="field-hint">Glob pattern for files to pick up (e.g. <code>*.raw</code>, <code>*.d</code>).</div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>Template</label>
+        <div>
+          <input type="text" name="template_{{ ic.idx }}"
+                 value="{{ ic.inst.template }}" placeholder="QC_Method.sky">
+          <div class="field-hint">
+            Skyline template filename or absolute path.
+            Status: <span class="{{ ic.status_template.state }}">{{ ic.status_template.message }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    {% endfor %}
+
+    {% if not instruments_ctx %}
+    {# Render a blank instrument panel if none configured #}
+    <section class="panel instrument-panel" data-idx="0">
+      <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
+      <div class="section-heading">
+        <span class="dot muted">●</span>
+        <h2>Instrument 1</h2>
+        <span class="status-msg muted">Not configured</span>
+      </div>
+
+      <div class="field-row">
+        <label>Instrument ID</label>
+        <div>
+          <input type="text" name="instrument_id_0" value="" placeholder="e.g. Astral_0001">
+          <div class="field-hint">Unique name — used in payload metadata.</div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>Vendor</label>
+        <select name="vendor_0">
+          {% for v in vendors %}
+          <option value="{{ v }}">{{ v | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field-row">
+        <label>Watch path</label>
+        <div>
+          <input type="text" name="watch_path_0" value="" placeholder="e.g. D:\Data">
+          <div class="field-hint">Directory the agent monitors for new raw files.</div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>File pattern</label>
+        <div>
+          <input type="text" name="file_pattern_0" value="*" placeholder="*.raw">
+          <div class="field-hint">Glob pattern for files to pick up (e.g. <code>*.raw</code>, <code>*.d</code>).</div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>Template</label>
+        <div>
+          <input type="text" name="template_0" value="QC_Method.sky" placeholder="QC_Method.sky">
+          <div class="field-hint">Skyline template filename or absolute path.</div>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+
+  <button type="button" class="add-instrument-btn" onclick="addInstrument()">
+    + Add Instrument
+  </button>
 
   {# ── Skyline ────────────────────────────────────────────────────────── #}
   <section class="panel">
@@ -240,4 +339,98 @@
   </div>
 
 </form>
+
+<script>
+const VENDORS = {{ vendors | tojson }};
+
+function nextIdx() {
+  const panels = document.querySelectorAll('#instruments-container .instrument-panel');
+  let max = -1;
+  panels.forEach(p => {
+    const idx = parseInt(p.dataset.idx, 10);
+    if (idx > max) max = idx;
+  });
+  return max + 1;
+}
+
+function addInstrument() {
+  const idx = nextIdx();
+  const vendorOptions = VENDORS.map(v =>
+    `<option value="${v}">${v.charAt(0).toUpperCase() + v.slice(1)}</option>`
+  ).join('');
+
+  const html = `
+  <section class="panel instrument-panel" data-idx="${idx}">
+    <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
+    <div class="section-heading">
+      <span class="dot muted">●</span>
+      <h2>Instrument</h2>
+      <span class="status-msg muted">Not saved yet</span>
+    </div>
+
+    <div class="field-row">
+      <label>Instrument ID</label>
+      <div>
+        <input type="text" name="instrument_id_${idx}" value="" placeholder="e.g. Astral_0001">
+        <div class="field-hint">Unique name — used in payload metadata.</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label>Vendor</label>
+      <select name="vendor_${idx}">${vendorOptions}</select>
+    </div>
+
+    <div class="field-row">
+      <label>Watch path</label>
+      <div>
+        <input type="text" name="watch_path_${idx}" value="" placeholder="e.g. D:\\Data">
+        <div class="field-hint">Directory the agent monitors for new raw files.</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label>File pattern</label>
+      <div>
+        <input type="text" name="file_pattern_${idx}" value="*" placeholder="*.raw">
+        <div class="field-hint">Glob pattern for files to pick up (e.g. <code>*.raw</code>, <code>*.d</code>).</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label>Template</label>
+      <div>
+        <input type="text" name="template_${idx}" value="QC_Method.sky" placeholder="QC_Method.sky">
+        <div class="field-hint">Skyline template filename or absolute path.</div>
+      </div>
+    </div>
+  </section>`;
+
+  const container = document.getElementById('instruments-container');
+  container.insertAdjacentHTML('beforeend', html);
+  updateHeadings();
+}
+
+function removeInstrument(btn) {
+  const panels = document.querySelectorAll('#instruments-container .instrument-panel');
+  if (panels.length <= 1) {
+    alert('At least one instrument is required.');
+    return;
+  }
+  btn.closest('.instrument-panel').remove();
+  updateHeadings();
+}
+
+function updateHeadings() {
+  const panels = document.querySelectorAll('#instruments-container .instrument-panel');
+  panels.forEach((panel, i) => {
+    const h2 = panel.querySelector('.section-heading h2');
+    if (panels.length > 1) {
+      h2.textContent = `Instrument ${i + 1}`;
+    } else {
+      h2.textContent = 'Instrument';
+    }
+  });
+}
+</script>
 {% endblock %}
