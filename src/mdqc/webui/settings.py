@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 import tomli_w
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from mdqc.config import paths
 from mdqc.config.schema import (
@@ -209,6 +209,32 @@ async def settings_post(request: Request) -> HTMLResponse:
     ctx = common_context(request)
     ctx.update(_settings_context(state.cfg, saved=error is None, error=error))
     return get_templates(request).TemplateResponse(request, "settings/index.html", ctx)
+
+
+@router.get("/settings/open-template")
+async def open_template(name: str = Query(...)) -> JSONResponse:
+    """Resolve a template name and open it in the system default app (Skyline GUI)."""
+    candidate = Path(name)
+    resolved: Path | None = None
+    if candidate.is_absolute():
+        if candidate.exists():
+            resolved = candidate
+    else:
+        for base in (paths.methods_dir(), paths.templates_dir()):
+            p = base / name
+            if p.exists():
+                resolved = p
+                break
+
+    if resolved is None:
+        return JSONResponse({"ok": False, "error": f"Template not found: {name}"}, status_code=404)
+
+    try:
+        os.startfile(str(resolved))  # Windows: opens with registered app (Skyline)
+        return JSONResponse({"ok": True, "path": str(resolved)})
+    except Exception as exc:
+        log.warning("open_template_failed", path=str(resolved), error=str(exc))
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
 __all__ = ["router"]

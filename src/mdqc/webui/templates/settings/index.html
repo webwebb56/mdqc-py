@@ -166,8 +166,14 @@
       <div class="field-row">
         <label>Template</label>
         <div>
-          <input type="text" name="template_{{ ic.idx }}"
-                 value="{{ ic.inst.template }}" placeholder="QC_Method.sky">
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="text" name="template_{{ ic.idx }}"
+                   value="{{ ic.inst.template }}" placeholder="QC_Method.sky"
+                   style="flex:1;" id="tpl-input-{{ ic.idx }}">
+            <button type="button" class="btn btn-secondary"
+                    style="white-space:nowrap; font-size:0.85em; padding:0.25rem 0.75rem;"
+                    onclick="openTemplate('tpl-input-{{ ic.idx }}')">Open in Skyline</button>
+          </div>
           <div class="field-hint">
             Skyline template filename or absolute path.
             Status: <span class="{{ ic.status_template.state }}">{{ ic.status_template.message }}</span>
@@ -223,7 +229,13 @@
       <div class="field-row">
         <label>Template</label>
         <div>
-          <input type="text" name="template_0" value="QC_Method.sky" placeholder="QC_Method.sky">
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="text" name="template_0" value="QC_Method.sky" placeholder="QC_Method.sky"
+                   style="flex:1;" id="tpl-input-0">
+            <button type="button" class="btn btn-secondary"
+                    style="white-space:nowrap; font-size:0.85em; padding:0.25rem 0.75rem;"
+                    onclick="openTemplate('tpl-input-0')">Open in Skyline</button>
+          </div>
           <div class="field-hint">Skyline template filename or absolute path.</div>
         </div>
       </div>
@@ -397,7 +409,13 @@ function addInstrument() {
     <div class="field-row">
       <label>Template</label>
       <div>
-        <input type="text" name="template_${idx}" value="QC_Method.sky" placeholder="QC_Method.sky">
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <input type="text" name="template_${idx}" value="QC_Method.sky" placeholder="QC_Method.sky"
+                 style="flex:1;" id="tpl-input-${idx}">
+          <button type="button" class="btn btn-secondary"
+                  style="white-space:nowrap; font-size:0.85em; padding:0.25rem 0.75rem;"
+                  onclick="openTemplate('tpl-input-${idx}')">Open in Skyline</button>
+        </div>
         <div class="field-hint">Skyline template filename or absolute path.</div>
       </div>
     </div>
@@ -416,6 +434,15 @@ function removeInstrument(btn) {
   }
   btn.closest('.instrument-panel').remove();
   updateHeadings();
+}
+
+function openTemplate(inputId) {
+  const name = document.getElementById(inputId).value.trim();
+  if (!name) { alert('Enter a template name or path first.'); return; }
+  fetch('/settings/open-template?name=' + encodeURIComponent(name))
+    .then(r => r.json())
+    .then(d => { if (!d.ok) alert('Could not open template:\n' + d.error); })
+    .catch(e => alert('Request failed: ' + e));
 }
 
 function updateHeadings() {

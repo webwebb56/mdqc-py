@@ -257,7 +257,7 @@ class TrayApp:
             log.warning("tray_open_no_runtime", path=path)
             return
         url = _open_url(f"http://127.0.0.1:{info.port}", path, info.token)
-        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+        threading.Thread(target=webbrowser.open_new_tab, args=(url,), daemon=True).start()
 
     def _on_view_logs(self, _icon: Any, _item: Any) -> None:
         if self._info is not None:
@@ -265,7 +265,7 @@ class TrayApp:
             return
         log_dir = paths.log_dir()
         try:
-            webbrowser.open(log_dir.as_uri())
+            webbrowser.open_new_tab(log_dir.as_uri())
         except Exception as exc:
             log.warning("tray_open_logs_failed", error=str(exc))
 
