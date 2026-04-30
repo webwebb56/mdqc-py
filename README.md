@@ -174,5 +174,4 @@ commercially. Attribution appreciated.
 
 ## Contact
 
-Issues: <https://github.com/MassDynamics/mdqc-py/issues>
-Engineering: engineering@massdynamics.com
+andrew@massdynamics.com
