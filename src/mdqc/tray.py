@@ -238,8 +238,8 @@ class TrayApp:
             return handler
 
         items = [
-            pystray.MenuItem("Open Wizard", make_opener("/wizard"), enabled=lambda _i: self._service_available),
             pystray.MenuItem("Open Dashboard", make_opener("/dashboard"), enabled=lambda _i: self._service_available),
+            pystray.MenuItem("Settings", make_opener("/settings"), enabled=lambda _i: self._service_available),
             pystray.MenuItem("Run Diagnostics", make_opener("/diagnostics"), enabled=lambda _i: self._service_available),
             pystray.MenuItem("View Failed Files", make_opener("/failed"), enabled=lambda _i: self._service_available),
             pystray.MenuItem("View Logs", self._on_view_logs),

@@ -50,18 +50,9 @@ dependencies = [
     "python-multipart>=0.0.9",
     "tomli-w>=1.0",
 
-    # Tray + images
-    "pystray>=0.19",
-    "pillow>=10.2",
-
-    # Windows-only runtime dependencies. The platform marker means pip will
-    # silently skip them on macOS/Linux dev installs but install them by default
-    # on Windows. Do NOT make these optional extras — every Windows deployment
-    # needs both. pywin32 is required for the FILE_SHARE_NONE exclusive-open
-    # check (see docs/AGENT_NOTES § Watcher); winsdk is required for toasts in
-    # the tray process. Missing either silently breaks core functionality.
+    # Windows-only: file-share / exclusive-open check in the watcher.
+    # pywin32 is lightweight and fast to install — keep it in core.
     "pywin32>=306; sys_platform == 'win32'",
-    "winsdk>=1.0.0b10; sys_platform == 'win32'",
 
     # mTLS deferred to v1.1, but the package is needed for the PFX→PEM split
     # (see docs/AGENT_NOTES § Future).
@@ -69,6 +60,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+tray = [
+    # System tray icon + Windows toast notifications.
+    # Install with: pip install mdqc[tray]
+    "pystray>=0.19",
+    "pillow>=10.2",
+    "winsdk>=1.0.0b10; sys_platform == 'win32'",
+]
 dev = [
     "ruff>=0.3",
     "mypy>=1.9",
