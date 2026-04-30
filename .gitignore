@@ -52,3 +52,7 @@ logs_local/
 
 # Frozen build artifacts (user re-builds locally or in CI)
 src/mdqc/_assets_bundle/
+
+# Test run artefacts
+pytest_live_output.txt
+tests/live_results_*.json

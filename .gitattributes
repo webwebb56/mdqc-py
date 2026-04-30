@@ -1,0 +1,24 @@
+# Normalise line endings: store LF in the repo, check out native on each
+# platform. Avoids the "warning: LF will be replaced by CRLF" churn on
+# Windows clones.
+* text=auto eol=lf
+
+# Binary files (never normalise)
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.7z        binary
+
+# Skyline and proteomics binaries
+*.sky       binary
+*.skyd      binary
+*.skyl      binary
+*.skyr      binary
+*.blib      binary
+*.raw       binary
