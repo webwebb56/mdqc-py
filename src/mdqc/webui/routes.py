@@ -48,9 +48,10 @@ def register(app: FastAPI, state: AppState) -> None:
     _ensure_static_assets()
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    from mdqc.webui import dashboard, diagnostics, failed, logs, wizard
+    from mdqc.webui import dashboard, diagnostics, failed, logs, settings, wizard
 
     app.include_router(dashboard.router)
+    app.include_router(settings.router)
     app.include_router(wizard.router)
     app.include_router(diagnostics.router)
     app.include_router(failed.router)

@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Settings — MD QC Agent{% endblock %}
+{% block content %}
+<style>
+  .settings-header {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .settings-header h1 { margin: 0; }
+
+  .section-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1rem;
+  }
+  .section-heading h2 { margin: 0; font-size: 1.05em; }
+
+  .dot { font-size: 1.1em; line-height: 1; }
+  .dot.ok  { color: var(--good); }
+  .dot.bad { color: var(--bad); }
+  .dot.muted { color: var(--muted); }
+
+  .status-msg { font-size: 0.82em; margin-left: auto; }
+  .status-msg.ok    { color: var(--good); }
+  .status-msg.bad   { color: var(--bad); }
+  .status-msg.muted { color: var(--muted); }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.6rem;
+  }
+  .field-row label { margin: 0; font-weight: 500; }
+  .field-hint { font-size: 0.8em; color: var(--muted); margin-top: 0.1rem; }
+
+  .save-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 -1.25rem -1.25rem;
+  }
+  .banner {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.9em;
+  }
+  .banner.ok  { background: #eef8ee; border: 1px solid var(--good); color: var(--good); }
+  .banner.bad { background: #fdf0f0; border: 1px solid var(--bad);  color: var(--bad); }
+
+  input[type=text], input[type=number], input[type=password], select {
+    max-width: 100%;
+  }
+  .token-row { display: flex; gap: 0.5rem; align-items: center; }
+  .token-row input { flex: 1; max-width: 400px; }
+</style>
+
+{% if saved %}
+<div class="banner ok">✓ Settings saved successfully.</div>
+{% endif %}
+{% if error %}
+<div class="banner bad">✗ {{ error }}</div>
+{% endif %}
+
+<div class="settings-header">
+  <h1>Settings</h1>
+</div>
+
+<form method="post" action="/settings">
+
+  {# ── Instrument ─────────────────────────────────────────────────────── #}
+  <section class="panel">
+    <div class="section-heading">
+      <span class="dot {{ status_instrument.state }}">●</span>
+      <h2>Instrument</h2>
+      <span class="status-msg {{ status_instrument.state }}">{{ status_instrument.message }}</span>
+    </div>
+
+    <div class="field-row">
+      <label for="instrument_id">Instrument ID</label>
+      <div>
+        <input type="text" id="instrument_id" name="instrument_id"
+               value="{{ inst.id if inst else '' }}" placeholder="e.g. Astral_0001">
+        <div class="field-hint">Unique name for this instrument — used in payload metadata.</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label for="vendor">Vendor</label>
+      <select id="vendor" name="vendor">
+        {% for v in vendors %}
+        <option value="{{ v }}" {% if inst and inst.vendor.value == v %}selected{% endif %}>
+          {{ v | capitalize }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field-row">
+      <label for="watch_path">Watch path</label>
+      <div>
+        <input type="text" id="watch_path" name="watch_path"
+               value="{{ inst.watch_path if inst else '' }}"
+               placeholder="e.g. D:\Data">
+        <div class="field-hint">Directory the agent monitors for new raw files.</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label for="file_pattern">File pattern</label>
+      <div>
+        <input type="text" id="file_pattern" name="file_pattern"
+               value="{{ inst.file_pattern if inst else '*' }}"
+               placeholder="*.raw">
+        <div class="field-hint">Glob pattern for files to pick up (e.g. <code>*.raw</code>, <code>*.d</code>).</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label for="template">Template</label>
+      <div>
+        <input type="text" id="template" name="template"
+               value="{{ inst.template if inst else 'QC_Method.sky' }}"
+               placeholder="QC_Method.sky">
+        <div class="field-hint">
+          Skyline template filename or absolute path.
+          Status: <span class="{{ status_template.state }}">{{ status_template.message }}</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── Skyline ────────────────────────────────────────────────────────── #}
+  <section class="panel">
+    <div class="section-heading">
+      <span class="dot {{ status_skyline.state }}">●</span>
+      <h2>Skyline</h2>
+      <span class="status-msg {{ status_skyline.state }}">{{ status_skyline.message }}</span>
+    </div>
+
+    <div class="field-row">
+      <label for="skyline_path">SkylineCmd path</label>
+      <div>
+        <input type="text" id="skyline_path" name="skyline_path"
+               value="{{ cfg.skyline.path }}"
+               placeholder="auto">
+        <div class="field-hint">Leave <code>auto</code> to detect from registry and common paths.</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label for="skyline_timeout">Timeout (seconds)</label>
+      <input type="number" id="skyline_timeout" name="skyline_timeout"
+             value="{{ cfg.skyline.timeout_seconds }}" min="60" max="3600" style="max-width:120px;">
+    </div>
+
+    <div class="field-row">
+      <label for="skyline_priority">Process priority</label>
+      <select id="skyline_priority" name="skyline_priority">
+        {% for p in priorities %}
+        <option value="{{ p }}" {% if cfg.skyline.process_priority == p %}selected{% endif %}>
+          {{ p.replace("_", " ") | capitalize }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+  </section>
+
+  {# ── Cloud ──────────────────────────────────────────────────────────── #}
+  <section class="panel">
+    <div class="section-heading">
+      <span class="dot {{ status_cloud.state }}">●</span>
+      <h2>Cloud</h2>
+      <span class="status-msg {{ status_cloud.state }}">{{ status_cloud.message }}</span>
+    </div>
+
+    <div class="field-row">
+      <label for="cloud_endpoint">Endpoint</label>
+      <input type="text" id="cloud_endpoint" name="cloud_endpoint"
+             value="{{ cfg.cloud.endpoint }}"
+             placeholder="https://qc-ingest.massdynamics.com/v1/">
+    </div>
+
+    <div class="field-row">
+      <label for="api_token">API token</label>
+      <div class="token-row">
+        <input type="password" id="api_token" name="api_token"
+               value="{{ cfg.cloud.api_token or '' }}"
+               placeholder="Leave blank for local-only mode"
+               autocomplete="off">
+      </div>
+    </div>
+    <div class="field-hint" style="margin-left:160px; padding-left:1rem;">
+      No token = payloads stored locally and not uploaded.
+    </div>
+  </section>
+
+  {# ── Agent ──────────────────────────────────────────────────────────── #}
+  <section class="panel">
+    <div class="section-heading">
+      <span class="dot ok">●</span>
+      <h2>Agent</h2>
+    </div>
+
+    <div class="field-row">
+      <label for="log_level">Log level</label>
+      <select id="log_level" name="log_level" style="max-width:160px;">
+        {% for lvl in log_levels %}
+        <option value="{{ lvl }}" {% if cfg.agent.log_level == lvl %}selected{% endif %}>
+          {{ lvl | capitalize }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field-row">
+      <label for="enable_toasts">Toast notifications</label>
+      <label style="font-weight:normal;">
+        <input type="checkbox" id="enable_toasts" name="enable_toasts"
+               value="true" {% if cfg.agent.enable_toast_notifications %}checked{% endif %}>
+        Show Windows toast notifications
+      </label>
+    </div>
+  </section>
+
+  <div class="save-bar">
+    <button type="submit" class="btn btn-primary">Save settings</button>
+    <span class="muted" style="font-size:0.85em;">
+      Config file: <code>{{ config_path }}</code>
+    </span>
+  </div>
+
+</form>
+{% endblock %}
