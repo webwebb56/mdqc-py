@@ -63,13 +63,8 @@
   .token-row { display: flex; gap: 0.5rem; align-items: center; }
   .token-row input { flex: 1; max-width: 400px; }
 
-  .instrument-panel {
-    position: relative;
-  }
   .instrument-panel .remove-btn {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
+    margin-left: 1rem;
     background: none;
     border: 1px solid var(--bad);
     color: var(--bad);
@@ -78,6 +73,8 @@
     font-size: 0.8em;
     cursor: pointer;
     line-height: 1.4;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .instrument-panel .remove-btn:hover {
     background: #fdf0f0;
@@ -121,11 +118,11 @@
   <div id="instruments-container">
     {% for ic in instruments_ctx %}
     <section class="panel instrument-panel" data-idx="{{ ic.idx }}">
-      <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
       <div class="section-heading">
         <span class="dot {{ ic.status.state }}">●</span>
         <h2>Instrument {% if instruments_ctx | length > 1 %}{{ loop.index }}{% endif %}</h2>
         <span class="status-msg {{ ic.status.state }}">{{ ic.status.message }}</span>
+        <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
       </div>
 
       <div class="field-row">
@@ -183,11 +180,11 @@
     {% if not instruments_ctx %}
     {# Render a blank instrument panel if none configured #}
     <section class="panel instrument-panel" data-idx="0">
-      <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
       <div class="section-heading">
         <span class="dot muted">●</span>
         <h2>Instrument 1</h2>
         <span class="status-msg muted">Not configured</span>
+        <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
       </div>
 
       <div class="field-row">
@@ -361,11 +358,11 @@ function addInstrument() {
 
   const html = `
   <section class="panel instrument-panel" data-idx="${idx}">
-    <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
     <div class="section-heading">
       <span class="dot muted">●</span>
       <h2>Instrument</h2>
       <span class="status-msg muted">Not saved yet</span>
+      <button type="button" class="remove-btn" onclick="removeInstrument(this)" title="Remove instrument">✕ Remove</button>
     </div>
 
     <div class="field-row">
