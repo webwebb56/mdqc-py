@@ -1,103 +1,173 @@
-# MD QC Agent (Python)
+# MD QC Agent
 
-**Automated quality control monitoring for mass spectrometry instruments — Python implementation.**
+**Automated quality-control monitoring for mass-spectrometry instruments.**
 
-This is a Python port of the Rust [`mdqc-agent`](https://github.com/MassDynamics/MD-EVOSEP-system-suitability-control). It implements the same data path (watch → finalize → classify → extract → spool → upload), reads the same `config.toml`, and produces payloads compatible with the same MD cloud ingest endpoint and Streamlit dashboard.
+A small background service that watches your acquisition folder, runs targeted
+Skyline extractions on every new raw file, and surfaces the results in a
+single-page Levey-Jennings dashboard — designed for operators who want to spot
+chromatography drift, calibration shifts, and sample-prep issues *before* they
+contaminate weeks of data.
 
-## Status
+Built by [Mass Dynamics](https://massdynamics.com). MIT-licensed.
 
-- **Phase 0–6 complete** (foundations, modules, IPC, web UI, packaging, installer, CI).
-- **321 tests passing** (`pytest -q`), 3 skipped (`windows_only` markers on macOS/Linux).
-- **Status: alpha.** End-to-end smoke test (watcher → finalizer → spool → uploader-in-local-only-mode) passes on macOS/Linux with a `FakeExtractor`. Real-Skyline run on a Windows VM is the next acceptance gate; see `docs/PLAN.md § Phase 6` for the remaining acceptance criteria.
+---
 
-## Why a Python port
+## What it does
 
-- Aligns the agent's tech stack with the rest of MD's Python-first codebase (Streamlit dashboard, MCP server, analysis tooling).
-- Lower contribution barrier — anyone on the team can read and extend it.
-- Shared payload schema with the Rust agent allows side-by-side rollout during migration.
+- **Watches** any folder containing `.raw` files (Thermo, Sciex, Bruker, Agilent)
+- **Detects** stable files (configurable size/mtime quiescence window) and
+  classifies them by filename: QC A / QC B / SSC₀ / blank / sample
+- **Extracts** per-peptide QC metrics with a real Skyline run — no copies,
+  no proxies, the same numbers an analyst would get manually
+- **Spools** results to disk as structured JSON payloads, with optional
+  upload to the Mass Dynamics cloud
+- **Visualises** the longitudinal trend in a [Streamlit](https://streamlit.io)
+  dashboard — Levey-Jennings with Westgard rules, peptide grouping by
+  retention-time bin, scorecard heatmaps, and method-vs-file mismatch
+  diagnostics
 
-## Architecture at a glance
+The whole thing runs **locally** — no cloud connection is required for the
+core monitoring loop.
 
-Two cooperating processes:
+---
 
-- **`mdqc.exe run --service-mode`** — headless background service, NSSM-managed. Runs the watcher, extractor, spool, uploader, and a localhost FastAPI for the wizard/dashboard.
-- **`mdqc.exe tray`** — per-user UI process started at login. Tray icon, browser launcher, toast notifications. Talks to the service over loopback HTTP with a token written to `runtime.json`.
-
-See `docs/PLAN.md § 2.5 Process model` for the full picture.
-
-## Quick start (developer)
+## Quick start
 
 ```bash
 git clone https://github.com/MassDynamics/mdqc-py
 cd mdqc-py
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-# Run tests (321 should pass, 3 windows_only skips on macOS/Linux).
-pytest -q
-
-# Lint
-ruff check src tests
-
-# Smoke-test the bundle wiring (no Skyline required).
-pytest tests/integration -v
-
-# Verify all runtime modules import cleanly.
-mdqc selfcheck
-
-# Run in foreground (dev mode: service + tray work in one process).
-mdqc run --foreground
+python -m venv .venv && .venv\Scripts\activate    # macOS/Linux: source .venv/bin/activate
+pip install -e ".[plots]"
 ```
 
-## Building the Windows installer
-
+### Run the agent
 ```bash
-# One-time: install build extras.
-pip install -e ".[dev,build]"
+python -m mdqc run --foreground
+```
+Watches the folders configured in `config.toml` and processes every new file.
 
-# Build the PyInstaller binary into dist/mdqc(.exe). Verifies via mdqc selfcheck.
-python scripts/build.py --clean
+### Run the dashboard
+```bash
+streamlit run src/mdqc/plots/app.py
+```
+Opens at <http://localhost:8501>.
 
-# Build the Inno Setup installer into dist/installer/
-# (Windows only; on macOS/Linux this prints an informational message and exits.)
-python scripts/package.py
+For full operator setup (config, Skyline templates, troubleshooting), see
+**[docs/EVOSEP_PROTOTYPE_SETUP.md](./docs/EVOSEP_PROTOTYPE_SETUP.md)**.
+
+---
+
+## Architecture
+
+Two cooperating processes:
+
+| Process | Role |
+|---|---|
+| **Agent** (`python -m mdqc run`) | Headless service. Filesystem watcher → finalizer → classifier → Skyline extractor → payload spool. Optional uploader and FastAPI control endpoint. |
+| **Dashboard** (`streamlit run …/plots/app.py`) | Reads payloads from `spool/completed/`. No coupling to the agent — works on a snapshot, copy, or the live folder. |
+
+Each Skyline extraction runs in its own temp directory with hardlinked
+spectral libraries, so concurrent extractions don't fight over the shared
+`.skyd` chromatogram cache.
+
+Payloads are JSON files, one per run, with a stable schema:
+```jsonc
+{
+  "run":          { "instrument_id": "...", "raw_file_name": "...", "acquisition_time": "...", "control_type": "QC_A" },
+  "extraction":   { "status": "SUCCESS", "extraction_time_ms": 22450, "skyline_version": "..." },
+  "run_metrics":  { "targets_found": 48, "targets_expected": 48, "median_rt_shift": 0.012, "median_mass_error_ppm": -3.21 },
+  "target_metrics": [
+    { "peptide_sequence": "PVSSAASVYAGAGGSGSR", "retention_time": 2.22, "peak_area": 7625766, "mass_error_ppm": -3.4, "detected": true, ... },
+    ...
+  ]
+}
 ```
 
-See `installer/README.md` for the NSSM dependency and the release flow.
+---
+
+## Dashboard
+
+A single-page view designed to be glanceable on a 1080p monitor:
+
+- **Status banner** — System nominal / Watch / Out-of-control, plain English
+- **KPI tiles** — Latest file, target recovery, mass error, RT shift, run count
+- **Scorecard** — heatmap of recent runs × QC metrics, coloured by % of
+  peptides exceeding ±2σ
+- **Levey-Jennings grid** — one panel per metric, peptides grouped into
+  retention-time bins (early / mid / late / very late), median z-score line
+  with IQR band
+
+Empty metrics are auto-hidden. Method-file mismatches surface as a
+diagnostic banner before they contaminate the trend.
+
+---
+
+## Status
+
+**Alpha — first Evosep pilot in progress.**
+
+Pipeline is end-to-end functional on Windows + Astral DIA + Whisper
+chromatography, validated with 13-run Evosep replay tests at 48/48 target
+recovery. Multi-instrument config and cloud upload are wired but not
+hardened. See [docs/EVOSEP_PROTOTYPE_SETUP.md § Known limitations](./docs/EVOSEP_PROTOTYPE_SETUP.md)
+for the current scope envelope.
+
+---
 
 ## Documentation
 
-| File | Purpose |
+| Document | Audience |
 |---|---|
-| [`docs/PLAN.md`](./docs/PLAN.md) | Architecture, project layout, phased build plan, tech stack, packaging strategy |
-| [`docs/AGENT_NOTES.md`](./docs/AGENT_NOTES.md) | **Read before touching any module.** Gotchas, magic numbers, scar tissue from the Rust implementation. |
-| [`docs/REVIEW_FINDINGS.md`](./docs/REVIEW_FINDINGS.md) | Initial review of the plan and the fixes applied |
+| [docs/EVOSEP_PROTOTYPE_SETUP.md](./docs/EVOSEP_PROTOTYPE_SETUP.md) | **Operators** — install, configure, run, troubleshoot |
+| [docs/PLAN.md](./docs/PLAN.md) | Architecture, project layout, design decisions |
+| [docs/AGENT_NOTES.md](./docs/AGENT_NOTES.md) | Contributors — gotchas and invariants per module |
+
+---
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+
+pytest -q                              # full suite
+pytest tests/test_live_e2e.py -m live  # live replay against a running agent
+ruff check src tests
+mypy src
+```
+
+The [installer/](./installer) directory has the Windows packaging recipe
+(PyInstaller + Inno Setup + NSSM service registration).
+
+---
 
 ## Project layout
 
 ```
 src/mdqc/
-├── types.py              # Enums (ControlType, Vendor, FinalizationState…)
-├── config/               # Pydantic schema + paths + defaults (every magic number)
-├── log.py                # structlog setup
-├── classifier.py         # Filename → ControlType
-├── metrics.py            # Per-target + run-level metric computation
-├── baseline.py           # Baseline cache and comparison
-├── spool/                # Durable on-disk queue (atomic state transitions)
-├── watcher/              # File detection + finalization state machine
-├── extractor/            # Skyline subprocess + CSV report parsing
-├── uploader.py           # httpx + tenacity (4 inter-retry sleeps, see AGENT_NOTES)
-├── failed_files.py       # Persistent failed-files store
-├── activity_log.py       # Recent activity log
-├── notifications.py      # winsdk toasts (tray process only)
-├── crash.py              # excepthook + faulthandler + crash dialog
-├── update_checker.py     # GitHub releases poll
-├── ipc/                  # runtime.json + httpx client (tray↔service)
-├── service/              # asyncio lifecycle + signal handling
-├── webui/                # FastAPI app + HTMX templates
-└── cli/                  # typer subcommands
+├── classifier.py        # filename → ControlType + instrument id extraction
+├── config/              # pydantic schema, paths, defaults
+├── watcher/             # filesystem events, stability window, finalizer
+├── extractor/           # Skyline subprocess, CSV parsing, alias map
+├── spool/               # durable on-disk queue (atomic state transitions)
+├── service/             # asyncio lifecycle, signal handling, FastAPI
+├── webui/               # in-agent control web UI (FastAPI + HTMX)
+├── plots/               # Streamlit QC dashboard
+├── ipc/                 # runtime.json + loopback HTTP for cross-process control
+├── cli/                 # typer subcommands (run, classify, selfcheck …)
+├── uploader.py          # tenacity-driven cloud upload
+└── activity_log.py      # rolling recent-runs log for the web UI
 ```
+
+---
 
 ## License
 
-Apache 2.0 — see [LICENSE](./LICENSE).
+[MIT](./LICENSE) — free to use, modify, and redistribute, including
+commercially. Attribution appreciated.
+
+---
+
+## Contact
+
+Issues: <https://github.com/MassDynamics/mdqc-py/issues>
+Engineering: engineering@massdynamics.com
