@@ -137,6 +137,14 @@ async def dashboard(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/dashboard/status", response_class=HTMLResponse)
+async def status_fragment(request: Request) -> HTMLResponse:
+    templates = get_templates(request)
+    return templates.TemplateResponse(
+        request, "dashboard/status_fragment.html", _dashboard_context(request)
+    )
+
+
 @router.get("/dashboard/queue", response_class=HTMLResponse)
 async def queue_fragment(request: Request) -> HTMLResponse:
     templates = get_templates(request)

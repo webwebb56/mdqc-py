@@ -1,0 +1,48 @@
+<div class="grid">
+  <div class="metric">
+    <div class="label">Status</div>
+    <div class="value {% if paused %}warn{% else %}ok{% endif %}">
+      {% if paused %}Paused{% else %}Running{% endif %}
+    </div>
+  </div>
+  <div class="metric">
+    <div class="label">Agent ID</div>
+    <div class="value" style="font-size:1em;">{{ agent_id }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Uptime</div>
+    <div class="value" style="font-size:1em;">{{ uptime }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Cloud</div>
+    <div class="value" style="font-size:1em;">{{ cloud_mode }}</div>
+  </div>
+</div>
+
+<div class="control-bar">
+  {% if paused %}
+  <button class="btn btn-primary"
+          hx-post="/api/resume"
+          hx-target="#service-status"
+          hx-swap="innerHTML"
+          hx-trigger="click"
+          hx-on::after-request="htmx.trigger('#service-status', 'refresh')">
+    ▶ Resume
+  </button>
+  {% else %}
+  <button class="btn btn-secondary"
+          hx-post="/api/pause"
+          hx-target="#service-status"
+          hx-swap="innerHTML"
+          hx-trigger="click"
+          hx-on::after-request="htmx.trigger('#service-status', 'refresh')">
+    ⏸ Pause
+  </button>
+  {% endif %}
+
+  <button class="btn btn-danger"
+          onclick="confirmRestart()"
+          id="restart-btn">
+    ↺ Restart
+  </button>
+</div>

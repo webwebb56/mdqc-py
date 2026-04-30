@@ -1,29 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — MD QC Agent{% endblock %}
 {% block content %}
+<style>
+  .control-bar {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--bad);
+    color: var(--bad);
+  }
+  .btn-danger:hover { background: #fdf0f0; }
+</style>
+
 <h1>Dashboard</h1>
 
 <section class="panel">
   <h2>Service</h2>
-  <div class="grid">
-    <div class="metric">
-      <div class="label">Status</div>
-      <div class="value {% if paused %}warn{% else %}ok{% endif %}">
-        {% if paused %}Paused{% else %}Running{% endif %}
-      </div>
-    </div>
-    <div class="metric">
-      <div class="label">Agent ID</div>
-      <div class="value" style="font-size:1em;">{{ agent_id }}</div>
-    </div>
-    <div class="metric">
-      <div class="label">Uptime</div>
-      <div class="value" style="font-size:1em;">{{ uptime }}</div>
-    </div>
-    <div class="metric">
-      <div class="label">Cloud</div>
-      <div class="value" style="font-size:1em;">{{ cloud_mode }}</div>
-    </div>
+  <div id="service-status"
+       hx-get="/dashboard/status"
+       hx-trigger="every 10s"
+       hx-swap="innerHTML">
+    {% include "dashboard/status_fragment.html" %}
   </div>
 </section>
 
@@ -61,4 +63,31 @@
     {% include "dashboard/activity_fragment.html" %}
   </div>
 </section>
+
+<script>
+function confirmRestart() {
+  if (!confirm('Restart the QC agent service?\n\nThe page will become unavailable briefly while it restarts.')) return;
+  const btn = document.getElementById('restart-btn');
+  btn.disabled = true;
+  btn.textContent = 'Restarting…';
+  fetch('/api/restart', { method: 'POST' })
+    .then(() => {
+      // Poll until the service is back up
+      const start = Date.now();
+      const poll = setInterval(() => {
+        fetch('/api/health')
+          .then(r => { if (r.ok) { clearInterval(poll); window.location.reload(); } })
+          .catch(() => {});
+        if (Date.now() - start > 30000) {
+          clearInterval(poll);
+          btn.textContent = 'Service stopped — restart manually';
+        }
+      }, 1500);
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = '↺ Restart';
+    });
+}
+</script>
 {% endblock %}

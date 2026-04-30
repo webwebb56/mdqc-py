@@ -210,6 +210,12 @@ def build_api(state: AppState) -> FastAPI:
         state.events_pubsub.publish(EVENT_RESUMED, {})
         return {"ok": True}
 
+    @app.post("/api/restart")
+    async def restart_endpoint() -> dict[str, bool]:
+        loop = asyncio.get_event_loop()
+        loop.call_later(0.5, state.stop_event.set)
+        return {"ok": True}
+
     @app.post("/api/reprocess")
     async def reprocess_endpoint(body: dict[str, Any]) -> dict[str, bool]:
         path_raw = body.get("path")
