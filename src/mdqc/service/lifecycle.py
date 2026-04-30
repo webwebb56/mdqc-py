@@ -321,14 +321,29 @@ def attach_webui(state: AppState) -> None:
 
 
 def _instrument_for_path(cfg: Config, path: Path) -> InstrumentConfig | None:
-    s = str(path)
+    # Compare both the literal path and the OS-resolved path to handle mapped
+    # drives and junctions where .resolve() returns a different canonical form.
+    try:
+        s_resolved = str(path.resolve())
+    except OSError:
+        s_resolved = str(path)
+    s_raw = str(path)
+
     for inst in cfg.instruments:
-        try:
-            inst_root = str(inst.watch_path.resolve())
-        except OSError:
-            inst_root = str(inst.watch_path)
-        if s.startswith(inst_root):
-            return inst
+        for s in (s_raw, s_resolved):
+            try:
+                if s.startswith(str(inst.watch_path.resolve())):
+                    return inst
+            except OSError:
+                pass
+            if s.startswith(str(inst.watch_path)):
+                return inst
+
+    # Single-instrument fallback: if the path can't be matched to a watch_path
+    # (e.g. due to drive mapping), use the only configured instrument.
+    if len(cfg.instruments) == 1:
+        return cfg.instruments[0]
+
     return None
 
 
@@ -543,7 +558,11 @@ async def _prune_loop(state: AppState) -> None:
     try:
         while not state.stop_event.is_set():
             try:
-                prune_spool()
+                prune_spool(
+                    max_pending_mb=state.cfg.spool.max_pending_mb,
+                    max_age_days=state.cfg.spool.max_age_days,
+                    completed_retention=state.cfg.spool.completed_retention_count,
+                )
             except Exception:
                 log.exception("prune_failed")
             with contextlib.suppress(TimeoutError):

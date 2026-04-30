@@ -52,13 +52,17 @@ KNOWN_METRIC_DEFS: list[tuple[str, str, bool]] = [
 
 _KNOWN_LABELS: dict[str, str] = {col: label for col, label, _ in KNOWN_METRIC_DEFS}
 
-# Metadata columns that should not be treated as metrics
+# Metadata columns that should not be treated as metrics. Includes Skyline-
+# report extras that look numeric but are constant per target (e.g. "Precursor
+# Charge" arrives via extra_metrics) and so are useless on Levey-Jennings.
 _META_COLS = {
     "timestamp", "acquisition_time", "instrument_id", "raw_file_name",
-    "control_type", "method_name", "column_info", "target_id",
+    "control_type", "method_name", "column_info", "target_id", "target_label",
     "protein_name", "peptide_sequence", "precursor_mz", "precursor_charge",
     "detected", "targets_found", "targets_expected", "median_rt_shift",
     "median_mass_error_ppm",
+    # Constants per target — never useful as LJ metrics
+    "Precursor Charge", "Charge", "Mz",
 }
 
 
@@ -138,6 +142,13 @@ def load_payloads(folder: str) -> pd.DataFrame:
         run_metrics = payload.get("run_metrics", {})
 
         for target in payload.get("target_metrics", []):
+            peptide_seq = target.get("peptide_sequence") or ""
+            charge = target.get("extra_metrics", {}).get("Precursor Charge")
+            # Human-readable label: peptide+charge if available, else target_id, else hash
+            if peptide_seq:
+                label = f"{peptide_seq}+{int(charge)}" if charge else peptide_seq
+            else:
+                label = target.get("target_id", "") or "unknown"
             rec = {
                 "timestamp": timestamp,
                 "acquisition_time": acquisition_time,
@@ -147,8 +158,9 @@ def load_payloads(folder: str) -> pd.DataFrame:
                 "method_name": method_name,
                 "column_info": column_info,
                 "target_id": target.get("target_id", ""),
+                "target_label": label,
                 "protein_name": target.get("protein_name", ""),
-                "peptide_sequence": target.get("peptide_sequence", ""),
+                "peptide_sequence": peptide_seq,
                 "precursor_mz": target.get("precursor_mz"),
                 "precursor_charge": target.get("precursor_charge"),
                 "retention_time": target.get("retention_time"),
@@ -258,6 +270,7 @@ def build_figure(
     df: pd.DataFrame,
     log_area: bool,
     metric_defs: list[tuple[str, str, bool]],
+    time_col: str = "acquisition_time",
 ) -> go.Figure:
     """Build a subplot figure with one trace per target_id per metric."""
     n_metrics = len(metric_defs)
@@ -271,9 +284,10 @@ def build_figure(
         subplot_titles=subplot_titles,
     )
 
-    target_ids = sorted(df["target_id"].unique())
-    colors = _color_palette(len(target_ids))
-    color_map = dict(zip(target_ids, colors))
+    label_col = "target_label" if "target_label" in df.columns else "target_id"
+    target_labels = sorted(df[label_col].dropna().unique())
+    colors = _color_palette(len(target_labels))
+    color_map = dict(zip(target_labels, colors))
 
     for row_idx, (col_name, _label, _is_log) in enumerate(metric_defs, start=1):
         if col_name not in df.columns:
@@ -282,13 +296,13 @@ def build_figure(
         if sub.empty:
             continue
 
-        for tid in target_ids:
-            tdf = sub[sub["target_id"] == tid]
+        for tid in target_labels:
+            tdf = sub[sub[label_col] == tid]
             if tdf.empty:
                 continue
             fig.add_trace(
                 go.Scatter(
-                    x=tdf["acquisition_time"],
+                    x=tdf[time_col],
                     y=tdf[col_name],
                     mode="lines+markers",
                     name=tid,
@@ -322,7 +336,8 @@ def build_figure(
         ),
         margin=dict(l=60, r=20, t=80, b=40),
     )
-    fig.update_xaxes(title_text="Acquisition Time", row=n_metrics, col=1)
+    x_title = "Payload Time" if time_col == "timestamp" else "Acquisition Time"
+    fig.update_xaxes(title_text=x_title, row=n_metrics, col=1)
     return fig
 
 
@@ -334,6 +349,7 @@ def build_lj_figure(
     metric_defs: list[tuple[str, str, bool]],
     baseline_mode: str = "All runs",
     baseline_n: int = 20,
+    time_col: str = "acquisition_time",
 ) -> go.Figure:
     """Build a Levey-Jennings chart with z-score normalization and Westgard rules."""
     n_metrics = len(metric_defs)
@@ -347,9 +363,10 @@ def build_lj_figure(
         subplot_titles=subplot_titles,
     )
 
-    target_ids = sorted(df["target_id"].unique())
-    colors = _color_palette(len(target_ids))
-    color_map = dict(zip(target_ids, colors))
+    label_col = "target_label" if "target_label" in df.columns else "target_id"
+    target_labels = sorted(df[label_col].dropna().unique())
+    colors = _color_palette(len(target_labels))
+    color_map = dict(zip(target_labels, colors))
 
     legend_shown: set[str] = set()
 
@@ -360,8 +377,8 @@ def build_lj_figure(
         if sub.empty:
             continue
 
-        for tid in target_ids:
-            tdf = sub[sub["target_id"] == tid].copy()
+        for tid in target_labels:
+            tdf = sub[sub[label_col] == tid].copy()
             if tdf.empty:
                 continue
 
@@ -371,7 +388,7 @@ def build_lj_figure(
                 baseline_vals = vals.iloc[-baseline_n:]
             elif baseline_mode == "Last N days":
                 cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=baseline_n)
-                baseline_mask = tdf["acquisition_time"] >= cutoff
+                baseline_mask = tdf[time_col] >= cutoff
                 baseline_vals = vals[baseline_mask]
                 if len(baseline_vals) < 2:
                     baseline_vals = vals
@@ -411,7 +428,7 @@ def build_lj_figure(
 
                 fig.add_trace(
                     go.Scatter(
-                        x=pts["acquisition_time"],
+                        x=pts[time_col],
                         y=pts["_z"],
                         mode="markers",
                         name=legend_name,
@@ -452,7 +469,8 @@ def build_lj_figure(
         ),
         margin=dict(l=60, r=20, t=80, b=40),
     )
-    fig.update_xaxes(title_text="Acquisition Time", row=n_metrics, col=1)
+    x_title = "Payload Time" if time_col == "timestamp" else "Acquisition Time"
+    fig.update_xaxes(title_text=x_title, row=n_metrics, col=1)
     return fig
 
 
@@ -476,131 +494,669 @@ def _color_palette(n: int) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Single-page helpers — RT-binned grouping, scorecard, decision summary.
+# ---------------------------------------------------------------------------
+# Refined Tailwind-inspired palette — same hue families, more designed.
+_RT_BIN_COLORS = {
+    "Early (<2 min)":     "#3b82f6",   # blue-500
+    "Mid (2–3 min)":      "#10b981",   # emerald-500
+    "Late (3–4.5 min)":   "#f59e0b",   # amber-500
+    "Very late (≥4.5)":   "#ef4444",   # red-500
+    "Unknown":            "#94a3b8",   # slate-400
+}
+
+
+def _assign_rt_bin(rt: float | None) -> str:
+    if rt is None or pd.isna(rt):
+        return "Unknown"
+    if rt < 2:        return "Early (<2 min)"
+    if rt < 3:        return "Mid (2–3 min)"
+    if rt < 4.5:      return "Late (3–4.5 min)"
+    return "Very late (≥4.5)"
+
+
+def _zscore_per_peptide(
+    df: pd.DataFrame, metric_col: str, baseline_mode: str, baseline_n: int, time_col: str,
+) -> pd.DataFrame:
+    """Add a `_z` column to df, computed per-peptide using the chosen baseline window."""
+    out = df.copy()
+    out["_z"] = np.nan
+    label_col = "target_label" if "target_label" in out.columns else "target_id"
+    for label, sub in out.groupby(label_col):
+        vals = sub[metric_col].dropna()
+        if len(vals) < 2:
+            continue
+        if baseline_mode == "Last N runs":
+            base = vals.iloc[-baseline_n:]
+        elif baseline_mode == "Last N days":
+            cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=baseline_n)
+            mask = sub.loc[vals.index, time_col] >= cutoff
+            base = vals[mask]
+            if len(base) < 2:
+                base = vals
+        else:
+            base = vals
+        m, s = base.mean(), base.std()
+        if s == 0 or pd.isna(s):
+            continue
+        out.loc[sub.index, "_z"] = (sub[metric_col] - m) / s
+    return out
+
+
+def build_grouped_lj(
+    df: pd.DataFrame,
+    metric_col: str,
+    metric_label: str,
+    time_col: str,
+    baseline_mode: str,
+    baseline_n: int,
+    height: int = 380,
+) -> go.Figure:
+    """Single LJ chart with peptides grouped by retention-time bin.
+
+    For each (run, RT-bin), plots the median z-score and an IQR-band, so
+    48 individual peptide traces collapse to 4 readable bands.
+    """
+    if metric_col not in df.columns:
+        return go.Figure().update_layout(height=height, title=f"{metric_label} — column not found")
+
+    df = df.dropna(subset=[metric_col, time_col]).copy()
+    if df.empty:
+        return go.Figure().update_layout(
+            height=height, title=f"{metric_label} — no data"
+        )
+
+    # Use each peptide's median observed RT as its bin assignment (stable across runs)
+    rt_per_peptide = df.groupby("peptide_sequence")["retention_time"].median() \
+        if "retention_time" in df.columns else None
+    if rt_per_peptide is not None:
+        df["_rt_bin"] = df["peptide_sequence"].map(lambda p: _assign_rt_bin(rt_per_peptide.get(p)))
+    else:
+        df["_rt_bin"] = "Unknown"
+
+    df = _zscore_per_peptide(df, metric_col, baseline_mode, baseline_n, time_col)
+    df = df.dropna(subset=["_z"])
+    if df.empty:
+        return go.Figure().update_layout(
+            height=height, title=f"{metric_label} — insufficient data for z-scores"
+        )
+
+    fig = go.Figure()
+
+    # Westgard threshold lines (drawn first so traces sit on top)
+    for y, dash, color in [
+        (0,  "solid", "#1f77b4"), (1,  "dash", "#2ca02c"), (-1, "dash", "#2ca02c"),
+        (2,  "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
+        (3,  "dash", "#d9534f"), (-3, "dash", "#d9534f"),
+    ]:
+        fig.add_hline(y=y, line=dict(color=color, width=1, dash=dash), opacity=0.4)
+
+    bin_order = ["Early (<2 min)", "Mid (2–3 min)", "Late (3–4.5 min)", "Very late (≥4.5)", "Unknown"]
+    seen_bins = [b for b in bin_order if b in df["_rt_bin"].unique()]
+
+    for rt_bin in seen_bins:
+        sub = df[df["_rt_bin"] == rt_bin]
+        if sub.empty:
+            continue
+        agg = sub.groupby(time_col)["_z"].agg(["median", "min", "max",
+                                                lambda s: s.quantile(0.25),
+                                                lambda s: s.quantile(0.75),
+                                                "count"]).reset_index()
+        agg.columns = [time_col, "median", "min", "max", "q25", "q75", "n"]
+        agg = agg.sort_values(time_col)
+        color = _RT_BIN_COLORS.get(rt_bin, "#7f7f7f")
+
+        # IQR band
+        fig.add_trace(go.Scatter(
+            x=pd.concat([agg[time_col], agg[time_col][::-1]]),
+            y=pd.concat([agg["q75"], agg["q25"][::-1]]),
+            fill="toself", fillcolor=color, opacity=0.12,
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+            name=f"{rt_bin} IQR",
+        ))
+        # Median line + markers — mark points outside ±2σ for attention
+        violation_mask = (agg["min"] < -2) | (agg["max"] > 2)
+        fig.add_trace(go.Scatter(
+            x=agg[time_col], y=agg["median"],
+            mode="lines+markers",
+            name=f"{rt_bin} (n={int(sub['peptide_sequence'].nunique())})",
+            line=dict(color=color, width=2),
+            marker=dict(
+                size=[10 if v else 6 for v in violation_mask],
+                color=color,
+                symbol=["diamond" if v else "circle" for v in violation_mask],
+                line=dict(width=1, color="#333"),
+            ),
+            hovertemplate=(
+                f"<b>{rt_bin}</b><br>"
+                "Time: %{x}<br>"
+                "Median z: %{y:.2f}<br>"
+                "IQR: [%{customdata[0]:.2f}, %{customdata[1]:.2f}]<br>"
+                "Range: [%{customdata[2]:.2f}, %{customdata[3]:.2f}]<br>"
+                "n peptides: %{customdata[4]}<extra></extra>"
+            ),
+            customdata=agg[["q25", "q75", "min", "max", "n"]].values,
+        ))
+
+    fig.update_layout(
+        height=height,
+        margin=dict(l=40, r=10, t=30, b=30),
+        yaxis=dict(title=f"{metric_label} (SD from mean)", range=[-4.5, 4.5]),
+        xaxis=dict(title="Acquisition Time" if time_col == "acquisition_time" else "Payload Time"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=10)),
+        hovermode="x unified",
+    )
+    return fig
+
+
+def build_all_metrics_grid(
+    df: pd.DataFrame,
+    metric_defs: list[tuple[str, str, bool]],
+    time_col: str,
+    baseline_mode: str,
+    baseline_n: int,
+    height: int = 600,
+    n_cols: int = 3,
+) -> go.Figure:
+    """Small-multiples grid: one compact LJ panel per metric, peptides grouped
+    by RT-bin. Shows every metric on the same page."""
+    metric_cols_all = [(c, lbl) for c, lbl, _ in metric_defs if c in df.columns]
+    if not metric_cols_all:
+        return go.Figure().update_layout(height=height, title="No metrics available")
+
+    # Pre-compute RT bin per peptide once (stable across panels)
+    if "retention_time" in df.columns:
+        rt_per_peptide = df.groupby("peptide_sequence")["retention_time"].median()
+    else:
+        rt_per_peptide = pd.Series(dtype=float)
+    df = df.copy()
+    df["_rt_bin"] = df["peptide_sequence"].map(lambda p: _assign_rt_bin(rt_per_peptide.get(p)))
+
+    # Pre-compute z-scores for every candidate metric and keep only the ones
+    # that actually produce data. Skips columns with too few non-null values
+    # to compute mean/SD per peptide (e.g. Library Dot Product when libraries
+    # weren't matched).
+    metric_cols = []
+    z_by_metric: dict[str, pd.DataFrame] = {}
+    for col, lbl in metric_cols_all:
+        sub = df.dropna(subset=[col, time_col])
+        if sub.empty:
+            continue
+        scored = _zscore_per_peptide(sub, col, baseline_mode, baseline_n, time_col)
+        if scored["_z"].notna().any():
+            metric_cols.append((col, lbl))
+            z_by_metric[col] = scored
+
+    if not metric_cols:
+        return go.Figure().update_layout(
+            height=height, title="No metric has enough data for z-scores yet"
+        )
+
+    n = len(metric_cols)
+    n_rows = (n + n_cols - 1) // n_cols
+
+    # Spacing scales with rows so subplots don't crowd each other regardless
+    # of grid dimensions.
+    v_spacing = max(0.05, min(0.10, 0.55 / max(n_rows, 1)))
+    fig = make_subplots(
+        rows=n_rows, cols=n_cols,
+        subplot_titles=[lbl for _, lbl in metric_cols],
+        shared_xaxes=True,
+        vertical_spacing=v_spacing,
+        horizontal_spacing=0.06,
+    )
+
+    bin_order = ["Early (<2 min)", "Mid (2–3 min)", "Late (3–4.5 min)", "Very late (≥4.5)", "Unknown"]
+    seen_bins_global = [b for b in bin_order if b in df["_rt_bin"].unique()]
+    legend_shown: set[str] = set()
+
+    for idx, (col, lbl) in enumerate(metric_cols):
+        row = idx // n_cols + 1
+        col_idx = idx % n_cols + 1
+
+        scored = z_by_metric[col].dropna(subset=["_z"])
+        if scored.empty:
+            continue
+
+        # Threshold lines
+        for y, dash, color in [
+            (0, "solid", "#1f77b4"),
+            (2, "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
+            (3, "dash", "#d9534f"), (-3, "dash", "#d9534f"),
+        ]:
+            fig.add_hline(y=y, line=dict(color=color, width=1, dash=dash),
+                          opacity=0.35, row=row, col=col_idx)
+
+        for rt_bin in seen_bins_global:
+            bin_df = scored[scored["_rt_bin"] == rt_bin]
+            if bin_df.empty:
+                continue
+            agg = bin_df.groupby(time_col)["_z"].agg(
+                ["median",
+                 lambda s: s.quantile(0.25),
+                 lambda s: s.quantile(0.75),
+                 "count"]
+            ).reset_index()
+            agg.columns = [time_col, "median", "q25", "q75", "n"]
+            agg = agg.sort_values(time_col)
+            color = _RT_BIN_COLORS.get(rt_bin, "#7f7f7f")
+            show_legend = rt_bin not in legend_shown
+            legend_shown.add(rt_bin)
+
+            # IQR band (no legend)
+            fig.add_trace(go.Scatter(
+                x=pd.concat([agg[time_col], agg[time_col][::-1]]),
+                y=pd.concat([agg["q75"], agg["q25"][::-1]]),
+                fill="toself", fillcolor=color, opacity=0.10,
+                line=dict(width=0), showlegend=False, hoverinfo="skip",
+            ), row=row, col=col_idx)
+
+            # Median line
+            fig.add_trace(go.Scatter(
+                x=agg[time_col], y=agg["median"],
+                mode="lines+markers",
+                name=rt_bin,
+                legendgroup=rt_bin,
+                showlegend=show_legend,
+                line=dict(color=color, width=1.5),
+                marker=dict(size=4, color=color),
+                hovertemplate=(
+                    f"<b>{lbl} · {rt_bin}</b><br>"
+                    "Time: %{x}<br>z: %{y:.2f}<extra></extra>"
+                ),
+            ), row=row, col=col_idx)
+
+        # Show y-axis title on the leftmost column only (saves horizontal space).
+        ytitle = "z-score (σ from baseline)" if col_idx == 1 else None
+        fig.update_yaxes(
+            range=[-4.5, 4.5], row=row, col=col_idx,
+            tickfont=dict(size=10, color="#475569"),
+            tickvals=[-3, -2, -1, 0, 1, 2, 3],
+            gridcolor="#e2e8f0",
+            zerolinecolor="#cbd5e1",
+            title=ytitle,
+            title_font=dict(size=10, color="#64748b"),
+        )
+        fig.update_xaxes(
+            tickfont=dict(size=10, color="#475569"),
+            gridcolor="#e2e8f0",
+            row=row, col=col_idx,
+        )
+
+    # Subplot title font sized to match the larger panels
+    for ann in fig.layout.annotations:
+        ann.font = dict(size=13, color="#0f172a", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif")
+
+    fig.update_layout(
+        height=height,
+        margin=dict(l=10, r=10, t=50, b=20),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=1.02,
+            xanchor="left", x=0,
+            font=dict(size=11, color="#334155",
+                      family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        hovermode="closest",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
+    )
+    return fig
+
+
+def build_scorecard(
+    df: pd.DataFrame, time_col: str, metric_defs: list[tuple[str, str, bool]],
+    baseline_mode: str, baseline_n: int, max_runs: int = 10,
+) -> go.Figure:
+    """Heatmap: rows = recent runs, columns = metrics. Cell color = % of peptides
+    out-of-control (> ±2σ) for that metric on that run."""
+    runs = (df.drop_duplicates("raw_file_name")
+              .sort_values(time_col, ascending=True)
+              .tail(max_runs)["raw_file_name"].tolist())
+    if not runs:
+        return go.Figure().update_layout(height=300, title="No runs to score")
+
+    metric_cols_all = [(c, lbl) for c, lbl, _ in metric_defs if c in df.columns]
+    if not metric_cols_all:
+        return go.Figure().update_layout(height=300, title="No metrics available")
+
+    # Compute z-scores ONCE per metric using the full df as the baseline window
+    # and drop metrics where no peptide had ≥2 observations (so the column
+    # would be all-NaN — same skip used by the LJ grid).
+    z_by_metric: dict[str, pd.DataFrame] = {}
+    metric_cols: list[tuple[str, str]] = []
+    for col, lbl in metric_cols_all:
+        scored = _zscore_per_peptide(df, col, baseline_mode, baseline_n, time_col)
+        if scored["_z"].notna().any():
+            z_by_metric[col] = scored
+            metric_cols.append((col, lbl))
+
+    if not metric_cols:
+        return go.Figure().update_layout(
+            height=300, title="No metric has enough data for z-scores yet"
+        )
+
+    matrix = []
+    hover_texts = []
+    for run_name in runs:
+        row = []
+        hover_row = []
+        for col, _ in metric_cols:
+            scored = z_by_metric[col]
+            run_z = scored[scored["raw_file_name"] == run_name]["_z"].dropna()
+            if run_z.empty:
+                row.append(np.nan)
+                hover_row.append("no data")
+                continue
+            n_violation = int((run_z.abs() > 2).sum())
+            pct = 100 * n_violation / len(run_z)
+            row.append(pct)
+            hover_row.append(
+                f"{n_violation}/{len(run_z)} peptides > ±2σ ({pct:.0f}%)"
+            )
+        matrix.append(row)
+        hover_texts.append(hover_row)
+
+    # Truncate run names for y-axis
+    run_labels = [
+        (r if len(r) <= 26 else r[:12] + "…" + r[-10:]) for r in runs
+    ]
+
+    fig = go.Figure(go.Heatmap(
+        z=matrix,
+        x=[lbl for _, lbl in metric_cols],
+        y=run_labels,
+        colorscale=[
+            [0.00, "#dcfce7"],   # 0%      pale green
+            [0.10, "#86efac"],   # 10%     green
+            [0.10, "#fef08a"],   # warning yellow
+            [0.25, "#fbbf24"],
+            [0.25, "#fb923c"],   # orange
+            [0.50, "#f97316"],
+            [0.50, "#ef4444"],   # red
+            [1.00, "#991b1b"],
+        ],
+        zmin=0, zmax=100,
+        text=hover_texts,
+        hovertemplate="<b>%{y}</b><br>%{x}<br>%{text}<extra></extra>",
+        colorbar=dict(
+            title=dict(text="% peptides ±2σ", font=dict(size=10, color="#64748b")),
+            thickness=10, len=0.85, tickfont=dict(size=9, color="#64748b"),
+            outlinewidth=0,
+        ),
+        xgap=2, ygap=2,
+        showscale=True,
+    ))
+    fig.update_layout(
+        height=max(280, 30 * len(runs) + 100),
+        margin=dict(l=10, r=10, t=30, b=80),
+        xaxis=dict(side="top", tickangle=-30,
+                   tickfont=dict(size=10, color="#475569"),
+                   showgrid=False),
+        yaxis=dict(autorange="reversed",
+                   tickfont=dict(size=10, color="#475569"),
+                   showgrid=False),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
+    )
+    return fig
+
+
+def compute_decision_summary(
+    df: pd.DataFrame, time_col: str, metric_defs: list[tuple[str, str, bool]],
+    baseline_mode: str, baseline_n: int,
+) -> dict:
+    """Plain-English status summary for the sidebar/decision card."""
+    if df.empty:
+        return {"status": "no-data", "headline": "No data", "details": []}
+
+    latest = df.sort_values(time_col).iloc[-1]
+    latest_name = str(latest.get("raw_file_name", "—"))
+    latest_run = df[df["raw_file_name"] == latest_name]
+
+    # Count violations on the latest run across all metrics
+    metric_cols = [(c, lbl) for c, lbl, _ in metric_defs if c in df.columns]
+    by_metric: list[tuple[str, int, int]] = []  # (label, violations, total)
+    for col, lbl in metric_cols:
+        scored = _zscore_per_peptide(latest_run, col, baseline_mode, baseline_n, time_col)
+        z = scored["_z"].dropna()
+        if z.empty:
+            continue
+        viol = int((z.abs() > 2).sum())
+        by_metric.append((lbl, viol, len(z)))
+
+    total_viol = sum(v for _, v, _ in by_metric)
+    if total_viol == 0:
+        status = "ok"
+        headline = "✅ System nominal"
+    elif any(v > t * 0.25 for _, v, t in by_metric):
+        status = "fail"
+        headline = "❌ Out-of-control: >25% peptides flagged in ≥1 metric"
+    elif total_viol > 0:
+        status = "warn"
+        headline = "⚠ Watch: some peptides drifting ±2σ"
+    else:
+        status = "ok"
+        headline = "✅ System nominal"
+
+    details = []
+    for lbl, viol, total in by_metric:
+        if viol > 0:
+            details.append(f"{lbl}: {viol}/{total} peptides ±2σ")
+
+    return {
+        "status": status,
+        "headline": headline,
+        "details": details,
+        "latest_file": latest_name,
+        "latest_targets": (latest.get("targets_found"), latest.get("targets_expected")),
+        "latest_mass_error": latest.get("median_mass_error_ppm"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Streamlit app
 # ---------------------------------------------------------------------------
-def main() -> None:
-    st.set_page_config(page_title="QC Dashboard", layout="wide")
-    st.title("QC Metrics Dashboard")
+_STATUS_BANNER_STYLE = {
+    "ok":      "background:#f0fdf4; color:#14532d; border-color:#86efac;",
+    "warn":    "background:#fffbeb; color:#78350f; border-color:#fcd34d;",
+    "fail":    "background:#fef2f2; color:#7f1d1d; border-color:#fca5a5;",
+    "no-data": "background:#f8fafc; color:#334155; border-color:#cbd5e1;",
+}
 
+
+def main() -> None:
+    st.set_page_config(page_title="QC Dashboard", layout="wide", initial_sidebar_state="collapsed")
+
+    # Professional design system — system fonts, refined typography, subtle UI.
+    st.markdown(
+        """<style>
+        :root {
+            --bg:       #f8fafc;
+            --surface:  #ffffff;
+            --border:   #e2e8f0;
+            --muted:    #64748b;
+            --text:     #0f172a;
+        }
+        html, body, [class*="css"] {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: var(--text);
+        }
+        .block-container { padding-top: 3.25rem; padding-bottom: 1rem; max-width: 100%; }
+
+        /* Page title */
+        .qc-title {
+            font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em;
+            color: var(--text); margin: 0 0 0.5rem 0;
+        }
+        .qc-toolbar {
+            display: flex; align-items: center; gap: 0.75rem;
+            padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+            margin-bottom: 0.75rem;
+        }
+
+        /* Status banner */
+        .qc-status {
+            padding: 0.6rem 0.9rem; border-radius: 6px; margin: 0 0 0.75rem 0;
+            font-size: 0.9rem; line-height: 1.4; font-weight: 500;
+            border: 1px solid transparent;
+        }
+
+        /* KPI tiles — tighter, more refined */
+        [data-testid="stMetric"] {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: 0.5rem 0.75rem;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.72rem; font-weight: 500; color: var(--muted);
+            letter-spacing: 0.02em; text-transform: uppercase;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.4rem; font-weight: 600; color: var(--text);
+        }
+        [data-testid="stMetricDelta"] { font-size: 0.72rem; color: var(--muted); }
+
+        /* Streamlit native chrome */
+        header[data-testid="stHeader"] {
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(6px);
+            border-bottom: 1px solid var(--border);
+            z-index: 999;
+        }
+
+        /* Section headings */
+        .qc-section {
+            font-size: 0.78rem; font-weight: 600; color: var(--muted);
+            letter-spacing: 0.04em; text-transform: uppercase;
+            margin: 1rem 0 0.4rem 0;
+        }
+
+        /* Filter row: compact selectboxes */
+        [data-testid="stSelectbox"] label { font-size: 0.72rem; color: var(--muted); }
+        </style>""",
+        unsafe_allow_html=True,
+    )
+
+    # ─── Compact sidebar — only essentials ────────────────────────────────
     with st.sidebar:
-        st.header("Settings")
         default_folder = _cli_args.folder or str(spool_dir())
         folder = st.text_input("Payload folder", value=default_folder)
-
-        chart_mode = st.radio("Chart mode", ["Raw Values", "Levey-Jennings"], index=0)
-
-        log_area = False
-        if chart_mode == "Raw Values":
-            log_area = st.checkbox("Log scale for Peak Area", value=False)
-
-        baseline_window_mode = "All runs"
+        baseline_window_mode = st.selectbox(
+            "Baseline window", ["All runs", "Last N runs", "Last N days"]
+        )
         baseline_window_n = 20
-        if chart_mode == "Levey-Jennings":
-            baseline_window_mode = st.selectbox(
-                "Baseline window", ["All runs", "Last N runs", "Last N days"]
-            )
-            if baseline_window_mode == "Last N runs":
-                baseline_window_n = st.number_input(
-                    "Number of runs", min_value=3, max_value=500, value=20
-                )
-            elif baseline_window_mode == "Last N days":
-                baseline_window_n = st.number_input(
-                    "Number of days", min_value=1, max_value=365, value=30
-                )
-
+        if baseline_window_mode == "Last N runs":
+            baseline_window_n = st.number_input("N runs", min_value=3, max_value=500, value=20)
+        elif baseline_window_mode == "Last N days":
+            baseline_window_n = st.number_input("N days", min_value=1, max_value=365, value=30)
+        time_axis = st.radio("X-axis", ["Acquisition", "Payload"], index=0, horizontal=True)
+        time_col = "acquisition_time" if time_axis == "Acquisition" else "timestamp"
         auto_refresh = st.toggle("Auto-refresh", value=False)
-        refresh_secs = st.slider("Refresh interval (s)", min_value=10, max_value=300, value=60)
-        if auto_refresh:
-            st.info(f"Refreshing every {refresh_secs}s")
-
-    manifest = load_manifest(folder)
-    if manifest:
-        with st.sidebar.expander("Template Info"):
-            st.write(f"**Template:** {manifest.get('template_name', '—')}")
-            st.write(f"**Instrument:** {manifest.get('instrument_id', '—')}")
-            targets = manifest.get("targets", [])
-            st.write(f"**Expected targets:** {len(targets)}")
-            extras = manifest.get("extra_metrics", [])
-            if extras:
-                st.write(f"**Extra metrics:** {', '.join(extras)}")
+        refresh_secs = st.slider("Refresh (s)", 10, 300, 60) if auto_refresh else 60
 
     df = load_payloads(folder)
-
     if df.empty:
-        st.warning(
-            f"No `*_payload.json` files found in `{folder}`. "
-            "Check that the path is correct and that the agent has processed at least one file."
-        )
+        st.warning(f"No `*_payload.json` files found in `{folder}`.")
         if auto_refresh:
-            import time
-            time.sleep(refresh_secs)
-            st.rerun()
+            import time; time.sleep(refresh_secs); st.rerun()
         return
 
-    col1, col2 = st.columns(2)
-    with col1:
-        instruments = sorted(df["instrument_id"].unique())
-        selected_instrument = st.selectbox("Instrument", options=["All"] + instruments)
-    with col2:
-        control_types = sorted(df["control_type"].dropna().unique())
-        selected_control = st.selectbox("Control Type", options=["All"] + list(control_types))
+    # ─── Title row + filter toolbar (separate rows, cleanly aligned) ─────
+    st.markdown('<div class="qc-title">QC Metrics Dashboard</div>',
+                unsafe_allow_html=True)
 
+    f1, f2, f3 = st.columns([1.5, 1.5, 4])
+    instruments = sorted(df["instrument_id"].dropna().unique())
+    selected_instrument = f1.selectbox(
+        "Instrument", ["All"] + list(instruments),
+        label_visibility="visible",
+    )
+    control_types = sorted(df["control_type"].dropna().unique())
+    selected_control = f2.selectbox(
+        "Control type", ["All"] + list(control_types),
+        label_visibility="visible",
+    )
     if selected_instrument != "All":
         df = df[df["instrument_id"] == selected_instrument]
     if selected_control != "All":
         df = df[df["control_type"] == selected_control]
-
     if df.empty:
-        st.info("No data matches the selected filters.")
+        st.info("No data matches filters.")
         return
-
-    latest = df.sort_values("acquisition_time").iloc[-1]
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Latest File", latest.get("raw_file_name", "—"))
-    targets_found = latest.get("targets_found")
-    targets_expected = latest.get("targets_expected")
-    if targets_found is not None and targets_expected is not None:
-        c2.metric("Targets", f"{int(targets_found)}/{int(targets_expected)}")
-    else:
-        c2.metric("Targets", "—")
-    median_rt = latest.get("median_rt_shift")
-    c3.metric("Median RT Shift", f"{median_rt:.3f} min" if pd.notna(median_rt) else "—")
-    median_me = latest.get("median_mass_error_ppm")
-    c4.metric("Median Mass Error", f"{median_me:.2f} ppm" if pd.notna(median_me) else "—")
 
     metric_defs = discover_metrics(df)
-    if not metric_defs:
-        st.info("No plottable metrics found in the data.")
-        return
+    summary = compute_decision_summary(
+        df, time_col, metric_defs, baseline_window_mode, baseline_window_n
+    )
 
-    if chart_mode == "Raw Values":
-        fig = build_figure(df, log_area=log_area, metric_defs=metric_defs)
+    # ─── Status banner ───────────────────────────────────────────────────
+    style = _STATUS_BANNER_STYLE.get(summary["status"], _STATUS_BANNER_STYLE["no-data"])
+    detail_line = (
+        f" &nbsp;·&nbsp; {'  ·  '.join(summary['details'][:3])}"
+        if summary["details"] else ""
+    )
+    st.markdown(
+        f"<div class='qc-status' style='{style}'>"
+        f"<b>{summary['headline']}</b>{detail_line}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ─── KPI tiles ────────────────────────────────────────────────────────
+    latest = df.sort_values(time_col).iloc[-1]
+    latest_name = str(latest.get("raw_file_name", "—"))
+    display_name = latest_name if len(latest_name) <= 22 else latest_name[:11] + "…" + latest_name[-10:]
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Latest", display_name, help=latest_name)
+    tf, te = latest.get("targets_found"), latest.get("targets_expected")
+    if pd.notna(tf) and pd.notna(te) and te:
+        k2.metric("Targets", f"{int(tf)}/{int(te)}",
+                  delta=f"{100 * tf / te:.0f}%", delta_color="off")
     else:
-        fig = build_lj_figure(
-            df,
-            metric_defs=metric_defs,
-            baseline_mode=baseline_window_mode,
-            baseline_n=baseline_window_n,
-        )
-    st.plotly_chart(fig, use_container_width=True)
+        k2.metric("Targets", "—")
+    me = latest.get("median_mass_error_ppm")
+    k3.metric("Mass error", f"{me:.2f} ppm" if pd.notna(me) else "—")
+    rs = latest.get("median_rt_shift")
+    k4.metric("RT shift", f"{rs:.3f} min" if pd.notna(rs) else "—")
+    n_runs = df["raw_file_name"].nunique()
+    n_with = df[df["targets_found"].fillna(0) > 0]["raw_file_name"].nunique()
+    k5.metric("Runs", f"{n_runs}", delta=f"{n_with} active", delta_color="off")
 
-    if chart_mode == "Levey-Jennings":
-        with st.expander("Westgard Rules Legend"):
-            st.markdown(
-                "| Rule | Meaning | Action |\n"
-                "|------|---------|--------|\n"
-                "| **1-2s** | Single point > 2 SD from mean | Warning |\n"
-                "| **1-3s** | Single point > 3 SD from mean | Reject |\n"
-                "| **2-2s** | 2 consecutive points > 2 SD, same side | Reject |\n"
-                "| **R-4s** | 2 consecutive points spanning > 4 SD | Reject |\n"
-                "\n"
-                "Green circles = OK · Yellow diamonds = Warning · Red triangles = Reject"
-            )
+    # ─── Scorecard heatmap (full-width, above the grid) ──────────────────
+    st.markdown(
+        '<div class="qc-section">Scorecard — recent runs × metrics, % peptides ±2σ</div>',
+        unsafe_allow_html=True,
+    )
+    scorecard = build_scorecard(
+        df, time_col=time_col, metric_defs=metric_defs,
+        baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
+        max_runs=10,
+    )
+    st.plotly_chart(scorecard, use_container_width=True)
+
+    # ─── Metric grid (full-width, 2 columns of larger panels) ────────────
+    st.markdown(
+        '<div class="qc-section">Levey-Jennings — peptides grouped by retention-time bin</div>',
+        unsafe_allow_html=True,
+    )
+    if not metric_defs:
+        st.info("No plottable metrics.")
+    else:
+        n_metrics = len([c for c, _, _ in metric_defs if c in df.columns])
+        n_cols = 2 if n_metrics > 1 else 1
+        n_rows = (n_metrics + n_cols - 1) // n_cols
+        grid_height = max(560, n_rows * 280 + 60)
+        fig = build_all_metrics_grid(
+            df, metric_defs=metric_defs, time_col=time_col,
+            baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
+            height=grid_height, n_cols=n_cols,
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     if auto_refresh:
-        import time
-        time.sleep(refresh_secs)
-        st.rerun()
+        import time; time.sleep(refresh_secs); st.rerun()
 
 
 if __name__ == "__main__":

@@ -26,19 +26,27 @@ import pytest
 DATA_DIR = Path(r"C:\Mac\Home\Documents\MS Data repo")
 EVOSEP_RAW_DIR = DATA_DIR / "Evosep_raw"
 
-# Locate the best candidate template (.sky) in the data dir
-_SKY_CANDIDATES = sorted(DATA_DIR.rglob("*.sky"))
-SKYLINE_TEMPLATE = next(
-    (p for p in _SKY_CANDIDATES if "template" in p.name.lower()), None
-) or ((_SKY_CANDIDATES[0]) if _SKY_CANDIDATES else None)
-
 # Ensure package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mdqc.classifier import classify_filename
-from mdqc.config.paths import spool_dir, spool_completed
+from mdqc.config.paths import spool_dir, spool_completed, methods_dir
+from mdqc.config.schema import Config
 from mdqc.extractor.skyline import find_skyline
 from mdqc.types import ControlType, Confidence, ClassificationSource
+
+# These are resolved at import time — before conftest._isolate_data_dir redirects
+# MDQC_DATA_DIR, so methods_dir() here returns the real ProgramData path.
+_METHODS_SKY = methods_dir() / "QC_Method.sky"
+_METHODS_SKYR = methods_dir() / "MD_QC_Report.skyr"
+_DATA_SKY_FILES = [p for p in sorted(DATA_DIR.rglob("*.sky")) if p.is_file()]
+SKYLINE_TEMPLATE: Path | None = (
+    _METHODS_SKY if _METHODS_SKY.exists()
+    else (_DATA_SKY_FILES[0] if _DATA_SKY_FILES else None)
+)
+
+# Default classifier rules from the shipped config (includes Evosep patterns).
+_DEFAULT_RULES = Config().classifier_rules
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -81,7 +89,7 @@ class TestClassifierAudit:
 
         results = []
         for f in files:
-            r = classify_filename(f.name)
+            r = classify_filename(f.name, rules=_DEFAULT_RULES)
             results.append((f.name, r.control_type, r.confidence, r.source))
 
         # Print full report
@@ -219,11 +227,12 @@ class TestSkylineExtraction:
         print(f"Work dir: {tmp_path}")
 
         # Build SkylineCmd command (mirrors extractor/skyline.py logic)
-        cmd = [
-            str(skyline),
-            f"--in={SKYLINE_TEMPLATE}",
+        cmd = [str(skyline), f"--in={SKYLINE_TEMPLATE}"]
+        if _METHODS_SKYR.exists():
+            cmd.append(f"--report-add={_METHODS_SKYR}")
+        cmd += [
             f"--import-file={raw_file}",
-            f"--report-name=MD_QC_Report",
+            "--report-name=MD_QC_Report",
             f"--report-file={tmp_path / 'report.csv'}",
             "--import-threads=1",
         ]

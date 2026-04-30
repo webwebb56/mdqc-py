@@ -475,7 +475,7 @@ def test_open_path_with_runtime_opens_browser_with_token(
     app._set_client(info)
 
     opened: list[str] = []
-    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url) or True)
+    monkeypatch.setattr("webbrowser.open", lambda url, *_: opened.append(url) or True)
     app.open_path("/dashboard")
     time.sleep(0.1)
     assert len(opened) == 1

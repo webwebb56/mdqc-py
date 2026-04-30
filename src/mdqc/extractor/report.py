@@ -29,10 +29,19 @@ _ALIASES: dict[str, list[str]] = {
         "precursor m/z",
     ],
     "retention_time": [
+        "best retention time",
         "peptide retention time",
         "retention time",
         "rt",
         "peptideretentiontime",
+    ],
+    "rt_start": [
+        "min start time",
+        "minstarttime",
+    ],
+    "rt_end": [
+        "max end time",
+        "maxendtime",
     ],
     "rt_expected": [
         "expected rt",
@@ -119,11 +128,14 @@ def _map_columns(headers: list[str]) -> tuple[dict[str, int], list[tuple[str, in
     return known, extra
 
 
+_NA_TOKENS = frozenset({"#n/a", "n/a", "na", "nan", "null", "none", ""})
+
+
 def _get_float(row: list[str], idx: int | None) -> float | None:
     if idx is None or idx >= len(row):
         return None
     raw = row[idx].strip()
-    if not raw:
+    if raw.lower() in _NA_TOKENS:
         return None
     try:
         return float(raw)

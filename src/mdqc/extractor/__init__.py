@@ -9,6 +9,7 @@ import time
 import uuid
 from pathlib import Path
 
+from mdqc.config.paths import methods_dir
 from mdqc.config.schema import SkylineConfig
 from mdqc.extractor.report import parse_skyline_csv
 from mdqc.extractor.skyline import (
@@ -146,6 +147,7 @@ class Extractor:
 
         start = time.monotonic()
         try:
+            skyr_path = methods_dir() / "MD_QC_Report.skyr"
             run_result: SkylineRunResult = await run_skyline(
                 skyline_exe=skyline_path,
                 template=template,
@@ -154,6 +156,7 @@ class Extractor:
                 output_csv=output_csv,
                 timeout_s=self._cfg.timeout_seconds,
                 priority=self._cfg.process_priority,
+                report_skyr=skyr_path if skyr_path.exists() else None,
             )
         except SkylineTimeout as exc:
             result.status = ExtractionStatus.FAILED

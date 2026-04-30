@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+# Files that Skyline reads from the template directory but doesn't write to.
+# Hardlinking them into the per-extraction temp dir is essentially free on
+# NTFS — no I/O, just an extra directory entry pointing at the same inode.
+_LIBRARY_EXTENSIONS = (".blib", ".skyl", ".sky.view")
 
 import psutil
 
@@ -141,54 +148,81 @@ async def run_skyline(
     output_csv: Path,
     timeout_s: int = SKYLINE_TIMEOUT_S,
     priority: str = "below_normal",
+    report_skyr: Path | None = None,
 ) -> SkylineRunResult:
-    args = [
-        f"--in={template}",
-        f"--import-file={raw_file}",
-        f"--report-name={report_name}",
-        f"--report-file={output_csv}",
-        "--report-format=csv",
-    ]
+    # Each concurrent extraction needs its own copy of the template so Skyline
+    # doesn't fight over the shared QC_Method.skyd cache file.
+    # Spectral libraries (.blib) and the spectral-library-list (.skyl) are
+    # read-only and large, so hardlink them instead of copying.
+    tmp_dir = tempfile.mkdtemp(prefix="mdqc_sky_")
+    tmp_template = Path(tmp_dir) / template.name
+    shutil.copy2(template, tmp_template)
 
-    start = time.monotonic()
-    proc = await asyncio.create_subprocess_exec(
-        str(skyline_exe),
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    # Set process priority AFTER spawn — see docs/AGENT_NOTES § Extractor priority-class trap.
-    _apply_priority(proc.pid, priority)
+    template_dir = template.parent
+    for sibling in template_dir.iterdir():
+        if not sibling.is_file() or sibling.name == template.name:
+            continue
+        if not any(sibling.name.lower().endswith(ext) for ext in _LIBRARY_EXTENSIONS):
+            continue
+        target = Path(tmp_dir) / sibling.name
+        try:
+            os.link(sibling, target)
+        except (OSError, NotImplementedError):
+            # Hardlinks unsupported (e.g. cross-volume) → fall back to copy.
+            shutil.copy2(sibling, target)
 
     try:
-        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-    except TimeoutError as exc:
-        with contextlib.suppress(ProcessLookupError):
-            proc.terminate()
+        args = [f"--in={tmp_template}"]
+        if report_skyr is not None and report_skyr.is_file():
+            args.append(f"--report-add={report_skyr}")
+        args += [
+            f"--import-file={raw_file}",
+            f"--report-name={report_name}",
+            f"--report-file={output_csv}",
+            "--report-format=csv",
+        ]
+
+        start = time.monotonic()
+        proc = await asyncio.create_subprocess_exec(
+            str(skyline_exe),
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # Set process priority AFTER spawn — see docs/AGENT_NOTES § Extractor priority-class trap.
+        _apply_priority(proc.pid, priority)
+
         try:
-            await asyncio.wait_for(proc.communicate(), timeout=5)
-        except (TimeoutError, ProcessLookupError):
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        except TimeoutError as exc:
             with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            with contextlib.suppress(ProcessLookupError, ValueError):
-                await proc.communicate()
-        raise SkylineTimeout(
-            f"SkylineCmd timed out after {timeout_s}s"
-        ) from exc
+                proc.terminate()
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=5)
+            except (TimeoutError, ProcessLookupError):
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                with contextlib.suppress(ProcessLookupError, ValueError):
+                    await proc.communicate()
+            raise SkylineTimeout(
+                f"SkylineCmd timed out after {timeout_s}s"
+            ) from exc
 
-    duration_ms = int((time.monotonic() - start) * 1000)
-    stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
-    stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
-    version = _parse_version(stdout, stderr)
+        duration_ms = int((time.monotonic() - start) * 1000)
+        stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+        stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+        version = _parse_version(stdout, stderr)
 
-    return SkylineRunResult(
-        returncode=proc.returncode if proc.returncode is not None else -1,
-        stdout=stdout,
-        stderr=stderr,
-        duration_ms=duration_ms,
-        version=version,
-    )
+        return SkylineRunResult(
+            returncode=proc.returncode if proc.returncode is not None else -1,
+            stdout=stdout,
+            stderr=stderr,
+            duration_ms=duration_ms,
+            version=version,
+        )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 _PRIORITY_MAP_POSIX = {"normal": 0, "below_normal": 10, "idle": 19}

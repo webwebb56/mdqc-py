@@ -129,6 +129,7 @@ markers = [
     "skyline: tests that require a real SkylineCmd.exe install (opt-in)",
     "integration: cross-module tests (slower)",
     "parity: tests that compare Python output against Rust fixtures",
+    "live: live end-to-end tests that require the mdqc agent to be running",
 ]
 
 [tool.coverage.run]
