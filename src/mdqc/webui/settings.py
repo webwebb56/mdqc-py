@@ -15,8 +15,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from mdqc.config import paths
 from mdqc.config.schema import (
     AgentConfig,
+    ClassifierRule,
     CloudConfig,
     Config,
+    CONTROL_TYPE_VALUES,
     InstrumentConfig,
     SkylineConfig,
     SpoolConfig,
@@ -33,6 +35,7 @@ router = APIRouter()
 VENDORS = [v.value for v in Vendor]
 LOG_LEVELS = ["error", "warn", "info", "debug", "trace"]
 PRIORITIES = ["normal", "below_normal", "idle"]
+CONTROL_TYPES = CONTROL_TYPE_VALUES
 
 
 @dataclass
@@ -95,6 +98,28 @@ def _instruments_ctx(instruments: list[InstrumentConfig]) -> list[dict[str, Any]
     return result
 
 
+def _parse_classifier_rules(form: dict[str, Any]) -> list[ClassifierRule]:
+    indices: set[int] = set()
+    for key in form:
+        for prefix in ("rule_pattern_", "rule_type_", "rule_notes_"):
+            if key.startswith(prefix):
+                suffix = key[len(prefix):]
+                if suffix.isdigit():
+                    indices.add(int(suffix))
+
+    rules = []
+    for idx in sorted(indices):
+        pattern = str(form.get(f"rule_pattern_{idx}", "")).strip()
+        control_type = str(form.get(f"rule_type_{idx}", "QC_A"))
+        notes = str(form.get(f"rule_notes_{idx}", "")).strip()
+        if not pattern:
+            continue
+        if control_type not in CONTROL_TYPES:
+            control_type = "QC_A"
+        rules.append(ClassifierRule(pattern=pattern, control_type=control_type, notes=notes))
+    return rules
+
+
 def _settings_context(cfg: Config, saved: bool = False, error: str | None = None) -> dict[str, Any]:
     return {
         "cfg": cfg,
@@ -102,6 +127,7 @@ def _settings_context(cfg: Config, saved: bool = False, error: str | None = None
         "vendors": VENDORS,
         "log_levels": LOG_LEVELS,
         "priorities": PRIORITIES,
+        "control_types": CONTROL_TYPES,
         "status_skyline": _status_skyline(cfg),
         "status_cloud": _status_cloud(cfg),
         "saved": saved,
@@ -184,6 +210,7 @@ async def settings_post(request: Request) -> HTMLResponse:
         enable_toasts = "enable_toasts" in form
 
         instruments = _parse_instruments(form)
+        classifier_rules = _parse_classifier_rules(form)
 
         cfg = Config(
             agent=AgentConfig(log_level=log_level, enable_toast_notifications=enable_toasts),
@@ -196,6 +223,7 @@ async def settings_post(request: Request) -> HTMLResponse:
             watcher=WatcherConfig(),
             spool=SpoolConfig(),
             instruments=instruments,
+            classifier_rules=classifier_rules,
         )
 
         _write_config(cfg)

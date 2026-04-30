@@ -399,7 +399,7 @@ async def _build_state(cfg: Config) -> AppState:
                 {"path": str(path), "instrument_id": instrument_id},
             )
 
-            classification = classify_file(path)
+            classification = classify_file(path, rules=state.cfg.classifier_rules)
             if instrument_id is not None:
                 classification.instrument_id = instrument_id
 

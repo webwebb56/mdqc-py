@@ -74,6 +74,37 @@ class WatcherOverrides(BaseModel):
     stability_window_seconds: int | None = None
 
 
+CONTROL_TYPE_VALUES = ["QC_A", "QC_B", "SSC0", "BLANK", "SAMPLE"]
+
+
+class ClassifierRule(BaseModel):
+    """A single filename-pattern → control-type mapping.
+
+    `pattern` is matched as a case-insensitive substring of the raw filename stem.
+    Rules are evaluated in order; first match wins.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    pattern: str
+    control_type: str = "QC_A"
+    notes: str = ""
+
+    @field_validator("control_type")
+    @classmethod
+    def _valid_control_type(cls, v: str) -> str:
+        if v not in CONTROL_TYPE_VALUES:
+            raise ValueError(f"control_type must be one of {CONTROL_TYPE_VALUES}")
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def _nonempty_pattern(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("pattern must be non-empty")
+        return v.strip()
+
+
 class InstrumentConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -103,6 +134,19 @@ class Config(BaseModel):
     watcher: WatcherConfig = Field(default_factory=WatcherConfig)
     spool: SpoolConfig = Field(default_factory=SpoolConfig)
     instruments: list[InstrumentConfig] = Field(default_factory=list)
+    classifier_rules: list[ClassifierRule] = Field(
+        default_factory=lambda: [
+            ClassifierRule(pattern="SSC0",        control_type="SSC0",   notes="System suitability control"),
+            ClassifierRule(pattern="QCA",         control_type="QC_A",   notes="QC level A"),
+            ClassifierRule(pattern="QCB",         control_type="QC_B",   notes="QC level B"),
+            ClassifierRule(pattern="QC_A",        control_type="QC_A",   notes="QC level A (underscore form)"),
+            ClassifierRule(pattern="QC_B",        control_type="QC_B",   notes="QC level B (underscore form)"),
+            ClassifierRule(pattern="Hela_QC",     control_type="QC_A",   notes="Evosep HeLa QC injection"),
+            ClassifierRule(pattern="eb_inbetween",control_type="BLANK",  notes="Evosep between-run blank"),
+            ClassifierRule(pattern="BLANK",       control_type="BLANK",  notes="Blank injection"),
+            ClassifierRule(pattern="BLK",         control_type="BLANK",  notes="Blank (short form)"),
+        ]
+    )
 
     # ─── Cross-field validation ─────────────────────────────────────────────
 

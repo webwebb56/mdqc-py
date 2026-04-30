@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mdqc.types import (
     ClassificationSource,
@@ -12,6 +13,9 @@ from mdqc.types import (
     RunClassification,
     WellPosition,
 )
+
+if TYPE_CHECKING:
+    from mdqc.config.schema import ClassifierRule
 
 # Explicit delimiter classes — see AGENT_NOTES § Classifier (\b matches at
 # underscore in Python but not in Rust; use explicit delimiters for parity
@@ -33,12 +37,36 @@ _PLATE_RE = re.compile(
 _DATE_RE = re.compile(r"\d{4}[-_]\d{2}[-_]\d{2}")
 
 
-def classify_file(path: Path) -> RunClassification:
-    return classify_filename(path.name)
+def classify_file(
+    path: Path,
+    rules: list[ClassifierRule] | None = None,
+) -> RunClassification:
+    return classify_filename(path.name, rules=rules)
 
 
-def classify_filename(name: str) -> RunClassification:
+def classify_filename(
+    name: str,
+    rules: list[ClassifierRule] | None = None,
+) -> RunClassification:
     stem = _strip_vendor_ext(name)
+
+    # Custom rules (case-insensitive substring) take priority over built-ins.
+    if rules:
+        for rule in rules:
+            if rule.pattern.lower() in stem.lower():
+                ct = ControlType(rule.control_type)
+                well = _extract_well(stem)
+                plate = _extract_plate(stem)
+                instrument = _extract_instrument(stem)
+                return RunClassification(
+                    control_type=ct,
+                    well_position=well,
+                    instrument_id=instrument,
+                    plate_id=plate,
+                    confidence=Confidence.HIGH,
+                    source=ClassificationSource.FILENAME,
+                )
+
     control_type, source = _extract_control_type(stem)
     well = _extract_well(stem)
     plate = _extract_plate(stem)

@@ -99,6 +99,29 @@
     border-color: var(--accent);
     color: var(--accent);
   }
+
+  /* Classifier rules table */
+  .rules-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+  .rules-table th {
+    text-align: left; font-weight: 600; padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--border); color: var(--muted);
+  }
+  .rules-table td { padding: 0.3rem 0.4rem; vertical-align: middle; }
+  .rules-table tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+  .rules-table input[type=text] { width: 100%; font-size: 0.9em; padding: 0.2rem 0.4rem; }
+  .rules-table select { font-size: 0.9em; padding: 0.2rem 0.3rem; }
+  .rules-table .del-btn {
+    background: none; border: none; color: var(--bad);
+    cursor: pointer; font-size: 1rem; padding: 0 0.3rem; line-height: 1;
+  }
+  .rules-table .del-btn:hover { color: #c00; }
+  .add-rule-btn {
+    margin-top: 0.6rem; background: none; border: 1px dashed var(--border);
+    color: var(--muted); border-radius: 4px; padding: 0.3rem 0.9rem;
+    font-size: 0.85em; cursor: pointer;
+  }
+  .add-rule-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .drag-handle { cursor: grab; color: var(--muted); padding: 0 0.3rem; user-select: none; }
 </style>
 
 {% if saved %}
@@ -246,6 +269,49 @@
   <button type="button" class="add-instrument-btn" onclick="addInstrument()">
     + Add Instrument
   </button>
+
+  {# ── Classifier Rules ───────────────────────────────────────────────── #}
+  <section class="panel">
+    <div class="section-heading">
+      <span class="dot ok">●</span>
+      <h2>Filename Classifier Rules</h2>
+    </div>
+    <p class="field-hint" style="margin-bottom:0.75rem;">
+      Rules are matched as case-insensitive substrings of the raw filename (stem only, no extension).
+      Evaluated top-to-bottom — first match wins. Drag rows to reorder.
+    </p>
+
+    <table class="rules-table" id="rules-table">
+      <thead>
+        <tr>
+          <th style="width:1.5rem;"></th>
+          <th style="width:35%;">Pattern (substring)</th>
+          <th style="width:20%;">Control type</th>
+          <th>Notes</th>
+          <th style="width:2rem;"></th>
+        </tr>
+      </thead>
+      <tbody id="rules-body">
+        {% for rule in cfg.classifier_rules %}
+        <tr draggable="true" class="rule-row">
+          <td><span class="drag-handle">⠿</span></td>
+          <td><input type="text" name="rule_pattern_{{ loop.index0 }}" value="{{ rule.pattern }}" placeholder="e.g. Hela_QC"></td>
+          <td>
+            <select name="rule_type_{{ loop.index0 }}">
+              {% for ct in control_types %}
+              <option value="{{ ct }}" {% if rule.control_type == ct %}selected{% endif %}>{{ ct }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><input type="text" name="rule_notes_{{ loop.index0 }}" value="{{ rule.notes }}" placeholder="optional description"></td>
+          <td><button type="button" class="del-btn" onclick="deleteRule(this)" title="Remove">✕</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <button type="button" class="add-rule-btn" onclick="addRule()">+ Add rule</button>
+  </section>
 
   {# ── Skyline ────────────────────────────────────────────────────────── #}
   <section class="panel">
@@ -435,6 +501,69 @@ function removeInstrument(btn) {
   btn.closest('.instrument-panel').remove();
   updateHeadings();
 }
+
+// ── Classifier rules ──────────────────────────────────────────────────────
+const CONTROL_TYPES = {{ control_types | tojson }};
+
+function ruleRowIdx() {
+  return document.querySelectorAll('#rules-body .rule-row').length;
+}
+
+function reindexRules() {
+  document.querySelectorAll('#rules-body .rule-row').forEach((row, i) => {
+    row.querySelector('input[name^="rule_pattern_"]').name = `rule_pattern_${i}`;
+    row.querySelector('select[name^="rule_type_"]').name    = `rule_type_${i}`;
+    row.querySelector('input[name^="rule_notes_"]').name   = `rule_notes_${i}`;
+  });
+}
+
+function addRule() {
+  const idx = ruleRowIdx();
+  const opts = CONTROL_TYPES.map(ct => `<option value="${ct}">${ct}</option>`).join('');
+  const row = document.createElement('tr');
+  row.draggable = true;
+  row.className = 'rule-row';
+  row.innerHTML = `
+    <td><span class="drag-handle">⠿</span></td>
+    <td><input type="text" name="rule_pattern_${idx}" value="" placeholder="e.g. Hela_QC"></td>
+    <td><select name="rule_type_${idx}">${opts}</select></td>
+    <td><input type="text" name="rule_notes_${idx}" value="" placeholder="optional description"></td>
+    <td><button type="button" class="del-btn" onclick="deleteRule(this)" title="Remove">✕</button></td>`;
+  document.getElementById('rules-body').appendChild(row);
+  attachDrag(row);
+  row.querySelector('input[type=text]').focus();
+}
+
+function deleteRule(btn) {
+  btn.closest('tr').remove();
+  reindexRules();
+}
+
+// ── Drag-to-reorder ───────────────────────────────────────────────────────
+let _dragSrc = null;
+
+function attachDrag(row) {
+  row.addEventListener('dragstart', e => {
+    _dragSrc = row;
+    e.dataTransfer.effectAllowed = 'move';
+    row.style.opacity = '0.4';
+  });
+  row.addEventListener('dragend', () => { row.style.opacity = ''; reindexRules(); });
+  row.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+  row.addEventListener('drop', e => {
+    e.preventDefault();
+    if (_dragSrc && _dragSrc !== row) {
+      const tbody = document.getElementById('rules-body');
+      const rows = [...tbody.querySelectorAll('tr')];
+      const srcIdx = rows.indexOf(_dragSrc);
+      const tgtIdx = rows.indexOf(row);
+      if (srcIdx < tgtIdx) tbody.insertBefore(_dragSrc, row.nextSibling);
+      else tbody.insertBefore(_dragSrc, row);
+    }
+  });
+}
+
+document.querySelectorAll('#rules-body .rule-row').forEach(attachDrag);
 
 function openTemplate(inputId) {
   const name = document.getElementById(inputId).value.trim();
