@@ -10,6 +10,11 @@ contaminate weeks of data.
 
 Built by [Mass Dynamics](https://massdynamics.com). MIT-licensed.
 
+![QC Metrics Dashboard](./docs/images/dashboard.png)
+*Single-page dashboard: status banner, KPI tiles, and a per-run × per-metric
+scorecard heatmap that turns 48 peptides × 11 metrics into one glanceable
+view.*
+
 ---
 
 ## What it does
