@@ -1,255 +1,607 @@
-"""Streamlit QC plots app — prototype.
+"""
+QC Dashboard — Streamlit app for visualizing QC metrics from the MD QC Agent spool.
 
-Reads completed payload JSONs from the spool and renders trend charts
-for the key run-level QC metrics.
+Reads *_payload.json files from the spool directory (pending + completed)
+and renders time-series line plots (one per metric) with individual
+peptide/feature traces colored by target_id.
 
-Run with:
-    streamlit run src/mdqc/plots/app.py
+Supports two chart modes:
+  - Raw Values: simple time-series traces
+  - Levey-Jennings: control charts with mean/SD lines and Westgard rule annotations
 """
 
-from __future__ import annotations
-
+import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 # Ensure the package is importable when run from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from mdqc.config.paths import spool_completed  # noqa: E402
+from mdqc.config.paths import spool_dir  # noqa: E402
 
-st.set_page_config(
-    page_title="MD QC Plots",
-    page_icon="🔬",
-    layout="wide",
-)
+# ---------------------------------------------------------------------------
+# CLI arguments (so the tray / dashboard Start button can pass --folder)
+# ---------------------------------------------------------------------------
+_parser = argparse.ArgumentParser()
+_parser.add_argument("--folder", default=None, help="Spool folder path")
+_cli_args, _ = _parser.parse_known_args()
 
-# ── Data loading ─────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Defaults & known metrics
+# ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=30)
-def load_payloads() -> pd.DataFrame:
-    completed = spool_completed()
-    rows = []
-    for p in completed.glob("*.json"):
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+# Known metrics in preferred display order: (column_name, display_label, is_log_candidate)
+KNOWN_METRIC_DEFS: list[tuple[str, str, bool]] = [
+    ("retention_time", "Retention Time (min)", False),
+    ("rt_delta", "RT Deviation (min)", False),
+    ("peak_area", "Peak Area", True),
+    ("peak_height", "Peak Height", False),
+    ("peak_width_fwhm", "FWHM (min)", False),
+    ("mass_error_ppm", "Mass Error (ppm)", False),
+    ("isotope_dot_product", "Isotope Dot Product", False),
+    ("library_dot_product", "Library Dot Product", False),
+]
+
+_KNOWN_LABELS: dict[str, str] = {col: label for col, label, _ in KNOWN_METRIC_DEFS}
+
+# Metadata columns that should not be treated as metrics
+_META_COLS = {
+    "timestamp", "acquisition_time", "instrument_id", "raw_file_name",
+    "control_type", "method_name", "column_info", "target_id",
+    "protein_name", "peptide_sequence", "precursor_mz", "precursor_charge",
+    "detected", "targets_found", "targets_expected", "median_rt_shift",
+    "median_mass_error_ppm",
+}
+
+
+# ---------------------------------------------------------------------------
+# Metric auto-discovery
+# ---------------------------------------------------------------------------
+def discover_metrics(df: pd.DataFrame) -> list[tuple[str, str, bool]]:
+    """Discover all plottable metrics from the DataFrame.
+
+    Returns a list of (column_name, display_label, is_log_candidate) tuples.
+    Known metrics appear first in their preferred order, then any extra
+    numeric columns are appended alphabetically.
+    """
+    result: list[tuple[str, str, bool]] = []
+    seen: set[str] = set()
+
+    # Known metrics first (in preferred order), only if present
+    for col, label, is_log in KNOWN_METRIC_DEFS:
+        if col in df.columns and df[col].notna().any():
+            result.append((col, label, is_log))
+            seen.add(col)
+
+    # Discover extra numeric columns (e.g. anything added to the Skyline
+    # report template that isn't in KNOWN_METRIC_DEFS).
+    for col in sorted(df.columns):
+        if col in seen or col in _META_COLS:
             continue
-        run = data.get("run", {})
-        rm = data.get("run_metrics", {})
-        rows.append({
-            "file": run.get("raw_file_name", p.stem),
-            "instrument_id": run.get("instrument_id", "unknown"),
-            "control_type": run.get("control_type", "SAMPLE"),
-            "acquisition_time": _parse_dt(run.get("acquisition_time")),
-            "target_recovery_pct": rm.get("target_recovery_pct"),
-            "targets_found": rm.get("targets_found"),
-            "targets_expected": rm.get("targets_expected"),
-            "median_rt_shift": rm.get("median_rt_shift"),
-            "median_mass_error_ppm": rm.get("median_mass_error_ppm"),
-            "chromatography_score": rm.get("chromatography_score"),
-            "_payload_file": str(p),
-        })
-    if not rows:
-        return pd.DataFrame()
-    df = pd.DataFrame(rows)
-    df["acquisition_time"] = pd.to_datetime(df["acquisition_time"], utc=True, errors="coerce")
-    df.sort_values("acquisition_time", inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return df
+        if pd.api.types.is_numeric_dtype(df[col]) and df[col].notna().any():
+            result.append((col, col, False))
+            seen.add(col)
+
+    return result
 
 
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
 @st.cache_data(ttl=30)
-def load_target_metrics(payload_file: str) -> pd.DataFrame:
-    try:
-        data = json.loads(Path(payload_file).read_text(encoding="utf-8"))
-    except Exception:
+def load_payloads(folder: str) -> pd.DataFrame:
+    """Scan *folder* (and pending/completed subdirs) for payload JSON files."""
+    records: list[dict] = []
+    folder_path = Path(folder)
+    if not folder_path.is_dir():
         return pd.DataFrame()
-    targets = data.get("target_metrics", [])
-    if not targets:
+
+    search_dirs = [folder_path]
+    for subdir in ("pending", "completed"):
+        child = folder_path / subdir
+        if child.is_dir():
+            search_dirs.append(child)
+
+    seen: set[str] = set()
+    payload_files: list[Path] = []
+    for d in search_dirs:
+        for f in d.glob("*_payload.json"):
+            if f.name not in seen:
+                seen.add(f.name)
+                payload_files.append(f)
+    payload_files.sort()
+
+    for fpath in payload_files:
+        try:
+            with open(fpath, encoding="utf-8") as f:
+                payload = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        timestamp = payload.get("timestamp")
+        run = payload.get("run", {})
+        acquisition_time = run.get("acquisition_time") or timestamp
+        instrument_id = run.get("instrument_id", "unknown")
+        raw_file_name = run.get("raw_file_name", fpath.stem)
+        control_type = run.get("control_type", "")
+        method_name = run.get("method_name")
+        column_info = run.get("column_info")
+
+        run_metrics = payload.get("run_metrics", {})
+
+        for target in payload.get("target_metrics", []):
+            rec = {
+                "timestamp": timestamp,
+                "acquisition_time": acquisition_time,
+                "instrument_id": instrument_id,
+                "raw_file_name": raw_file_name,
+                "control_type": control_type,
+                "method_name": method_name,
+                "column_info": column_info,
+                "target_id": target.get("target_id", ""),
+                "protein_name": target.get("protein_name", ""),
+                "peptide_sequence": target.get("peptide_sequence", ""),
+                "precursor_mz": target.get("precursor_mz"),
+                "precursor_charge": target.get("precursor_charge"),
+                "retention_time": target.get("retention_time"),
+                "rt_delta": target.get("rt_delta"),
+                "peak_area": target.get("peak_area"),
+                "peak_height": target.get("peak_height"),
+                "peak_width_fwhm": target.get("peak_width_fwhm"),
+                "mass_error_ppm": target.get("mass_error_ppm"),
+                "isotope_dot_product": target.get("isotope_dot_product"),
+                "library_dot_product": target.get("library_dot_product"),
+                "detected": target.get("detected", False),
+                # Run-level summary (repeated per target for easy filtering)
+                "targets_found": run_metrics.get("targets_found"),
+                "targets_expected": run_metrics.get("targets_expected"),
+                "median_rt_shift": run_metrics.get("median_rt_shift"),
+                "median_mass_error_ppm": run_metrics.get("median_mass_error_ppm"),
+            }
+            for k, v in target.get("extra_metrics", {}).items():
+                if k not in rec:
+                    rec[k] = v
+            records.append(rec)
+
+    if not records:
         return pd.DataFrame()
-    return pd.DataFrame(targets)
+
+    df = pd.DataFrame(records)
+    for col in ("timestamp", "acquisition_time"):
+        df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
+    return df.sort_values("acquisition_time").reset_index(drop=True)
 
 
-def _parse_dt(value: str | None) -> datetime | None:
-    if not value:
+def load_manifest(folder: str) -> dict | None:
+    """Load manifest.json from the spool root, if present."""
+    manifest_path = Path(folder) / "manifest.json"
+    if not manifest_path.is_file():
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
+        with open(manifest_path, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
         return None
 
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Westgard rule evaluation
+# ---------------------------------------------------------------------------
+def evaluate_westgard(values: pd.Series, mean: float, sd: float) -> list[str]:
+    """Evaluate Westgard rules for a series of values.
 
-st.sidebar.title("MD QC Plots")
-st.sidebar.caption("Prototype — reads from local spool")
+    Returns a list of rule labels per data point:
+      'ok'   — within 2 SD (normal)
+      '1-2s' — warning: single point > 2 SD from mean
+      '1-3s' — reject: single point > 3 SD from mean
+      '2-2s' — reject: 2 consecutive points > 2 SD on same side
+      'R-4s' — reject: 2 consecutive points spanning > 4 SD range
+    """
+    if sd == 0 or len(values) == 0:
+        return ["ok"] * len(values)
 
-if st.sidebar.button("🔄 Refresh data"):
-    st.cache_data.clear()
+    z_scores = ((values - mean) / sd).to_numpy()
+    n = len(z_scores)
+    labels = ["ok"] * n
 
-df_all = load_payloads()
+    for i in range(n):
+        z = abs(z_scores[i])
+        if z > 3:
+            labels[i] = "1-3s"
+        elif z > 2:
+            labels[i] = "1-2s"
 
-if df_all.empty:
-    st.info("No completed QC runs found yet. The spool is empty.")
-    st.caption(f"Looking in: `{spool_completed()}`")
-    st.stop()
+    for i in range(1, n):
+        z_curr = z_scores[i]
+        z_prev = z_scores[i - 1]
 
-instruments = sorted(df_all["instrument_id"].dropna().unique())
-selected_instruments = st.sidebar.multiselect(
-    "Instrument", instruments, default=instruments
-)
+        # R-4s: consecutive points on opposite sides, range > 4 SD
+        if (z_curr > 2 and z_prev < -2) or (z_curr < -2 and z_prev > 2):
+            if abs(z_curr - z_prev) > 4:
+                if labels[i] != "1-3s":
+                    labels[i] = "R-4s"
+                if labels[i - 1] != "1-3s":
+                    labels[i - 1] = "R-4s"
 
-control_types = sorted(df_all["control_type"].dropna().unique())
-selected_types = st.sidebar.multiselect(
-    "Control type", control_types, default=control_types
-)
+        # 2-2s: 2 consecutive points > 2 SD on the same side
+        if abs(z_curr) > 2 and abs(z_prev) > 2:
+            if (z_curr > 0) == (z_prev > 0):
+                if labels[i] not in ("1-3s", "R-4s"):
+                    labels[i] = "2-2s"
+                if labels[i - 1] not in ("1-3s", "R-4s"):
+                    labels[i - 1] = "2-2s"
 
-df = df_all[
-    df_all["instrument_id"].isin(selected_instruments)
-    & df_all["control_type"].isin(selected_types)
-].copy()
+    return labels
 
-st.sidebar.markdown("---")
-st.sidebar.metric("Runs shown", len(df))
-st.sidebar.metric("Total runs", len(df_all))
 
-# ── Main content ──────────────────────────────────────────────────────────────
+_WESTGARD_STYLE = {
+    "ok":   {"color": "#2ca02c", "symbol": "circle",      "size": 6},
+    "1-2s": {"color": "#f0ad4e", "symbol": "diamond",     "size": 8},
+    "1-3s": {"color": "#d9534f", "symbol": "triangle-up", "size": 9},
+    "2-2s": {"color": "#d9534f", "symbol": "triangle-up", "size": 9},
+    "R-4s": {"color": "#d9534f", "symbol": "triangle-up", "size": 9},
+}
 
-st.title("QC Trend Dashboard")
 
-if df.empty:
-    st.warning("No runs match the current filters.")
-    st.stop()
+# ---------------------------------------------------------------------------
+# Plotting — Raw Values
+# ---------------------------------------------------------------------------
+def build_figure(
+    df: pd.DataFrame,
+    log_area: bool,
+    metric_defs: list[tuple[str, str, bool]],
+) -> go.Figure:
+    """Build a subplot figure with one trace per target_id per metric."""
+    n_metrics = len(metric_defs)
+    subplot_titles = [m[1] for m in metric_defs]
 
-# ── Row 1: Recovery + RT shift ────────────────────────────────────────────────
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Target Recovery %")
-    fig = px.line(
-        df,
-        x="acquisition_time",
-        y="target_recovery_pct",
-        color="instrument_id",
-        markers=True,
-        labels={"acquisition_time": "Acquisition time", "target_recovery_pct": "Recovery %"},
-    )
-    fig.add_hline(y=80, line_dash="dash", line_color="orange", annotation_text="80% threshold")
-    fig.update_layout(yaxis_range=[0, 105], margin=dict(t=20))
-    st.plotly_chart(fig, use_container_width=True)
-
-with col2:
-    st.subheader("Median RT Shift (min)")
-    fig = px.line(
-        df,
-        x="acquisition_time",
-        y="median_rt_shift",
-        color="instrument_id",
-        markers=True,
-        labels={"acquisition_time": "Acquisition time", "median_rt_shift": "RT shift (min)"},
-    )
-    fig.add_hline(y=0, line_dash="dot", line_color="grey")
-    fig.update_layout(margin=dict(t=20))
-    st.plotly_chart(fig, use_container_width=True)
-
-# ── Row 2: Mass error + Chromatography score ──────────────────────────────────
-
-col3, col4 = st.columns(2)
-
-with col3:
-    st.subheader("Median Mass Error (ppm)")
-    fig = px.line(
-        df,
-        x="acquisition_time",
-        y="median_mass_error_ppm",
-        color="instrument_id",
-        markers=True,
-        labels={"acquisition_time": "Acquisition time", "median_mass_error_ppm": "Mass error (ppm)"},
-    )
-    fig.add_hline(y=0, line_dash="dot", line_color="grey")
-    fig.add_hrect(y0=-5, y1=5, fillcolor="green", opacity=0.05, annotation_text="±5 ppm")
-    fig.update_layout(margin=dict(t=20))
-    st.plotly_chart(fig, use_container_width=True)
-
-with col4:
-    st.subheader("Chromatography Score")
-    fig = px.line(
-        df,
-        x="acquisition_time",
-        y="chromatography_score",
-        color="instrument_id",
-        markers=True,
-        labels={"acquisition_time": "Acquisition time", "chromatography_score": "Score (0–1)"},
-    )
-    fig.add_hline(y=0.7, line_dash="dash", line_color="orange", annotation_text="0.7 threshold")
-    fig.update_layout(yaxis_range=[0, 1.05], margin=dict(t=20))
-    st.plotly_chart(fig, use_container_width=True)
-
-# ── Run table ─────────────────────────────────────────────────────────────────
-
-with st.expander("Run summary table", expanded=False):
-    display_cols = [
-        "acquisition_time", "instrument_id", "control_type", "file",
-        "target_recovery_pct", "targets_found", "targets_expected",
-        "median_rt_shift", "median_mass_error_ppm", "chromatography_score",
-    ]
-    st.dataframe(
-        df[[c for c in display_cols if c in df.columns]],
-        use_container_width=True,
-        hide_index=True,
+    fig = make_subplots(
+        rows=n_metrics,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        subplot_titles=subplot_titles,
     )
 
-# ── Per-run peptide detail ────────────────────────────────────────────────────
+    target_ids = sorted(df["target_id"].unique())
+    colors = _color_palette(len(target_ids))
+    color_map = dict(zip(target_ids, colors))
 
-st.markdown("---")
-st.subheader("Per-run peptide detail")
+    for row_idx, (col_name, _label, _is_log) in enumerate(metric_defs, start=1):
+        if col_name not in df.columns:
+            continue
+        sub = df.dropna(subset=[col_name])
+        if sub.empty:
+            continue
 
-run_options = df[["file", "_payload_file", "acquisition_time"]].copy()
-run_options["label"] = run_options.apply(
-    lambda r: f"{r['file']}  ({r['acquisition_time'].strftime('%Y-%m-%d %H:%M') if pd.notna(r['acquisition_time']) else 'unknown'})",
-    axis=1,
-)
-selected_label = st.selectbox("Select a run", run_options["label"].tolist())
-selected_row = run_options[run_options["label"] == selected_label].iloc[0]
-df_targets = load_target_metrics(selected_row["_payload_file"])
-
-if df_targets.empty:
-    st.info("No per-peptide data in this payload.")
-else:
-    t_col1, t_col2 = st.columns(2)
-
-    with t_col1:
-        if "peak_area" in df_targets.columns and "peptide_sequence" in df_targets.columns:
-            st.markdown("**Peak areas**")
-            fig = px.bar(
-                df_targets.dropna(subset=["peak_area"]).sort_values("peak_area", ascending=False),
-                x="peptide_sequence",
-                y="peak_area",
-                labels={"peptide_sequence": "Peptide", "peak_area": "Peak area"},
+        for tid in target_ids:
+            tdf = sub[sub["target_id"] == tid]
+            if tdf.empty:
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=tdf["acquisition_time"],
+                    y=tdf[col_name],
+                    mode="lines+markers",
+                    name=tid,
+                    legendgroup=tid,
+                    showlegend=(row_idx == 1),
+                    marker=dict(size=4),
+                    line=dict(color=color_map[tid], width=1.5),
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "%{customdata[1]}<br>"
+                        "Value: %{y:.4g}<extra></extra>"
+                    ),
+                    customdata=list(zip(tdf["raw_file_name"], tdf["peptide_sequence"])),
+                ),
+                row=row_idx,
+                col=1,
             )
-            fig.update_layout(xaxis_tickangle=-45, margin=dict(t=10))
-            st.plotly_chart(fig, use_container_width=True)
 
-    with t_col2:
-        if "mass_error_ppm" in df_targets.columns and "peptide_sequence" in df_targets.columns:
-            st.markdown("**Mass error (ppm)**")
-            fig = px.scatter(
-                df_targets.dropna(subset=["mass_error_ppm"]),
-                x="peptide_sequence",
-                y="mass_error_ppm",
-                color="detected" if "detected" in df_targets.columns else None,
-                labels={"peptide_sequence": "Peptide", "mass_error_ppm": "Mass error (ppm)"},
+        if col_name == "peak_area" and log_area:
+            fig.update_yaxes(type="log", row=row_idx, col=1)
+
+    fig.update_layout(
+        height=280 * n_metrics,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.01,
+            xanchor="left",
+            x=0,
+            font=dict(size=10),
+        ),
+        margin=dict(l=60, r=20, t=80, b=40),
+    )
+    fig.update_xaxes(title_text="Acquisition Time", row=n_metrics, col=1)
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Plotting — Levey-Jennings
+# ---------------------------------------------------------------------------
+def build_lj_figure(
+    df: pd.DataFrame,
+    metric_defs: list[tuple[str, str, bool]],
+    baseline_mode: str = "All runs",
+    baseline_n: int = 20,
+) -> go.Figure:
+    """Build a Levey-Jennings chart with z-score normalization and Westgard rules."""
+    n_metrics = len(metric_defs)
+    subplot_titles = [f"{m[1]}  (SD from mean)" for m in metric_defs]
+
+    fig = make_subplots(
+        rows=n_metrics,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.04,
+        subplot_titles=subplot_titles,
+    )
+
+    target_ids = sorted(df["target_id"].unique())
+    colors = _color_palette(len(target_ids))
+    color_map = dict(zip(target_ids, colors))
+
+    legend_shown: set[str] = set()
+
+    for row_idx, (col_name, _label, _is_log) in enumerate(metric_defs, start=1):
+        if col_name not in df.columns:
+            continue
+        sub = df.dropna(subset=[col_name])
+        if sub.empty:
+            continue
+
+        for tid in target_ids:
+            tdf = sub[sub["target_id"] == tid].copy()
+            if tdf.empty:
+                continue
+
+            vals = tdf[col_name]
+
+            if baseline_mode == "Last N runs":
+                baseline_vals = vals.iloc[-baseline_n:]
+            elif baseline_mode == "Last N days":
+                cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=baseline_n)
+                baseline_mask = tdf["acquisition_time"] >= cutoff
+                baseline_vals = vals[baseline_mask]
+                if len(baseline_vals) < 2:
+                    baseline_vals = vals
+            else:
+                baseline_vals = vals
+
+            mean_val = baseline_vals.mean()
+            sd_val = baseline_vals.std()
+
+            if len(tdf) < 2 or sd_val == 0:
+                z_scores = pd.Series(np.zeros(len(vals)), index=vals.index)
+                westgard_labels = ["ok"] * len(vals)
+            else:
+                z_scores = (vals - mean_val) / sd_val
+                westgard_labels = evaluate_westgard(vals, mean_val, sd_val)
+
+            tdf["_z"] = z_scores.values
+
+            for status in ("ok", "1-2s", "1-3s", "2-2s", "R-4s"):
+                mask = [w == status for w in westgard_labels]
+                if not any(mask):
+                    continue
+                pts = tdf[mask]
+                style = _WESTGARD_STYLE[status]
+
+                show_legend = False
+                legend_name = tid
+                if status == "ok":
+                    if row_idx == 1 and tid not in legend_shown:
+                        show_legend = True
+                        legend_shown.add(tid)
+                else:
+                    if status not in legend_shown:
+                        show_legend = True
+                        legend_shown.add(status)
+                    legend_name = f"{status} violation"
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=pts["acquisition_time"],
+                        y=pts["_z"],
+                        mode="markers",
+                        name=legend_name,
+                        legendgroup=tid if status == "ok" else status,
+                        showlegend=show_legend,
+                        marker=dict(
+                            size=style["size"],
+                            symbol=style["symbol"],
+                            color=style["color"] if status != "ok" else color_map[tid],
+                            line=dict(width=1, color="#333"),
+                        ),
+                        hovertemplate=(
+                            f"<b>{tid}</b><br>"
+                            f"Status: {status}<br>"
+                            "z-score: %{y:.2f} SD<br>"
+                            f"Raw: %{{customdata[0]:.4g}}<br>"
+                            f"Mean: {mean_val:.4g}, SD: {sd_val:.4g}"
+                            "<extra></extra>"
+                        ),
+                        customdata=list(zip(pts[col_name])),
+                    ),
+                    row=row_idx,
+                    col=1,
+                )
+
+        _add_control_lines(fig, row_idx)
+        fig.update_yaxes(range=[-4.5, 4.5], row=row_idx, col=1)
+
+    fig.update_layout(
+        height=320 * n_metrics,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.01,
+            xanchor="left",
+            x=0,
+            font=dict(size=10),
+        ),
+        margin=dict(l=60, r=20, t=80, b=40),
+    )
+    fig.update_xaxes(title_text="Acquisition Time", row=n_metrics, col=1)
+    return fig
+
+
+def _add_control_lines(fig: go.Figure, row: int) -> None:
+    fig.add_hline(y=0, row=row, col=1,
+                  line=dict(color="#1f77b4", width=1.5, dash="solid"), opacity=0.6)
+    for mult in (-1, 1):
+        fig.add_hline(y=mult, row=row, col=1,
+                      line=dict(color="#2ca02c", width=1, dash="dash"), opacity=0.5)
+    for mult in (-2, 2):
+        fig.add_hline(y=mult, row=row, col=1,
+                      line=dict(color="#f0ad4e", width=1.2, dash="dash"), opacity=0.6)
+    for mult in (-3, 3):
+        fig.add_hline(y=mult, row=row, col=1,
+                      line=dict(color="#d9534f", width=1.5, dash="dash"), opacity=0.7)
+
+
+def _color_palette(n: int) -> list[str]:
+    palette = px.colors.qualitative.Dark24 + px.colors.qualitative.Light24
+    return [palette[i % len(palette)] for i in range(n)]
+
+
+# ---------------------------------------------------------------------------
+# Streamlit app
+# ---------------------------------------------------------------------------
+def main() -> None:
+    st.set_page_config(page_title="QC Dashboard", layout="wide")
+    st.title("QC Metrics Dashboard")
+
+    with st.sidebar:
+        st.header("Settings")
+        default_folder = _cli_args.folder or str(spool_dir())
+        folder = st.text_input("Payload folder", value=default_folder)
+
+        chart_mode = st.radio("Chart mode", ["Raw Values", "Levey-Jennings"], index=0)
+
+        log_area = False
+        if chart_mode == "Raw Values":
+            log_area = st.checkbox("Log scale for Peak Area", value=False)
+
+        baseline_window_mode = "All runs"
+        baseline_window_n = 20
+        if chart_mode == "Levey-Jennings":
+            baseline_window_mode = st.selectbox(
+                "Baseline window", ["All runs", "Last N runs", "Last N days"]
             )
-            fig.add_hline(y=0, line_dash="dot", line_color="grey")
-            fig.update_layout(xaxis_tickangle=-45, margin=dict(t=10))
-            st.plotly_chart(fig, use_container_width=True)
+            if baseline_window_mode == "Last N runs":
+                baseline_window_n = st.number_input(
+                    "Number of runs", min_value=3, max_value=500, value=20
+                )
+            elif baseline_window_mode == "Last N days":
+                baseline_window_n = st.number_input(
+                    "Number of days", min_value=1, max_value=365, value=30
+                )
 
-    with st.expander("Peptide metrics table", expanded=False):
-        st.dataframe(df_targets, use_container_width=True, hide_index=True)
+        auto_refresh = st.toggle("Auto-refresh", value=False)
+        refresh_secs = st.slider("Refresh interval (s)", min_value=10, max_value=300, value=60)
+        if auto_refresh:
+            st.info(f"Refreshing every {refresh_secs}s")
+
+    manifest = load_manifest(folder)
+    if manifest:
+        with st.sidebar.expander("Template Info"):
+            st.write(f"**Template:** {manifest.get('template_name', '—')}")
+            st.write(f"**Instrument:** {manifest.get('instrument_id', '—')}")
+            targets = manifest.get("targets", [])
+            st.write(f"**Expected targets:** {len(targets)}")
+            extras = manifest.get("extra_metrics", [])
+            if extras:
+                st.write(f"**Extra metrics:** {', '.join(extras)}")
+
+    df = load_payloads(folder)
+
+    if df.empty:
+        st.warning(
+            f"No `*_payload.json` files found in `{folder}`. "
+            "Check that the path is correct and that the agent has processed at least one file."
+        )
+        if auto_refresh:
+            import time
+            time.sleep(refresh_secs)
+            st.rerun()
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        instruments = sorted(df["instrument_id"].unique())
+        selected_instrument = st.selectbox("Instrument", options=["All"] + instruments)
+    with col2:
+        control_types = sorted(df["control_type"].dropna().unique())
+        selected_control = st.selectbox("Control Type", options=["All"] + list(control_types))
+
+    if selected_instrument != "All":
+        df = df[df["instrument_id"] == selected_instrument]
+    if selected_control != "All":
+        df = df[df["control_type"] == selected_control]
+
+    if df.empty:
+        st.info("No data matches the selected filters.")
+        return
+
+    latest = df.sort_values("acquisition_time").iloc[-1]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Latest File", latest.get("raw_file_name", "—"))
+    targets_found = latest.get("targets_found")
+    targets_expected = latest.get("targets_expected")
+    if targets_found is not None and targets_expected is not None:
+        c2.metric("Targets", f"{int(targets_found)}/{int(targets_expected)}")
+    else:
+        c2.metric("Targets", "—")
+    median_rt = latest.get("median_rt_shift")
+    c3.metric("Median RT Shift", f"{median_rt:.3f} min" if pd.notna(median_rt) else "—")
+    median_me = latest.get("median_mass_error_ppm")
+    c4.metric("Median Mass Error", f"{median_me:.2f} ppm" if pd.notna(median_me) else "—")
+
+    metric_defs = discover_metrics(df)
+    if not metric_defs:
+        st.info("No plottable metrics found in the data.")
+        return
+
+    if chart_mode == "Raw Values":
+        fig = build_figure(df, log_area=log_area, metric_defs=metric_defs)
+    else:
+        fig = build_lj_figure(
+            df,
+            metric_defs=metric_defs,
+            baseline_mode=baseline_window_mode,
+            baseline_n=baseline_window_n,
+        )
+    st.plotly_chart(fig, use_container_width=True)
+
+    if chart_mode == "Levey-Jennings":
+        with st.expander("Westgard Rules Legend"):
+            st.markdown(
+                "| Rule | Meaning | Action |\n"
+                "|------|---------|--------|\n"
+                "| **1-2s** | Single point > 2 SD from mean | Warning |\n"
+                "| **1-3s** | Single point > 3 SD from mean | Reject |\n"
+                "| **2-2s** | 2 consecutive points > 2 SD, same side | Reject |\n"
+                "| **R-4s** | 2 consecutive points spanning > 4 SD | Reject |\n"
+                "\n"
+                "Green circles = OK · Yellow diamonds = Warning · Red triangles = Reject"
+            )
+
+    if auto_refresh:
+        import time
+        time.sleep(refresh_secs)
+        st.rerun()
+
+
+if __name__ == "__main__":
+    main()
