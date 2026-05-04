@@ -107,7 +107,10 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C4", "RUF"]
-ignore = ["E501"]
+# E501: line length (handled separately; long Skyline error/log strings are OK)
+# RUF001/002/003: ambiguous unicode characters — we use σ, ×, – intentionally
+#                 in chart labels and dashboard copy for proteomics-quality typography
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -25,7 +25,7 @@ from plotly.subplots import make_subplots
 # Ensure the package is importable when run from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from mdqc.config.paths import spool_dir  # noqa: E402
+from mdqc.config.paths import spool_dir
 
 # ---------------------------------------------------------------------------
 # CLI arguments (so the tray / dashboard Start button can pass --folder)
@@ -236,20 +236,19 @@ def evaluate_westgard(values: pd.Series, mean: float, sd: float) -> list[str]:
         z_prev = z_scores[i - 1]
 
         # R-4s: consecutive points on opposite sides, range > 4 SD
-        if (z_curr > 2 and z_prev < -2) or (z_curr < -2 and z_prev > 2):
-            if abs(z_curr - z_prev) > 4:
-                if labels[i] != "1-3s":
-                    labels[i] = "R-4s"
-                if labels[i - 1] != "1-3s":
-                    labels[i - 1] = "R-4s"
+        opposite_sides = (z_curr > 2 and z_prev < -2) or (z_curr < -2 and z_prev > 2)
+        if opposite_sides and abs(z_curr - z_prev) > 4:
+            if labels[i] != "1-3s":
+                labels[i] = "R-4s"
+            if labels[i - 1] != "1-3s":
+                labels[i - 1] = "R-4s"
 
         # 2-2s: 2 consecutive points > 2 SD on the same side
-        if abs(z_curr) > 2 and abs(z_prev) > 2:
-            if (z_curr > 0) == (z_prev > 0):
-                if labels[i] not in ("1-3s", "R-4s"):
-                    labels[i] = "2-2s"
-                if labels[i - 1] not in ("1-3s", "R-4s"):
-                    labels[i - 1] = "2-2s"
+        if abs(z_curr) > 2 and abs(z_prev) > 2 and (z_curr > 0) == (z_prev > 0):
+            if labels[i] not in ("1-3s", "R-4s"):
+                labels[i] = "2-2s"
+            if labels[i - 1] not in ("1-3s", "R-4s"):
+                labels[i - 1] = "2-2s"
 
     return labels
 
@@ -287,7 +286,7 @@ def build_figure(
     label_col = "target_label" if "target_label" in df.columns else "target_id"
     target_labels = sorted(df[label_col].dropna().unique())
     colors = _color_palette(len(target_labels))
-    color_map = dict(zip(target_labels, colors))
+    color_map = dict(zip(target_labels, colors, strict=False))
 
     for row_idx, (col_name, _label, _is_log) in enumerate(metric_defs, start=1):
         if col_name not in df.columns:
@@ -308,14 +307,14 @@ def build_figure(
                     name=tid,
                     legendgroup=tid,
                     showlegend=(row_idx == 1),
-                    marker=dict(size=4),
-                    line=dict(color=color_map[tid], width=1.5),
+                    marker={"size": 4},
+                    line={"color": color_map[tid], "width": 1.5},
                     hovertemplate=(
                         "<b>%{customdata[0]}</b><br>"
                         "%{customdata[1]}<br>"
                         "Value: %{y:.4g}<extra></extra>"
                     ),
-                    customdata=list(zip(tdf["raw_file_name"], tdf["peptide_sequence"])),
+                    customdata=list(zip(tdf["raw_file_name"], tdf["peptide_sequence"], strict=False)),
                 ),
                 row=row_idx,
                 col=1,
@@ -326,15 +325,15 @@ def build_figure(
 
     fig.update_layout(
         height=280 * n_metrics,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.01,
-            xanchor="left",
-            x=0,
-            font=dict(size=10),
-        ),
-        margin=dict(l=60, r=20, t=80, b=40),
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.01,
+            "xanchor": "left",
+            "x": 0,
+            "font": {"size": 10},
+        },
+        margin={"l": 60, "r": 20, "t": 80, "b": 40},
     )
     x_title = "Payload Time" if time_col == "timestamp" else "Acquisition Time"
     fig.update_xaxes(title_text=x_title, row=n_metrics, col=1)
@@ -366,7 +365,7 @@ def build_lj_figure(
     label_col = "target_label" if "target_label" in df.columns else "target_id"
     target_labels = sorted(df[label_col].dropna().unique())
     colors = _color_palette(len(target_labels))
-    color_map = dict(zip(target_labels, colors))
+    color_map = dict(zip(target_labels, colors, strict=False))
 
     legend_shown: set[str] = set()
 
@@ -434,12 +433,12 @@ def build_lj_figure(
                         name=legend_name,
                         legendgroup=tid if status == "ok" else status,
                         showlegend=show_legend,
-                        marker=dict(
-                            size=style["size"],
-                            symbol=style["symbol"],
-                            color=style["color"] if status != "ok" else color_map[tid],
-                            line=dict(width=1, color="#333"),
-                        ),
+                        marker={
+                            "size": style["size"],
+                            "symbol": style["symbol"],
+                            "color": style["color"] if status != "ok" else color_map[tid],
+                            "line": {"width": 1, "color": "#333"},
+                        },
                         hovertemplate=(
                             f"<b>{tid}</b><br>"
                             f"Status: {status}<br>"
@@ -459,15 +458,15 @@ def build_lj_figure(
 
     fig.update_layout(
         height=320 * n_metrics,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.01,
-            xanchor="left",
-            x=0,
-            font=dict(size=10),
-        ),
-        margin=dict(l=60, r=20, t=80, b=40),
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.01,
+            "xanchor": "left",
+            "x": 0,
+            "font": {"size": 10},
+        },
+        margin={"l": 60, "r": 20, "t": 80, "b": 40},
     )
     x_title = "Payload Time" if time_col == "timestamp" else "Acquisition Time"
     fig.update_xaxes(title_text=x_title, row=n_metrics, col=1)
@@ -476,16 +475,16 @@ def build_lj_figure(
 
 def _add_control_lines(fig: go.Figure, row: int) -> None:
     fig.add_hline(y=0, row=row, col=1,
-                  line=dict(color="#1f77b4", width=1.5, dash="solid"), opacity=0.6)
+                  line={"color": "#1f77b4", "width": 1.5, "dash": "solid"}, opacity=0.6)
     for mult in (-1, 1):
         fig.add_hline(y=mult, row=row, col=1,
-                      line=dict(color="#2ca02c", width=1, dash="dash"), opacity=0.5)
+                      line={"color": "#2ca02c", "width": 1, "dash": "dash"}, opacity=0.5)
     for mult in (-2, 2):
         fig.add_hline(y=mult, row=row, col=1,
-                      line=dict(color="#f0ad4e", width=1.2, dash="dash"), opacity=0.6)
+                      line={"color": "#f0ad4e", "width": 1.2, "dash": "dash"}, opacity=0.6)
     for mult in (-3, 3):
         fig.add_hline(y=mult, row=row, col=1,
-                      line=dict(color="#d9534f", width=1.5, dash="dash"), opacity=0.7)
+                      line={"color": "#d9534f", "width": 1.5, "dash": "dash"}, opacity=0.7)
 
 
 def _color_palette(n: int) -> list[str]:
@@ -509,9 +508,12 @@ _RT_BIN_COLORS = {
 def _assign_rt_bin(rt: float | None) -> str:
     if rt is None or pd.isna(rt):
         return "Unknown"
-    if rt < 2:        return "Early (<2 min)"
-    if rt < 3:        return "Mid (2–3 min)"
-    if rt < 4.5:      return "Late (3–4.5 min)"
+    if rt < 2:
+        return "Early (<2 min)"
+    if rt < 3:
+        return "Mid (2–3 min)"
+    if rt < 4.5:
+        return "Late (3–4.5 min)"
     return "Very late (≥4.5)"
 
 
@@ -522,7 +524,7 @@ def _zscore_per_peptide(
     out = df.copy()
     out["_z"] = np.nan
     label_col = "target_label" if "target_label" in out.columns else "target_id"
-    for label, sub in out.groupby(label_col):
+    for _label, sub in out.groupby(label_col):
         vals = sub[metric_col].dropna()
         if len(vals) < 2:
             continue
@@ -589,7 +591,7 @@ def build_grouped_lj(
         (2,  "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
         (3,  "dash", "#d9534f"), (-3, "dash", "#d9534f"),
     ]:
-        fig.add_hline(y=y, line=dict(color=color, width=1, dash=dash), opacity=0.4)
+        fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash}, opacity=0.4)
 
     bin_order = ["Early (<2 min)", "Mid (2–3 min)", "Late (3–4.5 min)", "Very late (≥4.5)", "Unknown"]
     seen_bins = [b for b in bin_order if b in df["_rt_bin"].unique()]
@@ -611,7 +613,7 @@ def build_grouped_lj(
             x=pd.concat([agg[time_col], agg[time_col][::-1]]),
             y=pd.concat([agg["q75"], agg["q25"][::-1]]),
             fill="toself", fillcolor=color, opacity=0.12,
-            line=dict(width=0), showlegend=False, hoverinfo="skip",
+            line={"width": 0}, showlegend=False, hoverinfo="skip",
             name=f"{rt_bin} IQR",
         ))
         # Median line + markers — mark points outside ±2σ for attention
@@ -620,13 +622,13 @@ def build_grouped_lj(
             x=agg[time_col], y=agg["median"],
             mode="lines+markers",
             name=f"{rt_bin} (n={int(sub['peptide_sequence'].nunique())})",
-            line=dict(color=color, width=2),
-            marker=dict(
-                size=[10 if v else 6 for v in violation_mask],
-                color=color,
-                symbol=["diamond" if v else "circle" for v in violation_mask],
-                line=dict(width=1, color="#333"),
-            ),
+            line={"color": color, "width": 2},
+            marker={
+                "size": [10 if v else 6 for v in violation_mask],
+                "color": color,
+                "symbol": ["diamond" if v else "circle" for v in violation_mask],
+                "line": {"width": 1, "color": "#333"},
+            },
             hovertemplate=(
                 f"<b>{rt_bin}</b><br>"
                 "Time: %{x}<br>"
@@ -640,10 +642,10 @@ def build_grouped_lj(
 
     fig.update_layout(
         height=height,
-        margin=dict(l=40, r=10, t=30, b=30),
-        yaxis=dict(title=f"{metric_label} (SD from mean)", range=[-4.5, 4.5]),
-        xaxis=dict(title="Acquisition Time" if time_col == "acquisition_time" else "Payload Time"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=10)),
+        margin={"l": 40, "r": 10, "t": 30, "b": 30},
+        yaxis={"title": f"{metric_label} (SD from mean)", "range": [-4.5, 4.5]},
+        xaxis={"title": "Acquisition Time" if time_col == "acquisition_time" else "Payload Time"},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0, "font": {"size": 10}},
         hovermode="x unified",
     )
     return fig
@@ -724,7 +726,7 @@ def build_all_metrics_grid(
             (2, "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
             (3, "dash", "#d9534f"), (-3, "dash", "#d9534f"),
         ]:
-            fig.add_hline(y=y, line=dict(color=color, width=1, dash=dash),
+            fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash},
                           opacity=0.35, row=row, col=col_idx)
 
         for rt_bin in seen_bins_global:
@@ -748,7 +750,7 @@ def build_all_metrics_grid(
                 x=pd.concat([agg[time_col], agg[time_col][::-1]]),
                 y=pd.concat([agg["q75"], agg["q25"][::-1]]),
                 fill="toself", fillcolor=color, opacity=0.10,
-                line=dict(width=0), showlegend=False, hoverinfo="skip",
+                line={"width": 0}, showlegend=False, hoverinfo="skip",
             ), row=row, col=col_idx)
 
             # Median line
@@ -758,8 +760,8 @@ def build_all_metrics_grid(
                 name=rt_bin,
                 legendgroup=rt_bin,
                 showlegend=show_legend,
-                line=dict(color=color, width=1.5),
-                marker=dict(size=4, color=color),
+                line={"color": color, "width": 1.5},
+                marker={"size": 4, "color": color},
                 hovertemplate=(
                     f"<b>{lbl} · {rt_bin}</b><br>"
                     "Time: %{x}<br>z: %{y:.2f}<extra></extra>"
@@ -770,38 +772,38 @@ def build_all_metrics_grid(
         ytitle = "z-score (σ from baseline)" if col_idx == 1 else None
         fig.update_yaxes(
             range=[-4.5, 4.5], row=row, col=col_idx,
-            tickfont=dict(size=10, color="#475569"),
+            tickfont={"size": 10, "color": "#475569"},
             tickvals=[-3, -2, -1, 0, 1, 2, 3],
             gridcolor="#e2e8f0",
             zerolinecolor="#cbd5e1",
             title=ytitle,
-            title_font=dict(size=10, color="#64748b"),
+            title_font={"size": 10, "color": "#64748b"},
         )
         fig.update_xaxes(
-            tickfont=dict(size=10, color="#475569"),
+            tickfont={"size": 10, "color": "#475569"},
             gridcolor="#e2e8f0",
             row=row, col=col_idx,
         )
 
     # Subplot title font sized to match the larger panels
     for ann in fig.layout.annotations:
-        ann.font = dict(size=13, color="#0f172a", family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif")
+        ann.font = {"size": 13, "color": "#0f172a", "family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"}
 
     fig.update_layout(
         height=height,
-        margin=dict(l=10, r=10, t=50, b=20),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom", y=1.02,
-            xanchor="left", x=0,
-            font=dict(size=11, color="#334155",
-                      family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
-            bgcolor="rgba(0,0,0,0)",
-        ),
+        margin={"l": 10, "r": 10, "t": 50, "b": 20},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom", "y": 1.02,
+            "xanchor": "left", "x": 0,
+            "font": {"size": 11, "color": "#334155",
+                      "family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"},
+            "bgcolor": "rgba(0,0,0,0)",
+        },
         hovermode="closest",
         plot_bgcolor="white",
         paper_bgcolor="white",
-        font=dict(family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
+        font={"family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"},
     )
     return fig
 
@@ -881,25 +883,25 @@ def build_scorecard(
         zmin=0, zmax=100,
         text=hover_texts,
         hovertemplate="<b>%{y}</b><br>%{x}<br>%{text}<extra></extra>",
-        colorbar=dict(
-            title=dict(text="% peptides ±2σ", font=dict(size=10, color="#64748b")),
-            thickness=10, len=0.85, tickfont=dict(size=9, color="#64748b"),
-            outlinewidth=0,
-        ),
+        colorbar={
+            "title": {"text": "% peptides ±2σ", "font": {"size": 10, "color": "#64748b"}},
+            "thickness": 10, "len": 0.85, "tickfont": {"size": 9, "color": "#64748b"},
+            "outlinewidth": 0,
+        },
         xgap=2, ygap=2,
         showscale=True,
     ))
     fig.update_layout(
         height=max(280, 30 * len(runs) + 100),
-        margin=dict(l=10, r=10, t=30, b=80),
-        xaxis=dict(side="top", tickangle=-30,
-                   tickfont=dict(size=10, color="#475569"),
-                   showgrid=False),
-        yaxis=dict(autorange="reversed",
-                   tickfont=dict(size=10, color="#475569"),
-                   showgrid=False),
+        margin={"l": 10, "r": 10, "t": 30, "b": 80},
+        xaxis={"side": "top", "tickangle": -30,
+                   "tickfont": {"size": 10, "color": "#475569"},
+                   "showgrid": False},
+        yaxis={"autorange": "reversed",
+                   "tickfont": {"size": 10, "color": "#475569"},
+                   "showgrid": False},
         plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
+        font={"family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"},
     )
     return fig
 
@@ -1060,22 +1062,24 @@ def main() -> None:
     if df.empty:
         st.warning(f"No `*_payload.json` files found in `{folder}`.")
         if auto_refresh:
-            import time; time.sleep(refresh_secs); st.rerun()
+            import time
+            time.sleep(refresh_secs)
+            st.rerun()
         return
 
     # ─── Title row + filter toolbar (separate rows, cleanly aligned) ─────
     st.markdown('<div class="qc-title">QC Metrics Dashboard</div>',
                 unsafe_allow_html=True)
 
-    f1, f2, f3 = st.columns([1.5, 1.5, 4])
+    f1, f2, _f3 = st.columns([1.5, 1.5, 4])
     instruments = sorted(df["instrument_id"].dropna().unique())
     selected_instrument = f1.selectbox(
-        "Instrument", ["All"] + list(instruments),
+        "Instrument", ["All", *list(instruments)],
         label_visibility="visible",
     )
     control_types = sorted(df["control_type"].dropna().unique())
     selected_control = f2.selectbox(
-        "Control type", ["All"] + list(control_types),
+        "Control type", ["All", *list(control_types)],
         label_visibility="visible",
     )
     if selected_instrument != "All":
@@ -1156,7 +1160,9 @@ def main() -> None:
         st.plotly_chart(fig, use_container_width=True)
 
     if auto_refresh:
-        import time; time.sleep(refresh_secs); st.rerun()
+        import time
+        time.sleep(refresh_secs)
+        st.rerun()
 
 
 if __name__ == "__main__":

@@ -129,7 +129,7 @@ async def _dashboard_context(request: Request) -> dict[str, Any]:
     ctx = common_context(request)
     ctx.update(
         {
-            "paused": getattr(state, "paused").is_set() if hasattr(getattr(state, "paused", None), "is_set") else False,
+            "paused": state.paused.is_set() if hasattr(getattr(state, "paused", None), "is_set") else False,
             "agent_id": getattr(state, "agent_id", "unknown"),
             "uptime": _format_uptime(getattr(state, "started_at", None)),
             "cloud_mode": _cloud_mode(state),

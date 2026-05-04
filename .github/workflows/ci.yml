@@ -17,10 +17,10 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -34,17 +34,19 @@ jobs:
         run: ruff check src tests
 
       - name: Run tests
-        run: pytest -q
+        # Exclude `live` and `skyline` markers — both require external state
+        # (running agent + Skyline install + raw files) that CI doesn't have.
+        run: pytest -q -m "not live and not skyline"
 
   build-exe:
     name: Build Windows exe
     needs: test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip

@@ -17,14 +17,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import psutil
+
+from mdqc.config.defaults import SKYLINE_TIMEOUT_S
+
 # Files that Skyline reads from the template directory but doesn't write to.
 # Hardlinking them into the per-extraction temp dir is essentially free on
 # NTFS — no I/O, just an extra directory entry pointing at the same inode.
 _LIBRARY_EXTENSIONS = (".blib", ".skyl", ".sky.view")
-
-import psutil
-
-from mdqc.config.defaults import SKYLINE_TIMEOUT_S
 
 
 class SkylineNotFound(Exception):

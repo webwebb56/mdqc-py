@@ -46,10 +46,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import contextlib
+
 from mdqc.config.paths import (
     config_path,
-    runtime_file as _rt_path_fn,
     spool_completed,
+)
+from mdqc.config.paths import (
+    runtime_file as _rt_path_fn,
 )
 from mdqc.config.schema import Config
 from mdqc.ipc.client import IpcClient
@@ -114,10 +118,8 @@ def _agent_healthy() -> bool:
     except Exception:
         return False
     finally:
-        try:
+        with contextlib.suppress(Exception):
             client.close()
-        except Exception:
-            pass
 
 
 def _all_raw_files() -> list[Path]:

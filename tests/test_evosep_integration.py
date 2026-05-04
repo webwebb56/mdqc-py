@@ -16,7 +16,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -29,11 +28,11 @@ EVOSEP_RAW_DIR = DATA_DIR / "Evosep_raw"
 # Ensure package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mdqc.classifier import classify_filename
-from mdqc.config.paths import spool_dir, spool_completed, methods_dir
-from mdqc.config.schema import Config
-from mdqc.extractor.skyline import find_skyline
-from mdqc.types import ControlType, Confidence, ClassificationSource
+from mdqc.classifier import classify_filename  # noqa: E402
+from mdqc.config.paths import methods_dir, spool_completed, spool_dir  # noqa: E402
+from mdqc.config.schema import Config  # noqa: E402
+from mdqc.extractor.skyline import find_skyline  # noqa: E402
+from mdqc.types import ClassificationSource, Confidence, ControlType  # noqa: E402
 
 # These are resolved at import time — before conftest._isolate_data_dir redirects
 # MDQC_DATA_DIR, so methods_dir() here returns the real ProgramData path.
@@ -141,14 +140,14 @@ class TestFileAccessibility:
         if not files:
             pytest.skip("No .raw files found")
         unreadable = [f for f in files if not os.access(f, os.R_OK)]
-        assert not unreadable, f"Unreadable files:\n" + "\n".join(str(f) for f in unreadable)
+        assert not unreadable, "Unreadable files:\n" + "\n".join(str(f) for f in unreadable)
 
     def test_raw_files_are_nonzero(self):
         files = _raw_files()
         if not files:
             pytest.skip("No .raw files found")
         empty = [f for f in files if f.stat().st_size == 0]
-        assert not empty, f"Empty (0-byte) .raw files:\n" + "\n".join(str(f) for f in empty)
+        assert not empty, "Empty (0-byte) .raw files:\n" + "\n".join(str(f) for f in empty)
 
     def test_file_pattern_glob_works(self):
         """Verify the default '*.raw' glob would pick up the files."""
@@ -287,11 +286,13 @@ class TestPayloadSchema:
     def test_payload_generates_valid_json(self, tmp_path):
         from mdqc.spool.store import Spool
         from mdqc.types import (
-            ExtractionResult, ExtractionStatus, RunClassification,
-            Confidence, ClassificationSource, ControlType,
-            TargetMetric, RunMetrics,
+            ControlType,
+            ExtractionResult,
+            ExtractionStatus,
+            RunClassification,
+            RunMetrics,
+            TargetMetric,
         )
-        from mdqc.types import Vendor
 
         spool = Spool(agent_id="evosep-test", agent_version="0.1.0", root=tmp_path)
 
@@ -435,10 +436,11 @@ class TestPayloadSchema:
             pytest.skip("plots/app.py not found")
 
         spec = importlib.util.spec_from_file_location("plots_app", app_path)
-        plots_app = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
 
         # load_payloads is a standalone function — test it directly without Streamlit
         import json as _json
+
         import pandas as pd
 
         records = []
@@ -446,7 +448,7 @@ class TestPayloadSchema:
         for fpath in folder.glob("*_payload.json"):
             data = _json.loads(fpath.read_text(encoding="utf-8"))
             run = data.get("run", {})
-            rm = data.get("run_metrics", {})
+            data.get("run_metrics", {})
             for target in data.get("target_metrics", []):
                 rec = {
                     "acquisition_time": run.get("acquisition_time"),

@@ -14,11 +14,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from mdqc.config import paths
 from mdqc.config.schema import (
+    CONTROL_TYPE_VALUES,
     AgentConfig,
     ClassifierRule,
     CloudConfig,
     Config,
-    CONTROL_TYPE_VALUES,
     InstrumentConfig,
     SkylineConfig,
     SpoolConfig,
