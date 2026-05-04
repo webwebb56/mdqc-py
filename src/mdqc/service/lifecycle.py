@@ -30,6 +30,7 @@ from mdqc.config.schema import Config, InstrumentConfig
 from mdqc.crash import install_crash_handlers
 from mdqc.diagnostics import run_diagnostics
 from mdqc.extractor import Extractor
+from mdqc.extractor.skyline import is_clickonce_install
 from mdqc.failed_files import FailedFilesStore
 from mdqc.ipc.runtime import RuntimeFile, RuntimeInfo, generate_token
 from mdqc.log import configure_logging
@@ -373,6 +374,28 @@ async def _build_state(cfg: Config) -> AppState:
     activity = ActivityLog.load()
     processed_registry = ProcessedRegistry()
     extractor = Extractor(cfg.skyline, work_dir=paths.spool_work())
+    if extractor.skyline_path is None:
+        log.error(
+            "skyline_not_found",
+            extra={
+                "configured_path": cfg.skyline.path,
+                "remediation": (
+                    "Install Skyline at C:\\Program Files\\Skyline\\SkylineCmd.exe "
+                    "OR set [skyline] path = \"...\\SkylineCmd.exe\" in config.toml. "
+                    "Every file will fail extraction until this is fixed."
+                ),
+            },
+        )
+    elif is_clickonce_install(extractor.skyline_path):
+        log.error(
+            "skyline_clickonce_unsupported",
+            extra={"skyline_path": str(extractor.skyline_path)},
+        )
+    else:
+        log.info(
+            "skyline_detected",
+            extra={"skyline_path": str(extractor.skyline_path)},
+        )
     uploader = Uploader(cfg.cloud, agent_version=_agent_version)
     uploader_worker = UploaderWorker(spool, uploader)
 

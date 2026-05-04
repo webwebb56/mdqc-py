@@ -31,12 +31,32 @@ required for the prototype.
 - Local administrator rights for the first install only
 
 ### Software
-- **Skyline (64-bit)** — daily or release build, installed at
-  `C:\Program Files\Skyline\SkylineCmd.exe`
-  (the agent auto-detects via registry; common-path fallback works too)
+- **Skyline (64-bit)** — daily or release build. The agent auto-detects it at:
+  - `C:\Program Files\Skyline\SkylineCmd.exe`
+  - `C:\Program Files (x86)\Skyline\SkylineCmd.exe`
+  - via Windows registry (Apache / ProteoWizard / Skyline keys)
+  - via `PATH`
+
+  **If your Skyline is installed elsewhere** (per-user folder, custom install
+  location), set the path explicitly in `config.toml`:
+  ```toml
+  [skyline]
+  path = "C:\\Custom\\Path\\To\\SkylineCmd.exe"
+  ```
+
+  **ClickOnce installs are not supported** — these have paths containing
+  `\apps\2.0\`. Use the regular installer from <https://skyline.ms>.
+
 - **Python 3.11 or 3.12** — install from <https://www.python.org/downloads>
   with the "Add Python to PATH" option ticked
 - **Git** (only if cloning from GitHub) — <https://git-scm.com/download/win>
+
+### Verifying Skyline is detected (recommended before first run)
+```powershell
+python -c "from mdqc.extractor.skyline import find_skyline; p = find_skyline(); print(p or 'NOT FOUND - install Skyline or set [skyline].path in config.toml')"
+```
+Should print the resolved path. If it prints `NOT FOUND`, fix that before
+starting the agent — extraction will fail on every file otherwise.
 
 ### Files Evosep should provide (or that ship in the prototype)
 - A populated Skyline document directory containing:
@@ -193,6 +213,7 @@ the acquisition. See *Troubleshooting* below.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
+| Dashboard shows "No `*_payload.json` files found" and the log has repeated `processed_callback_failed: SkylineNotFound: SkylineCmd.exe not found` | Skyline isn't installed at any default location and `[skyline].path` isn't set in config | Install Skyline at default path, OR add `[skyline] path = "C:\\path\\to\\SkylineCmd.exe"` to `config.toml`. Verify with the `find_skyline` snippet in §2 |
 | `0/48 targets found` on every run | Skyline template doesn't match acquisition method | Open `QC_Method.sky` in Skyline GUI, drag in one raw file, confirm peaks ARE found there. If not, the libraries are wrong-method (e.g., 200 SPD libraries vs 500 SPD acquisition) |
 | Agent log says `MD_QC_Report does not exist` | `MD_QC_Report.skyr` missing from `methods/` | Copy it in. It ships with the agent under `src/mdqc/methods/`. |
 | Skyline error: `file is being used by another process` | Concurrent Skyline runs writing to the same `.skyd` cache | Already handled in code via per-extraction temp dir + library hardlinking. If you still see this, kill all stuck `SkylineCmd.exe` processes via Task Manager and restart the agent. |
