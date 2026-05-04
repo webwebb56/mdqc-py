@@ -71,6 +71,14 @@ POLL_INTERVAL_S = 5.0
 DATA_DIR       = Path(r"C:\Mac\Home\Documents\MS Data repo")
 EVOSEP_RAW_DIR = DATA_DIR / "Evosep_raw"
 
+# Belt-and-braces: the @pytest.mark.live class markers DESELECT these tests
+# when CI runs `-m "not live"`, but pytest still IMPORTS the module during
+# collection. Hard-skip the file too if the local data dir is missing.
+pytestmark = pytest.mark.skipif(
+    not DATA_DIR.exists(),
+    reason=f"Local Evosep data not available at {DATA_DIR}",
+)
+
 # ---------------------------------------------------------------------------
 # Real paths — resolved at import time, before conftest redirects MDQC_DATA_DIR
 # ---------------------------------------------------------------------------

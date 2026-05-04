@@ -25,6 +25,14 @@ import pytest
 DATA_DIR = Path(r"C:\Mac\Home\Documents\MS Data repo")
 EVOSEP_RAW_DIR = DATA_DIR / "Evosep_raw"
 
+# Skip the entire file when run anywhere except the local dev machine — these
+# integration tests are bound to a specific local data directory and aren't
+# meant to run in CI.
+pytestmark = pytest.mark.skipif(
+    not DATA_DIR.exists(),
+    reason=f"Local Evosep data not available at {DATA_DIR}",
+)
+
 # Ensure package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
