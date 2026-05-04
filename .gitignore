@@ -56,3 +56,6 @@ src/mdqc/_assets_bundle/
 # Test run artefacts
 pytest_live_output.txt
 tests/live_results_*.json
+
+# Ruff debugging output
+ruff_output.txt
