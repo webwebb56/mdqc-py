@@ -169,14 +169,35 @@ class Extractor:
         result.stdout = run_result.stdout
         result.stderr = run_result.stderr
 
-        if run_result.returncode != 0 or has_error_marker(run_result.stdout, run_result.stderr):
+        try:
+            csv_produced = output_csv.is_file() and output_csv.stat().st_size > 0
+        except OSError:
+            csv_produced = False
+        has_error = has_error_marker(run_result.stdout, run_result.stderr)
+
+        if has_error or (not csv_produced and run_result.returncode != 0):
             result.status = ExtractionStatus.FAILED
+            output = (run_result.stdout or run_result.stderr).strip()
             result.error_message = (
-                f"Skyline exited with code {run_result.returncode}: "
-                f"{(run_result.stdout or run_result.stderr).strip()[:500]}"
+                f"Skyline exited with code {run_result.returncode}: {output}"
             )
             self._cleanup(output_csv)
             return result
+
+        if not csv_produced:
+            result.status = ExtractionStatus.FAILED
+            result.error_message = (
+                f"Skyline exited with code {run_result.returncode} but produced no report file"
+            )
+            return result
+
+        if run_result.returncode != 0:
+            # Some Skyline versions (e.g. 26.x) return a non-zero code even on
+            # success.  The output CSV is the authoritative success signal.
+            logger.warning(
+                "Skyline exited with code %d but produced output CSV; treating as success",
+                run_result.returncode,
+            )
 
         try:
             target_metrics = parse_skyline_csv(output_csv)
