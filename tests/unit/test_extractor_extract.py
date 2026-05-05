@@ -6,7 +6,6 @@ whether the output CSV was produced, not the process exit code.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -83,7 +82,7 @@ async def test_extract_exitcode2_with_csv_succeeds(
 ) -> None:
     extractor = _make_extractor(tmp_path, fake_skyline_exe)
 
-    async def side_effect(**kwargs):  # noqa: ANN001
+    async def side_effect(**kwargs):
         output_csv: Path = kwargs["output_csv"]
         return await _run_and_write_csv(output_csv, returncode=2, stdout=_SKYLINE_26_STDOUT)
 
@@ -105,7 +104,7 @@ async def test_extract_exitcode2_with_csv_records_version(
 ) -> None:
     extractor = _make_extractor(tmp_path, fake_skyline_exe)
 
-    async def side_effect(**kwargs):  # noqa: ANN001
+    async def side_effect(**kwargs):
         output_csv: Path = kwargs["output_csv"]
         return await _run_and_write_csv(output_csv, returncode=2, stdout=_SKYLINE_26_STDOUT)
 
@@ -125,7 +124,7 @@ async def test_extract_exitcode0_with_csv_succeeds(
 ) -> None:
     extractor = _make_extractor(tmp_path, fake_skyline_exe)
 
-    async def side_effect(**kwargs):  # noqa: ANN001
+    async def side_effect(**kwargs):
         return await _run_and_write_csv(kwargs["output_csv"], returncode=0, stdout="Skyline 24.1")
 
     with patch("mdqc.extractor.run_skyline", new=AsyncMock(side_effect=side_effect)):
@@ -164,7 +163,7 @@ async def test_extract_exitcode2_error_marker_fails_even_with_csv(
 ) -> None:
     extractor = _make_extractor(tmp_path, fake_skyline_exe)
 
-    async def side_effect(**kwargs):  # noqa: ANN001
+    async def side_effect(**kwargs):
         output_csv: Path = kwargs["output_csv"]
         return await _run_and_write_csv(
             output_csv,
