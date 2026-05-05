@@ -35,12 +35,12 @@ async def test_throttling_only_hits_network_once(tmp_data_dir: Path) -> None:
     state_path = tmp_data_dir / "update_state.json"
 
     with respx.mock(base_url="https://api.github.com") as mock:
-        route = mock.get("/repos/MassDynamics/mdqc-py/releases/latest").mock(
+        route = mock.get("/repos/webwebb56/mdqc-py/releases/latest").mock(
             return_value=httpx.Response(
                 200,
                 json={
                     "tag_name": "v9.9.9",
-                    "html_url": "https://github.com/MassDynamics/mdqc-py/releases/tag/v9.9.9",
+                    "html_url": "https://github.com/webwebb56/mdqc-py/releases/tag/v9.9.9",
                     "published_at": "2026-01-01T00:00:00Z",
                 },
                 headers={"Last-Modified": "Wed, 21 Oct 2026 07:28:00 GMT"},
@@ -78,7 +78,7 @@ async def test_304_returns_cached_info(tmp_data_dir: Path) -> None:
     )
 
     with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/repos/MassDynamics/mdqc-py/releases/latest").mock(
+        mock.get("/repos/webwebb56/mdqc-py/releases/latest").mock(
             return_value=httpx.Response(304)
         )
 
@@ -99,7 +99,7 @@ async def test_200_with_newer_returns_update(tmp_data_dir: Path) -> None:
     state_path = tmp_data_dir / "update_state.json"
 
     with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/repos/MassDynamics/mdqc-py/releases/latest").mock(
+        mock.get("/repos/webwebb56/mdqc-py/releases/latest").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -128,7 +128,7 @@ async def test_200_with_same_or_older_returns_none(tmp_data_dir: Path) -> None:
     state_path = tmp_data_dir / "update_state.json"
 
     with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/repos/MassDynamics/mdqc-py/releases/latest").mock(
+        mock.get("/repos/webwebb56/mdqc-py/releases/latest").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -169,7 +169,7 @@ async def test_if_modified_since_sent_after_first_check(tmp_data_dir: Path) -> N
         )
 
     with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/repos/MassDynamics/mdqc-py/releases/latest").mock(side_effect=handler)
+        mock.get("/repos/webwebb56/mdqc-py/releases/latest").mock(side_effect=handler)
 
         checker = UpdateChecker(
             current_version="1.0.0",
@@ -190,7 +190,7 @@ async def test_state_persisted_across_instances(tmp_data_dir: Path) -> None:
     state_path = tmp_data_dir / "update_state.json"
 
     with respx.mock(base_url="https://api.github.com") as mock:
-        route = mock.get("/repos/MassDynamics/mdqc-py/releases/latest").mock(
+        route = mock.get("/repos/webwebb56/mdqc-py/releases/latest").mock(
             return_value=httpx.Response(
                 200,
                 json={

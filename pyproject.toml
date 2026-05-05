@@ -98,8 +98,8 @@ build = [
 mdqc = "mdqc.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/MassDynamics/mdqc-py"
-Issues = "https://github.com/MassDynamics/mdqc-py/issues"
+Homepage = "https://github.com/webwebb56/mdqc-py"
+Issues = "https://github.com/webwebb56/mdqc-py/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mdqc"]

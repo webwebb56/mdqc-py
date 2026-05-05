@@ -52,7 +52,7 @@ pip install --upgrade "mdqc[plots] @ git+https://github.com/webwebb56/mdqc-py.gi
 **Or from a local clone** (for development):
 
 ```powershell
-git clone https://github.com/MassDynamics/mdqc-py
+git clone https://github.com/webwebb56/mdqc-py
 cd mdqc-py
 python -m venv .venv
 .venv\Scripts\activate              # Windows PowerShell

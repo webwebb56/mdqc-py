@@ -84,7 +84,7 @@ TRAY_RUNTIME_POLL_TIMEOUT_S = 30
 # ─── Update checker ─────────────────────────────────────────────────────────
 UPDATE_CHECK_INTERVAL_S = 24 * 60 * 60
 GITHUB_RELEASES_API = (
-    "https://api.github.com/repos/MassDynamics/mdqc-py/releases/latest"
+    "https://api.github.com/repos/webwebb56/mdqc-py/releases/latest"
 )
 
 # ─── Service shutdown ───────────────────────────────────────────────────────

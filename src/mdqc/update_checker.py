@@ -168,7 +168,7 @@ class UpdateChecker:
         return UpdateInfo(
             version=state.latest_known_version,
             tag_name=tag,
-            release_url=f"https://github.com/MassDynamics/mdqc-py/releases/tag/{tag}",
+            release_url=f"https://github.com/webwebb56/mdqc-py/releases/tag/{tag}",
         )
 
     async def check(self) -> UpdateInfo | None:

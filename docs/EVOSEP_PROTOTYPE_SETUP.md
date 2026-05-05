@@ -81,7 +81,7 @@ starting the agent — extraction will fail on every file otherwise.
 
 ### Option B — from the GitHub repo (for developers)
 ```powershell
-git clone https://github.com/MassDynamics/mdqc-py.git
+git clone https://github.com/webwebb56/mdqc-py.git
 cd mdqc-py
 pip install --user -e .[plots]
 ```
@@ -284,4 +284,4 @@ shapes that roadmap.
 | `http://localhost:8501`                          | Streamlit dashboard |
 
 Questions or issues: contact engineering@massdynamics.com or open
-a GitHub issue at <https://github.com/MassDynamics/mdqc-py/issues>.
+a GitHub issue at <https://github.com/webwebb56/mdqc-py/issues>.

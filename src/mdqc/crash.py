@@ -27,7 +27,7 @@ from mdqc.log import get_logger
 
 log = get_logger(__name__)
 
-GITHUB_ISSUE_URL = "https://github.com/MassDynamics/mdqc-py/issues/new"
+GITHUB_ISSUE_URL = "https://github.com/webwebb56/mdqc-py/issues/new"
 
 _installed = False
 _original_excepthook: Any = None
