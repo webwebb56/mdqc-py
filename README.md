@@ -1,5 +1,8 @@
 # MD QC Agent
 
+[![Latest release](https://img.shields.io/github/v/release/webwebb56/mdqc-py?label=latest&color=blue)](https://github.com/webwebb56/mdqc-py/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+
 **Automated quality-control monitoring for mass-spectrometry instruments.**
 
 A small background service that watches your acquisition folder, runs targeted
@@ -38,12 +41,27 @@ core monitoring loop.
 
 ## Quick start
 
+### Install
+
+**From the latest release** (always current — pip resolves the version from `main`):
+
+```bash
+pip install --upgrade "mdqc[plots] @ git+https://github.com/webwebb56/mdqc-py.git@main"
+```
+
+**Or from a local clone** (for development):
+
 ```bash
 git clone https://github.com/MassDynamics/mdqc-py
 cd mdqc-py
 python -m venv .venv && .venv\Scripts\activate    # macOS/Linux: source .venv/bin/activate
 pip install -e ".[plots]"
 ```
+
+**Or grab the bundled Windows `.exe`** (no Python required) from the
+[latest release page](https://github.com/webwebb56/mdqc-py/releases/latest) —
+note the `.exe` doesn't include the optional plots dashboard; for that, use one
+of the `pip install` paths above.
 
 ### Run the agent
 ```bash
