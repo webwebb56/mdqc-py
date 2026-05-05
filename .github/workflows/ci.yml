@@ -70,11 +70,16 @@ jobs:
         shell: pwsh
         run: dist\mdqc.exe selfcheck
 
+      - name: Rename exe to include version
+        shell: pwsh
+        run: |
+          Rename-Item -Path dist\mdqc.exe -NewName "mdqc-${{ steps.version.outputs.version }}.exe"
+
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: mdqc-exe-${{ steps.version.outputs.version }}
-          path: dist/mdqc.exe
+          path: dist/mdqc-${{ steps.version.outputs.version }}.exe
           retention-days: 30
 
   release:
@@ -104,12 +109,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: mdqc-py v${{ steps.version.outputs.version }}
-          files: artifacts/mdqc.exe
+          files: artifacts/mdqc-${{ steps.version.outputs.version }}.exe
           generate_release_notes: true
           body: |
             ## Installation
 
-            1. Download `mdqc.exe` below
-            2. Run it from the command line: `mdqc.exe run --config path\to\config.toml`
+            1. Download `mdqc-${{ steps.version.outputs.version }}.exe` below
+            2. Run it from the command line: `mdqc-${{ steps.version.outputs.version }}.exe run --config path\to\config.toml`
 
             Requires Windows 10/11 x64. No Python installation needed.

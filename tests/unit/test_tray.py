@@ -147,7 +147,12 @@ def test_event_extraction_completed_batches_above_threshold(tmp_path: Path) -> N
     app.batcher.threshold = 3
     for i in range(5):
         app._on_event("extraction_completed", {"path": f"file_{i}.raw"})
-    time.sleep(0.2)
+    # Poll for the batcher's background timer to fire, up to 2s — sleeping a
+    # fixed window is flaky on slow CI runners where the timer thread doesn't
+    # get scheduled in time.
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and len(notifier.calls) == 0:
+        time.sleep(0.01)
     assert len(notifier.calls) == 1
     title, body, _sound = notifier.calls[0]
     assert "5" in title or "5" in body
