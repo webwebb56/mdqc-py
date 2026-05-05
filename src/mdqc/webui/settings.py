@@ -239,6 +239,28 @@ async def settings_post(request: Request) -> HTMLResponse:
     return get_templates(request).TemplateResponse(request, "settings/index.html", ctx)
 
 
+@router.post("/settings/reset-processed", response_class=HTMLResponse)
+async def reset_processed(request: Request) -> HTMLResponse:
+    """Clear the processed-files registry so previously-handled paths are re-extracted."""
+    state = get_state(request)
+    registry = getattr(state, "processed_registry", None)
+    count = 0
+    if registry is not None:
+        try:
+            count = len(registry)
+            registry.clear()
+            log.info("processed_registry_cleared", extra={"entries_removed": count})
+        except Exception as exc:
+            log.warning("processed_registry_clear_failed", extra={"error": str(exc)})
+            return HTMLResponse(
+                f'<span class="status-msg bad">Failed: {exc}</span>',
+                status_code=500,
+            )
+    return HTMLResponse(
+        f'<span class="status-msg ok">Cleared ({count} {"entry" if count == 1 else "entries"} removed)</span>'
+    )
+
+
 @router.get("/settings/open-template")
 async def open_template(name: str = Query(...)) -> JSONResponse:
     """Resolve a template name and open it in the system default app (Skyline GUI)."""

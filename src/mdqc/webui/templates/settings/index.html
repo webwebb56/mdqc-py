@@ -415,6 +415,33 @@
 
 </form>
 
+{# ── Maintenance ────────────────────────────────────────────────────── #}
+<section class="panel">
+  <div class="section-heading">
+    <span class="dot muted">●</span>
+    <h2>Maintenance</h2>
+  </div>
+
+  <div class="field-row">
+    <label>Processed-file memory</label>
+    <div>
+      <button type="button" class="btn-danger"
+              hx-post="/settings/reset-processed"
+              hx-target="#reset-processed-status"
+              hx-swap="innerHTML"
+              hx-confirm="This will clear the agent's record of which files have already been processed. Any files already in your watch folder will be re-extracted on the next scan. Continue?">
+        Reset processed-file memory
+      </button>
+      <span id="reset-processed-status" style="margin-left:0.75rem;"></span>
+      <div class="field-hint">
+        Clears the list of paths the watcher remembers as already done. Use this
+        if you want to re-process files that have already been extracted (e.g.
+        for testing). Activity log and stored payloads are not affected.
+      </div>
+    </div>
+  </div>
+</section>
+
 <script>
 const VENDORS = {{ vendors | tojson }};
 

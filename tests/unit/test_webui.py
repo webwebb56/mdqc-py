@@ -302,6 +302,40 @@ def test_wizard_save_writes_config(
     assert "thermo" in contents
 
 
+def test_reset_processed_clears_registry(
+    state_with_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
+    from mdqc.watcher.registry import ProcessedRegistry
+
+    registry = ProcessedRegistry()
+    registry.add(tmp_path / "a.raw")
+    registry.add(tmp_path / "b.raw")
+    assert len(registry) == 2
+
+    state_with_instruments.processed_registry = registry  # type: ignore[attr-defined]
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post("/settings/reset-processed")
+
+    assert response.status_code == 200
+    assert "Cleared" in response.text
+    assert "2 entries" in response.text
+    assert len(registry) == 0
+
+
+def test_reset_processed_with_no_registry_returns_ok(
+    state_with_instruments: _FakeAppState,
+) -> None:
+    # _FakeAppState doesn't define processed_registry — endpoint should still 200.
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post("/settings/reset-processed")
+    assert response.status_code == 200
+    assert "Cleared" in response.text
+
+
 def test_logs_index(state_with_instruments: _FakeAppState, tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
