@@ -30,46 +30,58 @@ logger = logging.getLogger(__name__)
 _LIBRARY_EXTENSIONS = (".blib", ".skyl", ".sky.view")
 
 
+# Skyline scatters previously-imported result references across multiple
+# elements. Stripping only <measured_results> leaves Skyline complaining
+# "No results information found in the document settings" because the
+# per-peptide / per-precursor / per-transition <*_results> blocks still
+# reference replicates that no longer exist. We strip them all.
+_RESULTS_ELEMENTS = (
+    b"transition_results",
+    b"precursor_results",
+    b"peptide_results",
+    b"measured_results",
+)
+
+
 def _strip_measured_results(sky_bytes: bytes) -> tuple[bytes, int]:
-    """Remove the ``<measured_results>...</measured_results>`` block from a
-    Skyline document.
+    """Remove all imported-result references from a Skyline ``.sky`` document.
 
-    Returns ``(cleaned_bytes, n_replicates_removed)``. Idempotent — if the
-    block is missing or the document is malformed (no closing tag), returns
-    ``(sky_bytes, 0)`` unchanged.
+    Strips ``<measured_results>`` (the global replicate catalog) plus every
+    ``<peptide_results>``, ``<precursor_results>``, and ``<transition_results>``
+    block that Skyline scatters through each peptide / precursor / transition
+    node. The result is what *Edit → Manage Results → Remove All → Save* in the
+    Skyline GUI produces: a "fresh" template with no imported data.
 
-    Why: operators commonly open the template in Skyline GUI to sanity-check
-    that imports work, then save the document. The save persists imported
-    replicates with their absolute file paths into the .sky. On the next run
-    Skyline tries to refresh those imports against now-stale paths and the
-    whole extraction fails — even though the file mdqc passed via
-    --import-file was fine. Stripping the block on copy makes mdqc tolerant
-    of polluted templates so this footgun stops biting people.
+    Returns ``(cleaned_bytes, n_replicates_removed)``. Idempotent: returns
+    ``(sky_bytes, 0)`` unchanged on already-clean documents and on parse
+    failures (we'd rather pass a polluted template through than corrupt a
+    working one — Skyline will surface a clear error either way).
+
+    Why this exists: operators routinely open the template in Skyline GUI to
+    sanity-check that imports work, then save the document. The save persists
+    imported replicates with their absolute file paths. On the next mdqc run
+    Skyline tries to refresh those imports against stale paths and the whole
+    extraction fails — even though the file mdqc passed via ``--import-file``
+    was fine. Stripping at copy time makes mdqc tolerant of this footgun.
     """
-    start_idx = sky_bytes.find(b"<measured_results")
-    if start_idx < 0:
-        return sky_bytes, 0
-    end_marker = b"</measured_results>"
-    end_idx = sky_bytes.find(end_marker, start_idx)
-    if end_idx < 0:
-        return sky_bytes, 0
-    end_idx += len(end_marker)
-
-    # Pull in the leading whitespace on the start line so we don't leave a
-    # stranded blank-indented line behind.
-    line_start = sky_bytes.rfind(b"\n", 0, start_idx) + 1
-    if all(b in (0x20, 0x09) for b in sky_bytes[line_start:start_idx]):
-        start_idx = line_start
-
-    # Consume one trailing newline (CRLF or LF).
-    if sky_bytes[end_idx:end_idx + 2] == b"\r\n":
-        end_idx += 2
-    elif end_idx < len(sky_bytes) and sky_bytes[end_idx] == 0x0A:
-        end_idx += 1
-
-    stripped = sky_bytes[start_idx:end_idx]
-    replicate_count = stripped.count(b"<replicate ")
-    return sky_bytes[:start_idx] + sky_bytes[end_idx:], replicate_count
+    cleaned = sky_bytes
+    for tag in _RESULTS_ELEMENTS:
+        # ^[ \t]*  - consume leading indentation on the line
+        # <tag(>|\s) - tag with closing > or attribute whitespace
+        # [\s\S]*? - non-greedy match across newlines (these elements aren't
+        #            self-nested, so non-greedy is safe and avoids over-matching)
+        # </tag>   - matching close
+        # [\r\n]*  - consume trailing line break
+        pattern = re.compile(
+            rb"^[ \t]*<" + tag + rb"(?:>|\s[\s\S]*?>)[\s\S]*?</" + tag + rb">[\r\n]*",
+            re.MULTILINE,
+        )
+        cleaned = pattern.sub(b"", cleaned)
+    # Count only the replicates we actually removed: original count minus
+    # whatever survived (typically 0 — the regex strips everything that
+    # contains <replicate ...>).
+    n_replicates = sky_bytes.count(b"<replicate ") - cleaned.count(b"<replicate ")
+    return cleaned, n_replicates
 
 
 class SkylineNotFound(Exception):

@@ -233,6 +233,41 @@ def test_strip_measured_results_removes_block() -> None:
     assert b"</srm_settings>" in out
 
 
+def test_strip_measured_results_also_strips_peak_blocks() -> None:
+    """Skyline scatters per-peptide / precursor / transition results blocks
+    throughout the document — these reference the same replicates and must
+    all be stripped, otherwise Skyline complains 'No results information
+    found in the document settings'."""
+    polluted = (
+        b"<srm_settings>\n"
+        b"  <peptide>\n"
+        b'    <peptide_results><peptide_result replicate="r1" peak_count="1"/></peptide_results>\n'
+        b"    <precursor>\n"
+        b'      <precursor_results><precursor_peak replicate="r1" area="123"/></precursor_results>\n'
+        b"      <transition>\n"
+        b'        <transition_results><transition_peak replicate="r1" area="45"/></transition_results>\n'
+        b"      </transition>\n"
+        b"    </precursor>\n"
+        b"  </peptide>\n"
+        b'  <measured_results><replicate name="r1"/></measured_results>\n'
+        b"</srm_settings>\n"
+    )
+    out, n = _strip_measured_results(polluted)
+    assert n == 1
+    for tag in (
+        b"<peptide_results",
+        b"<precursor_results",
+        b"<transition_results",
+        b"<measured_results",
+        b'replicate="r1"',
+    ):
+        assert tag not in out, f"{tag!r} should have been stripped"
+    # Non-results structure must survive.
+    assert b"<peptide>" in out
+    assert b"<precursor>" in out
+    assert b"<transition>" in out
+
+
 def test_strip_measured_results_with_no_attributes() -> None:
     polluted = (
         b"<root>\n"
