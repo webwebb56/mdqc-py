@@ -60,6 +60,17 @@ _ALIASES: dict[str, list[str]] = {
         "peak area",
         "area",
     ],
+    # DIA reports (e.g. Evosep / Astral) split intensity into MS1 + fragment
+    # columns instead of providing a single "Total Area". When both are
+    # present we sum them into peak_area below.
+    "peak_area_ms1": [
+        "total area ms1",
+        "totalareams1",
+    ],
+    "peak_area_fragment": [
+        "total area fragment",
+        "totalareafragment",
+    ],
     "peak_height": [
         "max height",
         "maxheight",
@@ -184,6 +195,13 @@ def parse_skyline_csv(path: Path) -> list[TargetMetric]:
                 rt_delta = retention_time - rt_expected
 
             peak_area = _get_float(row, known.get("peak_area"))
+            if peak_area is None:
+                # Fall back to MS1 + fragment split, used by DIA QC reports
+                # (Evosep / Astral). Either component may be absent.
+                ms1 = _get_float(row, known.get("peak_area_ms1"))
+                frag = _get_float(row, known.get("peak_area_fragment"))
+                if ms1 is not None or frag is not None:
+                    peak_area = (ms1 or 0.0) + (frag or 0.0)
 
             extra_metrics: dict[str, float] = {}
             for name, idx in extra:

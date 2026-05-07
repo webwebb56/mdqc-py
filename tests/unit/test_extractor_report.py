@@ -109,6 +109,58 @@ def test_fixture_extras_drop_non_numeric() -> None:
         assert "Replicate Name" not in r.extra_metrics
 
 
+def test_split_total_area_sums_ms1_and_fragment(tmp_path: Path) -> None:
+    """DIA reports (Evosep / Astral) split intensity into 'Total Area MS1'
+    + 'Total Area Fragment' instead of providing a single 'Total Area'.
+    The parser must sum these into peak_area so `detected` is computed
+    correctly — without this, a working DIA QC report shows 0/N recovery."""
+    path = tmp_path / "dia_split.csv"
+    path.write_text(
+        "Peptide Sequence,Mz,Peptide Retention Time,Total Area MS1,Total Area Fragment,Mass Error PPM\n"
+        "PEPTIDEK,500.0,12.3,1000000,2500000,1.4\n"
+    )
+    rows = parse_skyline_csv(path)
+    assert len(rows) == 1
+    assert rows[0].peak_area == pytest.approx(3500000.0)
+    assert rows[0].detected is True
+
+
+def test_split_total_area_with_only_fragment(tmp_path: Path) -> None:
+    """If only one of MS1 / Fragment is present, use that value alone."""
+    path = tmp_path / "dia_fragment_only.csv"
+    path.write_text(
+        "Peptide,Mz,RT,Total Area Fragment\n"
+        "PEP,500.0,12.0,7500000\n"
+    )
+    rows = parse_skyline_csv(path)
+    assert rows[0].peak_area == pytest.approx(7500000.0)
+    assert rows[0].detected is True
+
+
+def test_explicit_total_area_wins_over_split_columns(tmp_path: Path) -> None:
+    """If a row has both 'Total Area' and the split columns, the canonical
+    'Total Area' wins (matches what Skyline does in the GUI summary)."""
+    path = tmp_path / "both.csv"
+    path.write_text(
+        "Peptide,Mz,RT,Total Area,Total Area MS1,Total Area Fragment\n"
+        "PEP,500.0,12.0,9999,1000,2000\n"
+    )
+    rows = parse_skyline_csv(path)
+    assert rows[0].peak_area == pytest.approx(9999.0)
+
+
+def test_split_columns_zero_areas_still_yield_zero_peak_area(tmp_path: Path) -> None:
+    """Both MS1 and Fragment present and zero → peak_area=0, not detected."""
+    path = tmp_path / "zero.csv"
+    path.write_text(
+        "Peptide,Mz,Total Area MS1,Total Area Fragment\n"
+        "PEP,500.0,0,0\n"
+    )
+    rows = parse_skyline_csv(path)
+    assert rows[0].peak_area == 0.0
+    assert rows[0].detected is False
+
+
 def test_empty_csv_returns_empty_list(tmp_path: Path) -> None:
     path = tmp_path / "empty.csv"
     path.write_text("")
