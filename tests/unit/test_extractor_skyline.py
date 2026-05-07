@@ -9,6 +9,7 @@ import pytest
 
 from mdqc.extractor.skyline import (
     SkylineTimeout,
+    _strip_measured_results,
     find_skyline,
     has_error_marker,
     is_clickonce_install,
@@ -196,6 +197,82 @@ async def test_run_skyline_version_parsing_from_stdout(tmp_path: Path) -> None:
         timeout_s=10,
     )
     assert result.version == "24.1.0.198"
+
+
+def test_strip_measured_results_clean_template_is_noop() -> None:
+    clean = (
+        b'<?xml version="1.0" encoding="utf-8"?>\n'
+        b"<srm_settings>\n"
+        b"  <peptide_list_settings/>\n"
+        b"</srm_settings>\n"
+    )
+    out, n = _strip_measured_results(clean)
+    assert out == clean
+    assert n == 0
+
+
+def test_strip_measured_results_removes_block() -> None:
+    polluted = (
+        b"<srm_settings>\n"
+        b"  <peptide_list_settings/>\n"
+        b'  <measured_results time_normal_area="true">\n'
+        b'    <replicate name="r1">\n'
+        b'      <sample_file id="x" file_path="C:\\old\\path.raw"/>\n'
+        b"    </replicate>\n"
+        b'    <replicate name="r2">\n'
+        b'      <sample_file id="y" file_path="C:\\old\\other.raw"/>\n'
+        b"    </replicate>\n"
+        b"  </measured_results>\n"
+        b"</srm_settings>\n"
+    )
+    out, n = _strip_measured_results(polluted)
+    assert n == 2
+    assert b"measured_results" not in out
+    assert b"<replicate " not in out
+    assert b"<peptide_list_settings/>" in out
+    assert b"</srm_settings>" in out
+
+
+def test_strip_measured_results_with_no_attributes() -> None:
+    polluted = (
+        b"<root>\n"
+        b"  <measured_results>\n"
+        b'    <replicate name="r1"/>\n'
+        b"  </measured_results>\n"
+        b"</root>\n"
+    )
+    out, n = _strip_measured_results(polluted)
+    assert n == 1
+    assert b"measured_results" not in out
+
+
+def test_strip_measured_results_malformed_returns_input_unchanged() -> None:
+    # Missing closing tag — be conservative and don't touch the document.
+    malformed = (
+        b"<root>\n"
+        b'  <measured_results>\n    <replicate name="r1"/>\n'
+        b"</root>\n"
+    )
+    out, n = _strip_measured_results(malformed)
+    assert out == malformed
+    assert n == 0
+
+
+def test_strip_measured_results_preserves_crlf_line_endings() -> None:
+    polluted = (
+        b"<root>\r\n"
+        b"  <measured_results>\r\n"
+        b'    <replicate name="r1"/>\r\n'
+        b"  </measured_results>\r\n"
+        b"  <other/>\r\n"
+        b"</root>\r\n"
+    )
+    out, n = _strip_measured_results(polluted)
+    assert n == 1
+    assert b"<other/>" in out
+    # Other CRLF line endings must survive untouched.
+    assert b"<root>\r\n" in out
+    assert b"</root>\r\n" in out
 
 
 @pytest.mark.skyline

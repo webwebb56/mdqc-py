@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import re
 import shutil
@@ -21,10 +22,54 @@ import psutil
 
 from mdqc.config.defaults import SKYLINE_TIMEOUT_S
 
+logger = logging.getLogger(__name__)
+
 # Files that Skyline reads from the template directory but doesn't write to.
 # Hardlinking them into the per-extraction temp dir is essentially free on
 # NTFS — no I/O, just an extra directory entry pointing at the same inode.
 _LIBRARY_EXTENSIONS = (".blib", ".skyl", ".sky.view")
+
+
+def _strip_measured_results(sky_bytes: bytes) -> tuple[bytes, int]:
+    """Remove the ``<measured_results>...</measured_results>`` block from a
+    Skyline document.
+
+    Returns ``(cleaned_bytes, n_replicates_removed)``. Idempotent — if the
+    block is missing or the document is malformed (no closing tag), returns
+    ``(sky_bytes, 0)`` unchanged.
+
+    Why: operators commonly open the template in Skyline GUI to sanity-check
+    that imports work, then save the document. The save persists imported
+    replicates with their absolute file paths into the .sky. On the next run
+    Skyline tries to refresh those imports against now-stale paths and the
+    whole extraction fails — even though the file mdqc passed via
+    --import-file was fine. Stripping the block on copy makes mdqc tolerant
+    of polluted templates so this footgun stops biting people.
+    """
+    start_idx = sky_bytes.find(b"<measured_results")
+    if start_idx < 0:
+        return sky_bytes, 0
+    end_marker = b"</measured_results>"
+    end_idx = sky_bytes.find(end_marker, start_idx)
+    if end_idx < 0:
+        return sky_bytes, 0
+    end_idx += len(end_marker)
+
+    # Pull in the leading whitespace on the start line so we don't leave a
+    # stranded blank-indented line behind.
+    line_start = sky_bytes.rfind(b"\n", 0, start_idx) + 1
+    if all(b in (0x20, 0x09) for b in sky_bytes[line_start:start_idx]):
+        start_idx = line_start
+
+    # Consume one trailing newline (CRLF or LF).
+    if sky_bytes[end_idx:end_idx + 2] == b"\r\n":
+        end_idx += 2
+    elif end_idx < len(sky_bytes) and sky_bytes[end_idx] == 0x0A:
+        end_idx += 1
+
+    stripped = sky_bytes[start_idx:end_idx]
+    replicate_count = stripped.count(b"<replicate ")
+    return sky_bytes[:start_idx] + sky_bytes[end_idx:], replicate_count
 
 
 class SkylineNotFound(Exception):
@@ -156,7 +201,16 @@ async def run_skyline(
     # read-only and large, so hardlink them instead of copying.
     tmp_dir = tempfile.mkdtemp(prefix="mdqc_sky_")
     tmp_template = Path(tmp_dir) / template.name
-    shutil.copy2(template, tmp_template)
+    sky_bytes = template.read_bytes()
+    cleaned, n_stripped = _strip_measured_results(sky_bytes)
+    tmp_template.write_bytes(cleaned)
+    if n_stripped > 0:
+        logger.warning(
+            "Stripped %d embedded replicate(s) from template %s before passing to Skyline. "
+            "The template was previously used to import results in the Skyline GUI; "
+            "those references would otherwise cause Skyline to look up stale paths and fail.",
+            n_stripped, template.name,
+        )
 
     template_dir = template.parent
     for sibling in template_dir.iterdir():
