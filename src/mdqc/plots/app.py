@@ -57,10 +57,10 @@ _KNOWN_LABELS: dict[str, str] = {col: label for col, label, _ in KNOWN_METRIC_DE
 # Charge" arrives via extra_metrics) and so are useless on Levey-Jennings.
 _META_COLS = {
     "timestamp", "acquisition_time", "instrument_id", "raw_file_name",
-    "control_type", "method_name", "column_info", "target_id", "target_label",
-    "protein_name", "peptide_sequence", "precursor_mz", "precursor_charge",
-    "detected", "targets_found", "targets_expected", "median_rt_shift",
-    "median_mass_error_ppm",
+    "control_type", "spd", "method_name", "column_info", "target_id",
+    "target_label", "protein_name", "peptide_sequence", "precursor_mz",
+    "precursor_charge", "detected", "targets_found", "targets_expected",
+    "median_rt_shift", "median_mass_error_ppm",
     # Constants per target — never useful as LJ metrics
     "Precursor Charge", "Charge", "Mz",
 }
@@ -95,6 +95,50 @@ def discover_metrics(df: pd.DataFrame) -> list[tuple[str, str, bool]]:
             seen.add(col)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Run exclusions (sidebar UI lets the user mark first-of-series outliers etc.
+# as excluded from baseline computation without deleting the underlying data)
+# ---------------------------------------------------------------------------
+def _exclusions_path(folder: str) -> Path:
+    return Path(folder) / "exclusions.json"
+
+
+def load_exclusions(folder: str) -> set[str]:
+    """Read the set of excluded raw-file names from ``<folder>/exclusions.json``.
+
+    Returns an empty set if the file is absent or malformed — the dashboard
+    should never crash because exclusions are missing.
+    """
+    p = _exclusions_path(folder)
+    if not p.is_file():
+        return set()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            data = data.get("excluded", [])
+        if not isinstance(data, list):
+            return set()
+        return {str(x) for x in data}
+    except (OSError, json.JSONDecodeError):
+        return set()
+
+
+def save_exclusions(folder: str, excluded: set[str]) -> None:
+    """Persist the exclusion set. Atomic via tmp + rename; silently no-op on
+    write failure (read-only network folders, etc.)."""
+    p = _exclusions_path(folder)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps({"excluded": sorted(excluded)}, indent=2),
+            encoding="utf-8",
+        )
+        tmp.replace(p)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +180,7 @@ def load_payloads(folder: str) -> pd.DataFrame:
         instrument_id = run.get("instrument_id", "unknown")
         raw_file_name = run.get("raw_file_name", fpath.stem)
         control_type = run.get("control_type", "")
+        spd = run.get("spd")
         method_name = run.get("method_name")
         column_info = run.get("column_info")
 
@@ -155,6 +200,7 @@ def load_payloads(folder: str) -> pd.DataFrame:
                 "instrument_id": instrument_id,
                 "raw_file_name": raw_file_name,
                 "control_type": control_type,
+                "spd": spd,
                 "method_name": method_name,
                 "column_info": column_info,
                 "target_id": target.get("target_id", ""),
@@ -553,11 +599,17 @@ def build_grouped_lj(
     baseline_mode: str,
     baseline_n: int,
     height: int = 380,
+    value_mode: str = "z",
 ) -> go.Figure:
-    """Single LJ chart with peptides grouped by retention-time bin.
+    """Single LJ-style chart with peptides grouped by retention-time bin.
 
-    For each (run, RT-bin), plots the median z-score and an IQR-band, so
-    48 individual peptide traces collapse to 4 readable bands.
+    ``value_mode`` controls the y-axis transformation:
+      - ``"z"`` (default) — z-score relative to per-peptide baseline; Westgard
+        ±σ guide lines drawn at 0/±1/±2/±3. The classic LJ control chart.
+      - ``"raw"`` — plot the metric value as-is, median + IQR per RT bin.
+        No guide lines, no z-conversion.
+      - ``"log"`` — same as "raw" but log10-transformed Y axis. Useful for
+        intensity-style metrics (peak area / height) that span decades.
     """
     if metric_col not in df.columns:
         return go.Figure().update_layout(height=height, title=f"{metric_label} — column not found")
@@ -576,22 +628,50 @@ def build_grouped_lj(
     else:
         df["_rt_bin"] = "Unknown"
 
-    df = _zscore_per_peptide(df, metric_col, baseline_mode, baseline_n, time_col)
-    df = df.dropna(subset=["_z"])
-    if df.empty:
-        return go.Figure().update_layout(
-            height=height, title=f"{metric_label} — insufficient data for z-scores"
-        )
+    if value_mode == "z":
+        df = _zscore_per_peptide(df, metric_col, baseline_mode, baseline_n, time_col)
+        df = df.dropna(subset=["_z"])
+        if df.empty:
+            return go.Figure().update_layout(
+                height=height, title=f"{metric_label} — insufficient data for z-scores"
+            )
+        value_col = "_z"
+        y_axis_title = f"{metric_label} (SD from baseline)"
+        y_range = [-4.5, 4.5]
+        y_type = "linear"
+        draw_westgard = True
+        violation_thresh = 2
+    elif value_mode == "log":
+        # Drop non-positive values — log of zero or negative is undefined.
+        df = df[df[metric_col] > 0].copy()
+        if df.empty:
+            return go.Figure().update_layout(
+                height=height, title=f"{metric_label} — no positive values to log-transform"
+            )
+        value_col = metric_col
+        y_axis_title = f"{metric_label} (log scale)"
+        y_range = None
+        y_type = "log"
+        draw_westgard = False
+        violation_thresh = None
+    else:  # "raw"
+        value_col = metric_col
+        y_axis_title = metric_label
+        y_range = None
+        y_type = "linear"
+        draw_westgard = False
+        violation_thresh = None
 
     fig = go.Figure()
 
-    # Westgard threshold lines (drawn first so traces sit on top)
-    for y, dash, color in [
-        (0,  "solid", "#1f77b4"), (1,  "dash", "#2ca02c"), (-1, "dash", "#2ca02c"),
-        (2,  "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
-        (3,  "dash", "#d9534f"), (-3, "dash", "#d9534f"),
-    ]:
-        fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash}, opacity=0.4)
+    if draw_westgard:
+        # Westgard threshold lines (drawn first so traces sit on top)
+        for y, dash, color in [
+            (0,  "solid", "#1f77b4"), (1,  "dash", "#2ca02c"), (-1, "dash", "#2ca02c"),
+            (2,  "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
+            (3,  "dash", "#d9534f"), (-3, "dash", "#d9534f"),
+        ]:
+            fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash}, opacity=0.4)
 
     bin_order = ["Early (<2 min)", "Mid (2–3 min)", "Late (3–4.5 min)", "Very late (≥4.5)", "Unknown"]
     seen_bins = [b for b in bin_order if b in df["_rt_bin"].unique()]
@@ -600,7 +680,7 @@ def build_grouped_lj(
         sub = df[df["_rt_bin"] == rt_bin]
         if sub.empty:
             continue
-        agg = sub.groupby(time_col)["_z"].agg(["median", "min", "max",
+        agg = sub.groupby(time_col)[value_col].agg(["median", "min", "max",
                                                 lambda s: s.quantile(0.25),
                                                 lambda s: s.quantile(0.75),
                                                 "count"]).reset_index()
@@ -616,34 +696,44 @@ def build_grouped_lj(
             line={"width": 0}, showlegend=False, hoverinfo="skip",
             name=f"{rt_bin} IQR",
         ))
-        # Median line + markers — mark points outside ±2σ for attention
-        violation_mask = (agg["min"] < -2) | (agg["max"] > 2)
+        # Median line + markers — in z-mode, points outside ±2σ get diamond
+        # markers; in raw/log modes everything's a plain circle.
+        if violation_thresh is not None:
+            violation_mask = (agg["min"] < -violation_thresh) | (agg["max"] > violation_thresh)
+            marker_sizes = [10 if v else 6 for v in violation_mask]
+            marker_symbols = ["diamond" if v else "circle" for v in violation_mask]
+        else:
+            marker_sizes = [6] * len(agg)
+            marker_symbols = ["circle"] * len(agg)
         fig.add_trace(go.Scatter(
             x=agg[time_col], y=agg["median"],
             mode="lines+markers",
             name=f"{rt_bin} (n={int(sub['peptide_sequence'].nunique())})",
             line={"color": color, "width": 2},
             marker={
-                "size": [10 if v else 6 for v in violation_mask],
+                "size": marker_sizes,
                 "color": color,
-                "symbol": ["diamond" if v else "circle" for v in violation_mask],
+                "symbol": marker_symbols,
                 "line": {"width": 1, "color": "#333"},
             },
             hovertemplate=(
                 f"<b>{rt_bin}</b><br>"
                 "Time: %{x}<br>"
-                "Median z: %{y:.2f}<br>"
-                "IQR: [%{customdata[0]:.2f}, %{customdata[1]:.2f}]<br>"
-                "Range: [%{customdata[2]:.2f}, %{customdata[3]:.2f}]<br>"
+                "Median: %{y}<br>"
+                "IQR: [%{customdata[0]}, %{customdata[1]}]<br>"
+                "Range: [%{customdata[2]}, %{customdata[3]}]<br>"
                 "n peptides: %{customdata[4]}<extra></extra>"
             ),
             customdata=agg[["q25", "q75", "min", "max", "n"]].values,
         ))
 
+    yaxis_kwargs = {"title": y_axis_title, "type": y_type}
+    if y_range is not None:
+        yaxis_kwargs["range"] = y_range
     fig.update_layout(
         height=height,
         margin={"l": 40, "r": 10, "t": 30, "b": 30},
-        yaxis={"title": f"{metric_label} (SD from mean)", "range": [-4.5, 4.5]},
+        yaxis=yaxis_kwargs,
         xaxis={"title": "Acquisition Time" if time_col == "acquisition_time" else "Payload Time"},
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0, "font": {"size": 10}},
         hovermode="x unified",
@@ -659,6 +749,7 @@ def build_all_metrics_grid(
     baseline_n: int,
     height: int = 600,
     n_cols: int = 3,
+    value_mode: str = "z",
 ) -> go.Figure:
     """Small-multiples grid: one compact LJ panel per metric, peptides grouped
     by RT-bin. Shows every metric on the same page."""
@@ -674,25 +765,37 @@ def build_all_metrics_grid(
     df = df.copy()
     df["_rt_bin"] = df["peptide_sequence"].map(lambda p: _assign_rt_bin(rt_per_peptide.get(p)))
 
-    # Pre-compute z-scores for every candidate metric and keep only the ones
-    # that actually produce data. Skips columns with too few non-null values
-    # to compute mean/SD per peptide (e.g. Library Dot Product when libraries
-    # weren't matched).
-    metric_cols = []
-    z_by_metric: dict[str, pd.DataFrame] = {}
+    # Pre-compute per-metric working frames. In z-mode we compute z-scores
+    # per peptide (skipping columns where every peptide has <2 observations);
+    # in raw/log modes we use the values directly. Columns that produce no
+    # data after the relevant transform are dropped.
+    metric_cols: list[tuple[str, str]] = []
+    data_by_metric: dict[str, tuple[pd.DataFrame, str]] = {}
     for col, lbl in metric_cols_all:
         sub = df.dropna(subset=[col, time_col])
         if sub.empty:
             continue
-        scored = _zscore_per_peptide(sub, col, baseline_mode, baseline_n, time_col)
-        if scored["_z"].notna().any():
+        if value_mode == "z":
+            scored = _zscore_per_peptide(sub, col, baseline_mode, baseline_n, time_col)
+            if scored["_z"].notna().any():
+                metric_cols.append((col, lbl))
+                data_by_metric[col] = (scored, "_z")
+        elif value_mode == "log":
+            positive = sub[sub[col] > 0]
+            if not positive.empty:
+                metric_cols.append((col, lbl))
+                data_by_metric[col] = (positive, col)
+        else:  # "raw"
             metric_cols.append((col, lbl))
-            z_by_metric[col] = scored
+            data_by_metric[col] = (sub, col)
 
     if not metric_cols:
-        return go.Figure().update_layout(
-            height=height, title="No metric has enough data for z-scores yet"
-        )
+        empty_title = {
+            "z": "No metric has enough data for z-scores yet",
+            "log": "No positive values to log-transform",
+            "raw": "No data",
+        }[value_mode]
+        return go.Figure().update_layout(height=height, title=empty_title)
 
     n = len(metric_cols)
     n_rows = (n + n_cols - 1) // n_cols
@@ -716,24 +819,27 @@ def build_all_metrics_grid(
         row = idx // n_cols + 1
         col_idx = idx % n_cols + 1
 
-        scored = z_by_metric[col].dropna(subset=["_z"])
-        if scored.empty:
+        sub, value_col = data_by_metric[col]
+        if value_mode == "z":
+            sub = sub.dropna(subset=["_z"])
+        if sub.empty:
             continue
 
-        # Threshold lines
-        for y, dash, color in [
-            (0, "solid", "#1f77b4"),
-            (2, "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
-            (3, "dash", "#d9534f"), (-3, "dash", "#d9534f"),
-        ]:
-            fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash},
-                          opacity=0.35, row=row, col=col_idx)
+        # Threshold lines (z-mode only — meaningless in raw / log)
+        if value_mode == "z":
+            for y, dash, color in [
+                (0, "solid", "#1f77b4"),
+                (2, "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
+                (3, "dash", "#d9534f"), (-3, "dash", "#d9534f"),
+            ]:
+                fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash},
+                              opacity=0.35, row=row, col=col_idx)
 
         for rt_bin in seen_bins_global:
-            bin_df = scored[scored["_rt_bin"] == rt_bin]
+            bin_df = sub[sub["_rt_bin"] == rt_bin]
             if bin_df.empty:
                 continue
-            agg = bin_df.groupby(time_col)["_z"].agg(
+            agg = bin_df.groupby(time_col)[value_col].agg(
                 ["median",
                  lambda s: s.quantile(0.25),
                  lambda s: s.quantile(0.75),
@@ -754,6 +860,7 @@ def build_all_metrics_grid(
             ), row=row, col=col_idx)
 
             # Median line
+            hover_value_fmt = "z: %{y:.2f}" if value_mode == "z" else "value: %{y}"
             fig.add_trace(go.Scatter(
                 x=agg[time_col], y=agg["median"],
                 mode="lines+markers",
@@ -764,21 +871,32 @@ def build_all_metrics_grid(
                 marker={"size": 4, "color": color},
                 hovertemplate=(
                     f"<b>{lbl} · {rt_bin}</b><br>"
-                    "Time: %{x}<br>z: %{y:.2f}<extra></extra>"
+                    f"Time: %{{x}}<br>{hover_value_fmt}<extra></extra>"
                 ),
             ), row=row, col=col_idx)
 
-        # Show y-axis title on the leftmost column only (saves horizontal space).
-        ytitle = "z-score (σ from baseline)" if col_idx == 1 else None
-        fig.update_yaxes(
-            range=[-4.5, 4.5], row=row, col=col_idx,
-            tickfont={"size": 10, "color": "#475569"},
-            tickvals=[-3, -2, -1, 0, 1, 2, 3],
-            gridcolor="#e2e8f0",
-            zerolinecolor="#cbd5e1",
-            title=ytitle,
-            title_font={"size": 10, "color": "#64748b"},
-        )
+        # Y-axis configuration per-mode.
+        if value_mode == "z":
+            ytitle = "z-score (σ from baseline)" if col_idx == 1 else None
+            fig.update_yaxes(
+                range=[-4.5, 4.5], row=row, col=col_idx,
+                tickfont={"size": 10, "color": "#475569"},
+                tickvals=[-3, -2, -1, 0, 1, 2, 3],
+                gridcolor="#e2e8f0",
+                zerolinecolor="#cbd5e1",
+                title=ytitle,
+                title_font={"size": 10, "color": "#64748b"},
+            )
+        else:
+            ytitle = lbl if col_idx == 1 else None
+            fig.update_yaxes(
+                type="log" if value_mode == "log" else "linear",
+                row=row, col=col_idx,
+                tickfont={"size": 10, "color": "#475569"},
+                gridcolor="#e2e8f0",
+                title=ytitle,
+                title_font={"size": 10, "color": "#64748b"},
+            )
         fig.update_xaxes(
             tickfont={"size": 10, "color": "#475569"},
             gridcolor="#e2e8f0",
@@ -1055,6 +1173,18 @@ def main() -> None:
             baseline_window_n = st.number_input("N days", min_value=1, max_value=365, value=30)
         time_axis = st.radio("X-axis", ["Acquisition", "Payload"], index=0, horizontal=True)
         time_col = "acquisition_time" if time_axis == "Acquisition" else "timestamp"
+        value_mode_label = st.radio(
+            "Y-axis",
+            ["z-score", "raw", "log10"],
+            index=0,
+            horizontal=True,
+            help=(
+                "z-score: σ from per-peptide baseline (LJ control-chart style). "
+                "raw: metric value as-is. log10: raw on a log axis — useful for "
+                "intensity-style metrics (peak area / height)."
+            ),
+        )
+        value_mode = {"z-score": "z", "raw": "raw", "log10": "log"}[value_mode_label]
         auto_refresh = st.toggle("Auto-refresh", value=False)
         refresh_secs = st.slider("Refresh (s)", 10, 300, 60) if auto_refresh else 60
 
@@ -1071,21 +1201,71 @@ def main() -> None:
     st.markdown('<div class="qc-title">QC Metrics Dashboard</div>',
                 unsafe_allow_html=True)
 
-    f1, f2, _f3 = st.columns([1.5, 1.5, 4])
+    f1, f2, f3, _f4 = st.columns([1.5, 1.5, 1.2, 3.8])
     instruments = sorted(df["instrument_id"].dropna().unique())
     selected_instrument = f1.selectbox(
         "Instrument", ["All", *list(instruments)],
         label_visibility="visible",
     )
-    control_types = sorted(df["control_type"].dropna().unique())
+    # Always show the canonical QC control types so the user can switch even
+    # when the most recent batch happens to be all one type — otherwise the
+    # dropdown collapses to whatever the recent data contains and operators
+    # can't filter to historical SSC0 / QC_A runs. Add any custom types
+    # actually seen in the data (e.g. from user classifier rules).
+    from mdqc.types import ControlType as _ControlType
+    canonical = [c.value for c in _ControlType if c.value != "SAMPLE"]
+    seen_types = set(df["control_type"].dropna().unique()) - set(canonical)
+    control_types = canonical + sorted(seen_types)
     selected_control = f2.selectbox(
-        "Control type", ["All", *list(control_types)],
+        "Control type", ["All", *control_types],
         label_visibility="visible",
+    )
+    # SPD ("samples per day") — Evosep chromatography speed. Orthogonal to
+    # control_type; lets operators look at e.g. only 200 SPD QC_B runs
+    # without conflating with 500 SPD ones.
+    spd_values = sorted(
+        v for v in df.get("spd", pd.Series(dtype="float64")).dropna().unique()
+    )
+    spd_options = ["All", *[f"{int(v)} SPD" for v in spd_values]]
+    selected_spd = f3.selectbox(
+        "SPD", spd_options, label_visibility="visible",
     )
     if selected_instrument != "All":
         df = df[df["instrument_id"] == selected_instrument]
     if selected_control != "All":
         df = df[df["control_type"] == selected_control]
+    if selected_spd != "All":
+        spd_int = int(selected_spd.split(" ")[0])
+        df = df[df["spd"] == spd_int]
+
+    # Exclusions: lets the operator mark first-of-series outliers (column not
+    # equilibrated, etc.) as excluded from baseline + chart computations
+    # without deleting the underlying payload. Persisted to disk as
+    # <folder>/exclusions.json so it survives restarts.
+    excluded = load_exclusions(folder)
+    with st.sidebar:
+        all_runs_in_view = sorted(df["raw_file_name"].dropna().unique())
+        with st.expander(
+            f"Excluded runs ({len(excluded & set(all_runs_in_view))})",
+            expanded=False,
+        ):
+            st.caption(
+                "Excluded runs are hidden from charts and z-score baselines but kept in the spool."
+            )
+            new_excluded_in_view = set(st.multiselect(
+                "Exclude these runs",
+                options=all_runs_in_view,
+                default=sorted(excluded & set(all_runs_in_view)),
+                label_visibility="collapsed",
+            ))
+            # Preserve exclusions for runs outside the current filter view.
+            preserved = excluded - set(all_runs_in_view)
+            updated = preserved | new_excluded_in_view
+            if updated != excluded:
+                save_exclusions(folder, updated)
+                excluded = updated
+    if excluded:
+        df = df[~df["raw_file_name"].isin(excluded)]
     if df.empty:
         st.info("No data matches filters.")
         return
@@ -1112,21 +1292,49 @@ def main() -> None:
     latest = df.sort_values(time_col).iloc[-1]
     latest_name = str(latest.get("raw_file_name", "—"))
     display_name = latest_name if len(latest_name) <= 22 else latest_name[:11] + "…" + latest_name[-10:]
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("Latest", display_name, help=latest_name)
+
+    # Peptide-level rollup: each peptide is "detected" if any of its precursor
+    # rows shows peak_area > 0 in the latest run. This is the science-meaningful
+    # KPI (how many peptides found vs expected); the precursor/transition-level
+    # count below is just diagnostic noise unless you're chasing missing
+    # transitions.
+    latest_rows = df[df["raw_file_name"] == latest["raw_file_name"]]
+    if "peptide_sequence" in latest_rows.columns and not latest_rows.empty:
+        pep_groups = latest_rows.groupby("peptide_sequence")["detected"].max()
+        pep_found = int(pep_groups.sum())
+        pep_total = len(pep_groups)
+    else:
+        pep_found, pep_total = 0, 0
+    if pep_total > 0:
+        k2.metric(
+            "Peptides", f"{pep_found}/{pep_total}",
+            delta=f"{100 * pep_found / pep_total:.0f}%", delta_color="off",
+            help="Distinct peptides with at least one detected precursor in the latest run.",
+        )
+    else:
+        k2.metric("Peptides", "—")
+
+    # Precursor/transition row count from the original run_metrics — useful
+    # to see at a glance how many rows came back from Skyline but not the
+    # right thing to read as "QC recovery".
     tf, te = latest.get("targets_found"), latest.get("targets_expected")
     if pd.notna(tf) and pd.notna(te) and te:
-        k2.metric("Targets", f"{int(tf)}/{int(te)}",
-                  delta=f"{100 * tf / te:.0f}%", delta_color="off")
+        k3.metric(
+            "Transitions", f"{int(tf)}/{int(te)}",
+            delta=f"{100 * tf / te:.0f}%", delta_color="off",
+            help="Total precursor/transition rows in the report. For per-peptide recovery, see Peptides.",
+        )
     else:
-        k2.metric("Targets", "—")
+        k3.metric("Transitions", "—")
     me = latest.get("median_mass_error_ppm")
-    k3.metric("Mass error", f"{me:.2f} ppm" if pd.notna(me) else "—")
+    k4.metric("Mass error", f"{me:.2f} ppm" if pd.notna(me) else "—")
     rs = latest.get("median_rt_shift")
-    k4.metric("RT shift", f"{rs:.3f} min" if pd.notna(rs) else "—")
+    k5.metric("RT shift", f"{rs:.3f} min" if pd.notna(rs) else "—")
     n_runs = df["raw_file_name"].nunique()
     n_with = df[df["targets_found"].fillna(0) > 0]["raw_file_name"].nunique()
-    k5.metric("Runs", f"{n_runs}", delta=f"{n_with} active", delta_color="off")
+    k6.metric("Runs", f"{n_runs}", delta=f"{n_with} active", delta_color="off")
 
     # ─── Scorecard heatmap (full-width, above the grid) ──────────────────
     st.markdown(
@@ -1155,7 +1363,7 @@ def main() -> None:
         fig = build_all_metrics_grid(
             df, metric_defs=metric_defs, time_col=time_col,
             baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
-            height=grid_height, n_cols=n_cols,
+            height=grid_height, n_cols=n_cols, value_mode=value_mode,
         )
         st.plotly_chart(fig, use_container_width=True)
 

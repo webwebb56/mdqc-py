@@ -161,6 +161,72 @@ def test_split_columns_zero_areas_still_yield_zero_peak_area(tmp_path: Path) -> 
     assert rows[0].detected is False
 
 
+# ─── Column overrides (custom .skyr exports) ─────────────────────────────────
+
+def test_column_overrides_resolve_custom_column_name(tmp_path: Path) -> None:
+    """Operators with custom .skyr exports can declare which CSV column maps
+    to which canonical metric without code changes."""
+    path = tmp_path / "custom.csv"
+    path.write_text(
+        "Peptide,Mz,My Funky Area,Mass Error PPM\n"
+        "PEP,500.0,12345,1.5\n"
+    )
+    rows = parse_skyline_csv(
+        path,
+        column_overrides={"peak_area": "My Funky Area"},
+    )
+    assert rows[0].peak_area == 12345.0
+    assert rows[0].mass_error_ppm == pytest.approx(1.5)
+    assert rows[0].detected is True
+
+
+def test_column_overrides_sum_list(tmp_path: Path) -> None:
+    """A list value in overrides means 'sum these columns' — the canonical
+    DIA case where intensity is split across MS1 / Fragment / etc."""
+    path = tmp_path / "sumlist.csv"
+    path.write_text(
+        "Peptide,Mz,Area Channel A,Area Channel B,Area Channel C\n"
+        "PEP,500.0,100,200,400\n"
+    )
+    rows = parse_skyline_csv(
+        path,
+        column_overrides={
+            "peak_area": ["Area Channel A", "Area Channel B", "Area Channel C"],
+        },
+    )
+    assert rows[0].peak_area == 700.0
+
+
+def test_column_overrides_missing_column_falls_back_to_alias(tmp_path: Path) -> None:
+    """If the operator overrides to a column name that doesn't exist in the
+    CSV, fall back to the alias dictionary rather than silently failing."""
+    path = tmp_path / "fallback.csv"
+    path.write_text(
+        "Peptide,Mz,Total Area\n"
+        "PEP,500.0,9000\n"
+    )
+    rows = parse_skyline_csv(
+        path,
+        column_overrides={"peak_area": "Some Column That Does Not Exist"},
+    )
+    # Alias dictionary picks up "Total Area" → peak_area.
+    assert rows[0].peak_area == 9000.0
+
+
+def test_column_overrides_none_passthrough(tmp_path: Path) -> None:
+    """``None`` for any canonical means 'use defaults' — same as omitting."""
+    path = tmp_path / "passthrough.csv"
+    path.write_text(
+        "Peptide,Mz,Total Area\n"
+        "PEP,500.0,1234\n"
+    )
+    rows = parse_skyline_csv(
+        path,
+        column_overrides={"peak_area": None, "mass_error_ppm": None},
+    )
+    assert rows[0].peak_area == 1234.0
+
+
 def test_empty_csv_returns_empty_list(tmp_path: Path) -> None:
     path = tmp_path / "empty.csv"
     path.write_text("")

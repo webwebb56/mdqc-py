@@ -103,6 +103,11 @@ class RunClassification:
     plate_id: str | None
     confidence: Confidence
     source: ClassificationSource
+    # SPD ("samples per day") — Evosep chromatography speed setting parsed
+    # from filename markers like `200spd`, `500SPD`, etc. ``None`` if not
+    # detectable from the filename. Surfaced as an orthogonal dashboard
+    # filter (independent of control_type).
+    spd: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -112,6 +117,7 @@ class RunClassification:
             "plate_id": self.plate_id,
             "classification_confidence": self.confidence.value,
             "classification_source": self.source.value,
+            "spd": self.spd,
         }
 
 

@@ -137,6 +137,36 @@ def test_instrument_id_when_no_token() -> None:
     assert result.instrument_id == "INST"
 
 
+# ─── SPD (Evosep samples-per-day) ────────────────────────────────────────────
+
+def test_spd_extracted_lowercase() -> None:
+    result = classify_filename(
+        "2026-04-28_astral_p087_200spd_k562_50ng_QCB.raw"
+    )
+    assert result.spd == 200
+
+
+def test_spd_extracted_uppercase() -> None:
+    result = classify_filename("astral_500SPD_k562_QCA.raw")
+    assert result.spd == 500
+
+
+def test_spd_extracted_with_dash_separator() -> None:
+    result = classify_filename("astral_100-SPD_QCB.raw")
+    assert result.spd == 100
+
+
+def test_spd_absent_returns_none() -> None:
+    result = classify_filename("EXPLORIS_QCA_A1_2026-01-27.raw")
+    assert result.spd is None
+
+
+def test_spd_ignored_inside_other_word() -> None:
+    # `200spdx` should NOT match — delimiters required after the digits+SPD.
+    result = classify_filename("astral_200spdx_k562_QCA.raw")
+    assert result.spd is None
+
+
 def test_priority_ssc0_before_qca() -> None:
     # Both SSC0 and QCA tokens present; SSC0 wins by priority.
     result = classify_filename("INST_SSC0_QCA_A1.raw")

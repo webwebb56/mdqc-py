@@ -163,6 +163,7 @@ class Spool:
                 str(classification.well_position) if classification.well_position else None
             ),
             "plate_id": classification.plate_id,
+            "spd": classification.spd,
             "classification_confidence": classification.confidence.value,
             "classification_source": classification.source.value,
             "method_name": None,

@@ -43,12 +43,42 @@ class CloudConfig(BaseModel):
         return v
 
 
+class ReportColumnsConfig(BaseModel):
+    """Per-deployment override of CSV column → canonical-metric mapping.
+
+    Each entry may be a single column name or a list of column names. Lists
+    are interpreted as "sum these numeric columns" — useful for DIA reports
+    that split intensity into ``Total Area MS1`` + ``Total Area Fragment``.
+
+    Any field left as ``None`` falls back to the built-in alias dictionary in
+    ``mdqc.extractor.report``. Operators only need to set the columns whose
+    naming diverges from a typical Skyline export.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    peak_area: str | list[str] | None = None
+    peak_height: str | list[str] | None = None
+    peak_width_fwhm: str | None = None
+    peak_symmetry: str | None = None
+    mass_error_ppm: str | None = None
+    retention_time: str | None = None
+    rt_expected: str | None = None
+    rt_delta: str | None = None
+    isotope_dot_product: str | None = None
+    library_dot_product: str | None = None
+    peptide_sequence: str | None = None
+    precursor_mz: str | None = None
+    protein_name: str | None = None
+
+
 class SkylineConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     path: str = "auto"
     timeout_seconds: int = defaults.SKYLINE_TIMEOUT_S
     process_priority: Literal["normal", "below_normal", "idle"] = "below_normal"
+    report_columns: ReportColumnsConfig = ReportColumnsConfig()
 
 
 class WatcherConfig(BaseModel):

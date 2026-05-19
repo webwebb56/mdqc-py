@@ -35,6 +35,8 @@ _PLATE_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_RE = re.compile(r"\d{4}[-_]\d{2}[-_]\d{2}")
+# Evosep "samples per day" — `100spd`, `200SPD`, `500_spd`, etc.
+_SPD_RE = re.compile(rf"{_DELIM_BEFORE}(\d{{2,4}})[-_]?SPD{_DELIM_AFTER}", re.IGNORECASE)
 
 
 def classify_file(
@@ -58,6 +60,7 @@ def classify_filename(
                 well = _extract_well(stem)
                 plate = _extract_plate(stem)
                 instrument = _extract_instrument(stem)
+                spd = _extract_spd(stem)
                 return RunClassification(
                     control_type=ct,
                     well_position=well,
@@ -65,12 +68,14 @@ def classify_filename(
                     plate_id=plate,
                     confidence=Confidence.HIGH,
                     source=ClassificationSource.FILENAME,
+                    spd=spd,
                 )
 
     control_type, source = _extract_control_type(stem)
     well = _extract_well(stem)
     plate = _extract_plate(stem)
     instrument = _extract_instrument(stem)
+    spd = _extract_spd(stem)
     confidence = _confidence(control_type, well, source)
     return RunClassification(
         control_type=control_type,
@@ -79,7 +84,19 @@ def classify_filename(
         plate_id=plate,
         confidence=confidence,
         source=source,
+        spd=spd,
     )
+
+
+def _extract_spd(stem: str) -> int | None:
+    """Parse Evosep samples-per-day from a filename (e.g. ``200spd``)."""
+    m = _SPD_RE.search(stem)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except (ValueError, IndexError):
+        return None
 
 
 def _strip_vendor_ext(name: str) -> str:

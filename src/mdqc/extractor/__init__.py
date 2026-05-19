@@ -199,8 +199,13 @@ class Extractor:
                 run_result.returncode,
             )
 
+        column_overrides = (
+            self._cfg.report_columns.model_dump(exclude_none=True)
+            if hasattr(self._cfg, "report_columns") and self._cfg.report_columns is not None
+            else None
+        )
         try:
-            target_metrics = parse_skyline_csv(output_csv)
+            target_metrics = parse_skyline_csv(output_csv, column_overrides=column_overrides)
         except FileNotFoundError as exc:
             result.status = ExtractionStatus.FAILED
             result.error_message = f"Skyline did not produce a report file: {exc}"
