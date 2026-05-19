@@ -107,6 +107,45 @@ class WatcherOverrides(BaseModel):
 CONTROL_TYPE_VALUES = ["QC_A", "QC_B", "SSC0", "BLANK", "SAMPLE"]
 
 
+class PeptideClassRule(BaseModel):
+    """Maps a Skyline ``Peptide.Protein.Name`` value to a peptide class with
+    a declared purpose. Lets operators group diagnostic peptides by what
+    they're measuring — recovery, digest efficiency, oxidation, alkylation —
+    so the dashboard can apply different rollup logic per class.
+
+    Matching is case-insensitive substring against the protein name column.
+    First match wins.
+
+    Recognised purposes:
+      - ``recovery`` (default) — counted toward the per-run target recovery
+        KPI, used in z-score baselines
+      - ``digest_efficiency`` — paired peptides (0-miss / 1-miss); excluded
+        from recovery and z-score; surfaced as a digest-efficiency ratio
+      - ``oxidation`` — Met-containing reporters for oxidation rate
+      - ``alkylation`` — Cys-containing reporters for alkylation efficiency
+      - ``custom`` — passthrough; surfaced as its own group on the dashboard
+        without special aggregation
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    protein_name: str
+    label: str = ""
+    purpose: Literal[
+        "recovery", "digest_efficiency", "oxidation", "alkylation", "custom"
+    ] = "recovery"
+    exclude_from_recovery: bool = False
+    exclude_from_baseline: bool = False
+    notes: str = ""
+
+    @field_validator("protein_name")
+    @classmethod
+    def _nonempty_protein(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("protein_name must not be empty")
+        return v
+
+
 class ClassifierRule(BaseModel):
     """A single filename-pattern → control-type mapping.
 
@@ -177,6 +216,7 @@ class Config(BaseModel):
             ClassifierRule(pattern="BLK",         control_type="BLANK",  notes="Blank (short form)"),
         ]
     )
+    peptide_classes: list[PeptideClassRule] = Field(default_factory=list)
 
     # ─── Cross-field validation ─────────────────────────────────────────────
 

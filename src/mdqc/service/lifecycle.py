@@ -373,7 +373,11 @@ async def _build_state(cfg: Config) -> AppState:
     failed = FailedFilesStore.load()
     activity = ActivityLog.load()
     processed_registry = ProcessedRegistry()
-    extractor = Extractor(cfg.skyline, work_dir=paths.spool_work())
+    extractor = Extractor(
+        cfg.skyline,
+        work_dir=paths.spool_work(),
+        peptide_class_rules=cfg.peptide_classes,
+    )
     if extractor.skyline_path is None:
         log.error(
             "skyline_not_found",

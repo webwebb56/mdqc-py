@@ -140,6 +140,13 @@ class TargetMetric:
     library_dot_product: float | None = None
     detected: bool = True
     extra_metrics: dict[str, float] = field(default_factory=dict)
+    # Skyline `Peptide.Protein.Name` — used as the grouping key for the
+    # peptide-class system. Different protein names can be assigned different
+    # purposes (recovery / digest_efficiency / oxidation / ...) via
+    # [[classifier.peptide_classes]] in config.toml.
+    protein_name: str | None = None
+    peptide_class: str | None = None
+    peptide_class_purpose: str | None = None
 
 
 @dataclass

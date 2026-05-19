@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 
 from mdqc.config.paths import methods_dir
-from mdqc.config.schema import SkylineConfig
+from mdqc.config.schema import PeptideClassRule, SkylineConfig
 from mdqc.extractor.report import parse_skyline_csv
 from mdqc.extractor.skyline import (
     SkylineClickOnceUnsupported,
@@ -22,6 +22,10 @@ from mdqc.extractor.skyline import (
     has_error_marker,
     is_clickonce_install,
     run_skyline,
+)
+from mdqc.peptide_classes import (
+    assign_peptide_classes,
+    filter_for_recovery,
 )
 from mdqc.types import ExtractionResult, ExtractionStatus, RunMetrics
 
@@ -72,9 +76,17 @@ def compute_raw_hash(path: Path) -> str:
     raise FileNotFoundError(path)
 
 
-def _run_metrics(targets: list) -> RunMetrics:
-    targets_expected = len(targets)
-    targets_found = sum(1 for t in targets if t.detected)
+def _run_metrics(
+    targets: list,
+    peptide_class_rules: list[PeptideClassRule] | None = None,
+) -> RunMetrics:
+    # Recovery counts only metrics that should be counted (excludes
+    # digest-efficiency pairs etc. — see filter_for_recovery for the rule
+    # and rationale). Median RT shift / mass error are computed on the full
+    # target list so the operator sees the unbiased instrument view.
+    recovery_targets = filter_for_recovery(targets, peptide_class_rules)
+    targets_expected = len(recovery_targets)
+    targets_found = sum(1 for t in recovery_targets if t.detected)
     recovery = (targets_found / targets_expected * 100.0) if targets_expected else 0.0
 
     rt_deltas = sorted(t.rt_delta for t in targets if t.rt_delta is not None)
@@ -103,9 +115,16 @@ def _median(values: list[float]) -> float | None:
 
 
 class Extractor:
-    def __init__(self, skyline_cfg: SkylineConfig, *, work_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        skyline_cfg: SkylineConfig,
+        *,
+        work_dir: Path | None = None,
+        peptide_class_rules: list[PeptideClassRule] | None = None,
+    ) -> None:
         self._cfg = skyline_cfg
         self._work_dir = Path(work_dir) if work_dir else Path.cwd()
+        self._peptide_class_rules = peptide_class_rules or []
         explicit = None
         if skyline_cfg.path and skyline_cfg.path.lower() != "auto":
             explicit = Path(skyline_cfg.path)
@@ -213,8 +232,9 @@ class Extractor:
         finally:
             self._cleanup(output_csv)
 
+        assign_peptide_classes(target_metrics, self._peptide_class_rules)
         result.target_metrics = target_metrics
-        result.run_metrics = _run_metrics(target_metrics)
+        result.run_metrics = _run_metrics(target_metrics, self._peptide_class_rules)
         result.template_hash = compute_template_hash(template)
         try:
             result.raw_file_hash = compute_raw_hash(raw_file)

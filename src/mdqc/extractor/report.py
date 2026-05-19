@@ -16,6 +16,13 @@ from mdqc.types import TargetMetric
 logger = logging.getLogger(__name__)
 
 _ALIASES: dict[str, list[str]] = {
+    "protein_name": [
+        "protein",
+        "protein name",
+        "peptide.protein.name",
+        "peptide protein name",
+        "proteinname",
+    ],
     "peptide_sequence": [
         "peptide sequence",
         "peptidesequence",
@@ -294,6 +301,7 @@ def parse_skyline_csv(
                 continue
 
             peptide_seq = _get_str(row, single_idx.get("peptide_sequence"))
+            protein_name = _get_str(row, single_idx.get("protein_name"))
             precursor_mz = _resolve_value(row, "precursor_mz", single_idx, sum_idx)
             retention_time = _resolve_value(row, "retention_time", single_idx, sum_idx)
             rt_expected = _resolve_value(row, "rt_expected", single_idx, sum_idx)
@@ -326,6 +334,7 @@ def parse_skyline_csv(
             target = TargetMetric(
                 target_id=_hash_target_id(peptide_seq, precursor_mz, row_idx),
                 peptide_sequence=peptide_seq,
+                protein_name=protein_name,
                 precursor_mz=precursor_mz,
                 retention_time=retention_time,
                 rt_expected=rt_expected,

@@ -58,9 +58,10 @@ _KNOWN_LABELS: dict[str, str] = {col: label for col, label, _ in KNOWN_METRIC_DE
 _META_COLS = {
     "timestamp", "acquisition_time", "instrument_id", "raw_file_name",
     "control_type", "spd", "method_name", "column_info", "target_id",
-    "target_label", "protein_name", "peptide_sequence", "precursor_mz",
-    "precursor_charge", "detected", "targets_found", "targets_expected",
-    "median_rt_shift", "median_mass_error_ppm",
+    "target_label", "protein_name", "peptide_class", "peptide_class_purpose",
+    "peptide_sequence", "precursor_mz", "precursor_charge", "detected",
+    "targets_found", "targets_expected", "median_rt_shift",
+    "median_mass_error_ppm",
     # Constants per target — never useful as LJ metrics
     "Precursor Charge", "Charge", "Mz",
 }
@@ -206,6 +207,8 @@ def load_payloads(folder: str) -> pd.DataFrame:
                 "target_id": target.get("target_id", ""),
                 "target_label": label,
                 "protein_name": target.get("protein_name", ""),
+                "peptide_class": target.get("peptide_class") or "",
+                "peptide_class_purpose": target.get("peptide_class_purpose") or "",
                 "peptide_sequence": peptide_seq,
                 "precursor_mz": target.get("precursor_mz"),
                 "precursor_charge": target.get("precursor_charge"),
@@ -926,6 +929,59 @@ def build_all_metrics_grid(
     return fig
 
 
+def build_control_type_response(
+    df: pd.DataFrame,
+    metric_col: str = "peak_area",
+    height: int = 300,
+) -> go.Figure | None:
+    """Bar chart comparing median response across control types, peptide-by-peptide.
+
+    The SSC0 control is treated as the instrument-optimal reference (since
+    it's a clean 50ng-on-Evotip injection without sample-prep variability).
+    QC B should track close to SSC0 at the same loading; QC A is at ~6x
+    loading on column, so its bar should be visibly taller. A divergence
+    of QC B from SSC0 points at digestion / Evotip handling issues.
+
+    Returns ``None`` when there's no SSC0 data to anchor the comparison.
+    """
+    needed = {"control_type", "peptide_sequence", "raw_file_name", metric_col}
+    if not needed.issubset(df.columns):
+        return None
+    df = df.dropna(subset=[metric_col, "peptide_sequence", "control_type"])
+    if df.empty or "SSC0" not in df["control_type"].unique():
+        return None
+    # For each (control_type, peptide), take the median across runs; then
+    # take the median across peptides per control_type. Two-step median
+    # avoids one rogue peptide dominating the bar.
+    per_pep = df.groupby(["control_type", "peptide_sequence"])[metric_col].median().reset_index()
+    per_ct = per_pep.groupby("control_type")[metric_col].median().reset_index()
+    # Sort with SSC0 first (the reference), then QC_A, QC_B, others.
+    order_pref = ["SSC0", "QC_A", "QC_B", "BLANK"]
+    per_ct["_order"] = per_ct["control_type"].map(
+        lambda c: order_pref.index(c) if c in order_pref else 100
+    )
+    per_ct = per_ct.sort_values("_order")
+    colors = {"SSC0": "#0f172a", "QC_A": "#1f77b4", "QC_B": "#f0ad4e", "BLANK": "#94a3b8"}
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=per_ct["control_type"], y=per_ct[metric_col],
+        marker_color=[colors.get(c, "#7f7f7f") for c in per_ct["control_type"]],
+        text=[f"{v:.2g}" for v in per_ct[metric_col]],
+        textposition="outside",
+        hovertemplate="<b>%{x}</b><br>Median peak area: %{y:.4g}<extra></extra>",
+    ))
+    fig.update_layout(
+        height=height,
+        margin={"l": 40, "r": 10, "t": 30, "b": 40},
+        xaxis={"title": ""},
+        yaxis={"title": "Median peak area (across peptides × runs)"},
+        showlegend=False,
+        bargap=0.4,
+    )
+    return fig
+
+
 def build_scorecard(
     df: pd.DataFrame, time_col: str, metric_defs: list[tuple[str, str, bool]],
     baseline_mode: str, baseline_n: int, max_runs: int = 10,
@@ -1201,7 +1257,19 @@ def main() -> None:
     st.markdown('<div class="qc-title">QC Metrics Dashboard</div>',
                 unsafe_allow_html=True)
 
-    f1, f2, f3, _f4 = st.columns([1.5, 1.5, 1.2, 3.8])
+    # Peptide-class filter — only shown when at least one target has been
+    # classified, so deployments that don't configure peptide_classes don't
+    # see a useless dropdown.
+    peptide_classes_present = (
+        sorted(c for c in df.get("peptide_class", pd.Series(dtype=str)).dropna().unique() if c)
+        if "peptide_class" in df.columns else []
+    )
+    n_filter_cols = 4 if peptide_classes_present else 3
+    if n_filter_cols == 4:
+        f1, f2, f3, f4, _f5 = st.columns([1.5, 1.5, 1.2, 1.5, 2.3])
+    else:
+        f1, f2, f3, _f5 = st.columns([1.5, 1.5, 1.2, 3.8])
+        f4 = None
     instruments = sorted(df["instrument_id"].dropna().unique())
     selected_instrument = f1.selectbox(
         "Instrument", ["All", *list(instruments)],
@@ -1230,6 +1298,19 @@ def main() -> None:
     selected_spd = f3.selectbox(
         "SPD", spd_options, label_visibility="visible",
     )
+    if f4 is not None:
+        selected_class = f4.selectbox(
+            "Peptide class",
+            ["All", *peptide_classes_present],
+            label_visibility="visible",
+            help="Filter to a configured peptide class (Skyline Protein column).",
+        )
+    else:
+        selected_class = "All"
+    # Keep a copy before filters so the QC-vs-SSC0 panel further down can
+    # always show the reference comparison regardless of what the operator
+    # has filtered the main view to.
+    df_unfiltered = df.copy()
     if selected_instrument != "All":
         df = df[df["instrument_id"] == selected_instrument]
     if selected_control != "All":
@@ -1237,6 +1318,8 @@ def main() -> None:
     if selected_spd != "All":
         spd_int = int(selected_spd.split(" ")[0])
         df = df[df["spd"] == spd_int]
+    if selected_class != "All":
+        df = df[df["peptide_class"] == selected_class]
 
     # Exclusions: lets the operator mark first-of-series outliers (column not
     # equilibrated, etc.) as excluded from baseline + chart computations
@@ -1336,36 +1419,106 @@ def main() -> None:
     n_with = df[df["targets_found"].fillna(0) > 0]["raw_file_name"].nunique()
     k6.metric("Runs", f"{n_runs}", delta=f"{n_with} active", delta_color="off")
 
-    # ─── Scorecard heatmap (full-width, above the grid) ──────────────────
-    st.markdown(
-        '<div class="qc-section">Scorecard — recent runs × metrics, % peptides ±2σ</div>',
-        unsafe_allow_html=True,
-    )
-    scorecard = build_scorecard(
-        df, time_col=time_col, metric_defs=metric_defs,
-        baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
-        max_runs=10,
-    )
-    st.plotly_chart(scorecard, use_container_width=True)
-
-    # ─── Metric grid (full-width, 2 columns of larger panels) ────────────
-    st.markdown(
-        '<div class="qc-section">Levey-Jennings — peptides grouped by retention-time bin</div>',
-        unsafe_allow_html=True,
-    )
-    if not metric_defs:
-        st.info("No plottable metrics.")
-    else:
-        n_metrics = len([c for c, _, _ in metric_defs if c in df.columns])
-        n_cols = 2 if n_metrics > 1 else 1
-        n_rows = (n_metrics + n_cols - 1) // n_cols
-        grid_height = max(560, n_rows * 280 + 60)
-        fig = build_all_metrics_grid(
-            df, metric_defs=metric_defs, time_col=time_col,
-            baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
-            height=grid_height, n_cols=n_cols, value_mode=value_mode,
+    # ─── Digest-efficiency KPI (only when miss-cleavage class is present) ─
+    # Surfaces the 0miss/(0miss+1miss) ratio for the latest run as a separate
+    # metric — useful for trypsin digestion sanity in QC A workflows.
+    digest_rows = latest_rows[
+        latest_rows.get("peptide_class_purpose", pd.Series(dtype=str)) == "digest_efficiency"
+    ] if "peptide_class_purpose" in latest_rows.columns else pd.DataFrame()
+    if not digest_rows.empty:
+        # Heuristic: shorter peptide sequence is the 0-miss form.
+        digest_sorted = digest_rows.sort_values(
+            "peptide_sequence", key=lambda s: s.str.len()
         )
-        st.plotly_chart(fig, use_container_width=True)
+        if len(digest_sorted) >= 2:
+            zero_area = digest_sorted.iloc[0].get("peak_area") or 0.0
+            one_area = digest_sorted.iloc[1].get("peak_area") or 0.0
+            total = (zero_area or 0) + (one_area or 0)
+            if total > 0:
+                ratio = zero_area / total
+                de_col, _ = st.columns([1.2, 4.8])
+                de_col.metric(
+                    "Digest efficiency",
+                    f"{ratio * 100:.1f}%",
+                    help="0miss / (0miss + 1miss) peak area for the configured miss-cleavage pair in the latest run.",
+                )
+
+    # ─── View tabs: full scorecard vs Panorama-style compact view ─────────
+    # The full view keeps the multi-panel grid for at-a-glance triage; the
+    # compact view drops to a single big LJ panel with a metric selector,
+    # closer to Panorama / our existing QC app — no scrolling required.
+    tab_full, tab_compact = st.tabs(["Scorecard", "Compact (single metric)"])
+
+    with tab_full:
+        st.markdown(
+            '<div class="qc-section">Scorecard — recent runs × metrics, % peptides ±2σ</div>',
+            unsafe_allow_html=True,
+        )
+        scorecard = build_scorecard(
+            df, time_col=time_col, metric_defs=metric_defs,
+            baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
+            max_runs=10,
+        )
+        st.plotly_chart(scorecard, use_container_width=True)
+
+        st.markdown(
+            '<div class="qc-section">Levey-Jennings — peptides grouped by retention-time bin</div>',
+            unsafe_allow_html=True,
+        )
+        if not metric_defs:
+            st.info("No plottable metrics.")
+        else:
+            n_metrics = len([c for c, _, _ in metric_defs if c in df.columns])
+            n_cols = 2 if n_metrics > 1 else 1
+            n_rows = (n_metrics + n_cols - 1) // n_cols
+            grid_height = max(560, n_rows * 280 + 60)
+            fig = build_all_metrics_grid(
+                df, metric_defs=metric_defs, time_col=time_col,
+                baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
+                height=grid_height, n_cols=n_cols, value_mode=value_mode,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Instrument response reference (uses unfiltered df so SSC0 ref stays
+        # available even if the operator filtered the main view).
+        response_fig = build_control_type_response(df_unfiltered)
+        if response_fig is not None:
+            st.markdown(
+                '<div class="qc-section">Instrument response — median peak area by control type</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "SSC0 is the reference (clean 50 ng on Evotip). QC B should track SSC0 — "
+                "divergence indicates digestion / Evotip variability. QC A is loaded ~6× and "
+                "should appear visibly taller than SSC0."
+            )
+            st.plotly_chart(response_fig, use_container_width=True)
+
+    with tab_compact:
+        # Single-figure layout — one big LJ panel, metric chosen via dropdown.
+        # Mirrors Panorama / our current QC app's UX; no scrolling, focused on
+        # one signal at a time. Inherits the same value-mode toggle from the
+        # sidebar (z / raw / log) and the same baseline / filter selections.
+        if not metric_defs:
+            st.info("No plottable metrics.")
+        else:
+            metric_choices = [
+                (col, lbl) for col, lbl, _ in metric_defs if col in df.columns
+            ]
+            labels = [lbl for _, lbl in metric_choices]
+            chosen_label = st.selectbox(
+                "Metric", labels,
+                key="compact_metric",
+                help="Switches the chart below to focus on one QC metric at full size.",
+            )
+            chosen_col = next(c for c, lbl in metric_choices if lbl == chosen_label)
+            big_fig = build_grouped_lj(
+                df, metric_col=chosen_col, metric_label=chosen_label,
+                time_col=time_col,
+                baseline_mode=baseline_window_mode, baseline_n=baseline_window_n,
+                height=620, value_mode=value_mode,
+            )
+            st.plotly_chart(big_fig, use_container_width=True)
 
     if auto_refresh:
         import time
