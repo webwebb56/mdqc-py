@@ -6,6 +6,8 @@
 **Status:** mdqc is at v0.4.0, running daily on an Evosep Astral instrument PC. Working well enough that conversations have shifted from "make the local agent work" to "wire it to the MD platform and turn it into a System Suitability product." This document is the bundle Peppe needs to start that platform work without me having to be in every conversation.
 
 > The first thing Peppe asked for is the **mdqc payload schema** — the contract between the local agent and anything that consumes it downstream. That's §6 below, and it's stable. Everything else in this doc exists to give the surrounding context that schema lives inside.
+>
+> **Real example payloads are committed in [`docs/examples/`](docs/examples/)** — a real success-case payload (sanitized), a synthetic v0.4.0+ payload showing the peptide-class fields, and a real failure-case payload. See [`docs/examples/README.md`](docs/examples/README.md) for the index and a suggested server-side ingest validation rule set.
 
 ---
 
@@ -417,7 +419,7 @@ So the platform target is **Stoyan's tool +**: same depth, plus the structured p
 
 **This is the headline output of the local agent.** Every successful extraction writes one JSON file to `spool/pending/<run_id>_payload.json` and (after retention rules) moves it to `spool/completed/`. The schema is version-tagged via the `schema_version` field.
 
-Current `schema_version`: **"1.0"** (in `mdqc/config/defaults.py`).
+Current `schema_version`: **"1.1"** (in `mdqc/config/defaults.py`).
 
 ### 6.1 Top-level shape
 
@@ -551,7 +553,7 @@ When `extraction.status == "FAILED"`, the payload **still gets written** to the 
 - Adding optional fields is non-breaking; old payloads remain ingestable
 - Removing or renaming fields requires a `schema_version` bump (string-compared, not semver-parsed)
 - The platform should accept any `schema_version ≤ <its own>` and refuse newer ones with a clear "agent version too new for this server" error
-- All current shipping payloads are `schema_version: "1.0"`
+- All current shipping payloads are `schema_version: "1.1"`
 
 ---
 

@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.1",
+  "payload_id": "11ab22cd-33ef-44ab-55cd-66ef77ab88cd",
+  "correlation_id": "demo_agent_003-20260507083422-1f2e3d4c",
+  "agent_id": "demo_agent_003",
+  "agent_version": "0.4.0",
+  "timestamp": "2026-05-07T08:34:22.881102+00:00",
+  "run": {
+    "run_id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+    "raw_file_name": "2026-05-07_astral_p087_200spd_k562_50ng_QCB_d2_exp137556id.raw",
+    "raw_file_hash": "f1e2d3c4b5a6978869708192a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+    "acquisition_time": "2026-05-07T08:30:00+00:00",
+    "instrument_id": "Astral_0001",
+    "vendor": "thermo",
+    "control_type": "QC_B",
+    "well_position": null,
+    "plate_id": "P087",
+    "spd": 200,
+    "classification_confidence": "HIGH",
+    "classification_source": "FILENAME",
+    "method_name": null,
+    "column_info": null
+  },
+  "extraction": {
+    "backend": "skyline",
+    "backend_version": "26.1.0.057",
+    "template_name": "k562_diagnostic_peptides.sky",
+    "template_hash": "6f4b8c1e2a9d3b7e5c8a1b4d9e2f5a8c3d6e9f2a5b8c1d4e7f0a3b6c9d2e5f8a1",
+    "extraction_time_ms": 47230,
+    "status": "FAILED",
+    "error_message": "Skyline exited with code 2: Success! Imported Reports from MD_QC_Report.skyr\nOpening file...\nFile k562_diagnostic_peptides.sky opened.\nReading retention times from k562_500SPD_HT_library.blib 100%\nUpdating peak statistics\n[1] 70%\nError: Failed importing the results file C:\\mdqctest\\2026-05-07_astral_p087_200spd_k562_50ng_QCB_d2_exp137556id.raw. Message: pwiz.Skyline.Model.Results.ChromCacheBuildException: Failed importing results file. The file C:\\mdqctest\\2026-05-07_astral_p087_200spd_k562_50ng_QCB_d2_exp137556id.raw does not exist."
+  },
+  "target_metrics": [],
+  "run_metrics": {},
+  "baseline_context": null,
+  "comparison_metrics": null
+}
