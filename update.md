@@ -233,9 +233,22 @@ A **local** stand-in for the platform-side baseline-management feature. Lets Sto
 - Strips MS2/fragment columns from the default report when in MS1 mode
 - Documentation update on when to use which
 
+### Possibly v0.9 / later — DIA-NN parallel backend (gated on scientific conversation)
+
+Stoyan's tool uses DIA-NN for the run-level `precursors_identified` signal (§5.5). If we decide to mirror that on the agent rather than computing it server-side from a different pipeline, the work is:
+
+- Detect DIA-NN install on the instrument PC (similar to Skyline detection)
+- Shell out with a predicted-library + workflow-specific missed-cleavage setting
+- Emit results into the same payload schema with `extraction.backend = "diann"` instead of `"skyline"`
+- Schema-level: no changes; the existing payload supports backend as an enum
+
+Whether to do this is a scientific question, not an engineering one — depends on whether MD agrees DIA-NN is the right precursor-ID engine, or whether we'd source the same signal a different way.
+
 ### Out of scope for local mdqc
 
 - Multi-instrument dashboard (this is platform; see §7)
+- Event log (platform; see §5.4a and §7.2). The agent already emits the timestamps that events join against — no agent-side changes required
+- Sample-batch / reagent metadata storage (platform; the join sits server-side because the metadata file is published per-batch, not per-run)
 - User accounts, instrument fleet management, retention policy (platform)
 - The customer-facing "free tier" experience (platform)
 - Sample-prep blame-attribution (QC B vs QC A drift comparison) — better surfaced once the platform aggregates across instruments and timepoints
@@ -280,6 +293,50 @@ Covered above (§3.2 / §4 v0.5.0). The platform-side implementation needs:
 - Multiple active baselines per instrument allowed; user selects one as "the reference"
 - UI to capture metadata: "this baseline was set after a column change," "after a quad clean," etc.
 
+### 5.4a Event annotation system (already exists in Stoyan's tool)
+
+This is the single biggest piece I underestimated. Stoyan's internal tool has a full **event log** wired into every chart. The screenshots show:
+
+**Six event types, all CRUD-managed via in-app forms:**
+
+- `Instrumentation Change`
+- `Instrument Downtime`
+- `Reagent Change`
+- `Technician Change`
+- `Calibration`
+- `Column Change`
+
+**Event record fields:**
+
+```
+event_id          (auto)
+event_type        (enum, the six above)
+event_date        (date)
+clock             (HH:MM)
+event_description (free text)
+ms_machine        (FK to instrument list)
+initials          (audit trail — who logged it)
+```
+
+**Rendered on the time series as:**
+
+- Coloured vertical bars at the affected timepoint(s) — visible in screenshot 1 as the orange bars + the green hover tooltip "Type: Instrument Downtime / ID: 46 / Initials: ab"
+- A ▼ marker for point-in-time events
+- Faint red vertical highlights in the diagnostic-peptides panel at the same timepoints, so the event context propagates across charts
+
+**Why this matters for the platform:** the event log is what turns "we saw a drift on 2026-02-09" into "we saw a drift on 2026-02-09 *because the column was changed that morning*." It's the layer that makes the QC dashboard actionable for a non-expert customer — the same drift means very different things depending on whether the customer just did maintenance, swapped a reagent lot, or had unexplained downtime.
+
+**Implementation note:** this is **platform-side, not local-agent-side.** Events span instruments and operators, want to be edited from any browser, want to be linked to multiple runs not one — none of which fits the per-instrument-PC mdqc agent. The platform API needs:
+
+```
+POST   /v1/qc/events                 # create
+GET    /v1/qc/events?instrument=...  # list
+PATCH  /v1/qc/events/{id}            # update
+DELETE /v1/qc/events/{id}            # soft-delete
+```
+
+The agent's contribution: the **timestamp of every payload** (`run.acquisition_time`) is the join key the event log relates against. No agent-side changes required to support this.
+
 ### 5.4 Cross-control-type ratio (the QC A : QC B : SSC₀ diagnostic)
 
 The blame-attribution Stoyan keeps describing:
@@ -293,6 +350,66 @@ QC B drops + QC A stable  →  Anomalous, investigate; rare
 v0.4.0 has the bar chart showing absolute medians per control type — that's the visual ingredient. What's missing is the **temporal cross-correlation**: time-series of (QC A median / SSC₀ baseline) and (QC B median / SSC₀ baseline) plotted together, with a derived signal "blame likelihood" that flips between LC-MS / sample-prep / both.
 
 This belongs on the platform (it's a cross-run analysis that needs aggregation), not on the local agent.
+
+### 5.5 Feature inventory from Stoyan's internal tool
+
+Stoyan shared screenshots of the Evosep internal QC tool ("Live Diann Data" + "Live Diagnostic Peptides" + Event forms) on 2026-05-26. This is the **proven concept** we're effectively rebuilding into the MD platform — Evosep already uses it daily, and Stoyan's vision is for mdqc + the MD platform to replace it (or at least be its supported successor for Evosep customers).
+
+Captured here so Peppe can scope the platform target accurately:
+
+**Top-level data scope**
+
+- Aggregates over **many instruments and LC machines** in one view. The chart in screenshot 1 spans 2025-07-22 → 2026-05-21 (~10 months) across two LC machines (`s00572`, `s00038`) — that's the cross-instrument, cross-time depth the MD platform needs to support
+- Identity is **multi-part**: `(ms_machine, lc_machine_id)` — they treat the LC system as a separately-tracked entity from the MS. We should follow suit in our data model: instrument identity is a tuple, not a string
+- A two-level data hierarchy: **DIA-NN run-level identification count** (top panel) + **per-peptide RT / area / etc.** (bottom panel). The two are linked — clicking an event marker on the top chart highlights the same timepoint on the bottom chart
+
+**Sidebar filters Stoyan considers essential** (left column in screenshot 2)
+
+| Filter | Notes |
+|---|---|
+| Data Focus: MS Machine / Column / LC Machine | Switches what's being grouped on; same data, different lens |
+| Date Range | Open-ended start + end pickers |
+| MS Machine | Single-select (astral in shot) |
+| SPD | Numeric (200 in shot) |
+| Sample Type | "hela" — the reference matrix |
+| Sample Batch | "commercial 1" — which kit batch was used |
+| Reagent batch id | All reagent traceability |
+| Load (ng) | 50.0 |
+| Workflow | "maintenance" — see DIA-NN library note below |
+| Automation Method | All |
+| Evosep Type | "ena" |
+
+This is the **experimental context dimensions** the platform needs to ingest, store, and surface as filters. Several of these come from Evosep's automation metadata file (§3.3 / §4 v0.7.0) — not the raw MS data. So the ingestion pipeline needs to join QC payloads to metadata records on `(instrument_id, acquisition_time, well_position)` or similar.
+
+**DIA-NN as a parallel / alternative quantitation engine**
+
+> "Live DIA-NN results are generated using a human predicted spectral library (1 missed cleavage for maintenance workflows, 2 for all others)."
+
+The top panel uses **DIA-NN**, not Skyline. The metric is `precursors_identified` — a single number per run summarizing "how much could the search engine pick out of the raw file." DIA-NN is well-suited because it's automated, library-free for the spectral side (predicted library), and gives one robust signal per run.
+
+Stoyan's framing suggests **DIA-NN is the right backend for the high-level "is it broken?" identification-count signal**, and **Skyline is the right backend for per-peptide diagnostic detail.** They complement each other.
+
+**Implication for mdqc:** the current Skyline-only backend covers the bottom panel (per-peptide diagnostics) but not the top panel (DIA-NN precursor counts). To match Stoyan's tool we'd need to add a DIA-NN backend alongside the Skyline one — same template + raw → different metric → same payload schema with a `backend: "diann"` discriminator.
+
+**Per-chart controls visible in the screenshots**
+
+- **Y-axis toggles** (per panel, independent):
+  - `Y-axis in %` — express values as a percentage of the median (or a baseline)
+  - `Y-axis median normalization` — divide by median; the median trace plots as 1.0
+  - `Y-axis log transformation` — log10 axis
+- **Median annotation** — inline text at top-left of chart: "precursors_identified Median = 66152.50". A small but high-signal UI touch — gives the operator the anchor value without needing to look at the data
+- **Per-peptide chart**:
+  - `Remove Low Confidence Peptides (<0.95 Isotope Dot Product)` toggle — filter out rows where identification quality is poor before computing any rollup. Hardcoded threshold at 0.95 in their tool; we should make this configurable
+  - `Only Show The Diagnostic Peptides` toggle — distinguishes the diagnostic peptide subclass (mdqc's `peptide_class_purpose: "recovery"` set) from everything else in the raw report
+- **Skyline Options chip selector** — a radio-button row to swap the y-axis variable of the diagnostic peptides chart. The options visible: `isotope_dot_product`, `library_dot_product`, `total_area_ms1`, `total_area_fragment`, `rt` (selected), `fwhm`, `total_background_ms1`, `total_background_fragment`, `signal_to_noise_ms1`, `signal_to_noise_ms2`, `tailing`. **All of these are already in our payload's `target_metrics` schema** (some as canonical fields, some in `extra_metrics`) — the platform UI just needs to enumerate them as variables
+- **Expected-RT bands on per-peptide traces** — the green semi-transparent bands behind each peptide's RT trace. This is the "expected RT window per peptide × SPD × column" concept from §3.5 made visible. Out-of-band events are immediately readable
+
+**What's intentionally missing from Stoyan's tool that we add**
+
+- **Peptide classes** — Stoyan's tool treats all diagnostic peptides as one cohort. mdqc v0.4.0 distinguishes recovery / digest-efficiency / oxidation / alkylation, which lets us surface digest efficiency as its own KPI instead of conflating it with chromatographic recovery. Stoyan was explicitly enthusiastic about this addition on the call
+- **QC A / QC B / SSC₀ blame attribution** — Stoyan's tool doesn't break down "is the LC-MS drifting or is the sample prep drifting." Our QC-A-vs-QC-B-vs-SSC₀ ratio (§5.4) and the upcoming installation-baseline-anchored panels (§4 v0.5.0) are net-new
+
+So the platform target is **Stoyan's tool +**: same depth, plus the structured peptide-class system, plus the cross-control-type diagnostics, plus the customer-facing simplification (traffic light first, complexity tucked behind tabs).
 
 ---
 
@@ -461,16 +578,31 @@ If the endpoint is unreachable, payloads stay in `spool/pending/` and retry when
 Minimal viable surface to start. Everything else can be derived from these.
 
 ```
-POST   /v1/qc/payloads          # body = one mdqc QcPayload JSON (§6)
-GET    /v1/qc/payloads          # paginated list, filterable
-GET    /v1/qc/payloads/{id}     # single payload
-POST   /v1/qc/baselines         # capture current SSC0 set as a baseline
-GET    /v1/qc/baselines         # list (per instrument)
-PATCH  /v1/qc/baselines/{id}    # rename, mark as active reference
-GET    /v1/qc/instruments       # registered instruments + last-seen
+# QC payloads (from the local agent)
+POST   /v1/qc/payloads               # body = one mdqc QcPayload JSON (§6)
+GET    /v1/qc/payloads               # paginated list, filterable by instrument / date / control_type / SPD / sample_type
+GET    /v1/qc/payloads/{id}          # single payload
+
+# Installation baselines
+POST   /v1/qc/baselines              # capture current SSC0 set as a baseline
+GET    /v1/qc/baselines              # list (per instrument)
+PATCH  /v1/qc/baselines/{id}         # rename, mark as active reference
+
+# Event log (from Stoyan's tool, §5.4a)
+POST   /v1/qc/events                 # create
+GET    /v1/qc/events                 # list, filterable by instrument / date range / event_type
+PATCH  /v1/qc/events/{id}            # update
+DELETE /v1/qc/events/{id}            # soft-delete
+
+# Experimental metadata (from Evosep automation CSV, §3.3 + §5.5)
+POST   /v1/qc/sample-batches         # ingest a batch metadata record
+GET    /v1/qc/sample-batches         # list
+
+# Instrument registry
+GET    /v1/qc/instruments            # registered (ms_machine, lc_machine_id) pairs + last-seen
 ```
 
-Auth: bearer token per instrument (rotateable). Token gets baked into `config.toml` at install time; agent uses it in the `Authorization` header.
+Auth: bearer token per instrument (rotateable) for `POST /payloads`. Token gets baked into `config.toml` at install time; agent uses it in the `Authorization` header. **Event-log and baseline endpoints want user-level auth**, not instrument-level — they're operator actions, not agent actions, and need an audit trail (the `initials` field on event records is already this).
 
 ### 7.3 Data flow
 
@@ -512,7 +644,9 @@ These are the deliberate "the platform side handles this, the agent doesn't try 
 
 - **Multi-instrument aggregation.** Each agent only knows about its one instrument. Cross-instrument views, fleet-wide drift comparisons, the customer's "all my instruments at a glance" page — all platform
 - **Baseline state.** The platform is the system of record for "what is the active reference baseline for this instrument." Agent reads this back from the API (the dashboard renders relative-to-baseline; the relative computation happens on the platform, the agent just renders)
-- **User accounts, auth, multi-tenancy.** Agent has no concept of users; everything is per-instrument bearer token. Platform handles all human identity
+- **Event log** (§5.4a). Operator-logged events about column changes, calibrations, instrument downtime, reagent changes etc. Stored on the platform, joined to QC payloads by timestamp, rendered as overlays on time-series charts. This is what makes the dashboard actionable rather than merely descriptive
+- **Sample-batch / reagent-lot metadata.** Ingested from the Evosep automation CSV (§3.3). Joined to QC payloads on `(instrument_id, acquisition_time)` or similar. Surfaces as sidebar filters and as tooltip metadata on individual runs
+- **User accounts, auth, multi-tenancy.** Agent has no concept of users; everything is per-instrument bearer token. Platform handles all human identity (including the `initials` audit trail on event records)
 - **Long-term retention policy.** Agent currently keeps the last N completed payloads on disk (default 300, configurable). Platform retains indefinitely (or per customer retention contract)
 - **Cross-temporal analysis.** The QC-A-vs-QC-B-vs-SSC₀ "blame attribution" signal (§5.4) is best computed across many runs from the platform side, not on the agent
 
@@ -616,20 +750,24 @@ Things that aren't decided yet and need a conversation. Listed by who needs to w
 
 ### For Stoyan / Dorte / Nikolai
 
-1. **Metadata file schema.** What's in the Evosep automation CSV, and what subset do we ingest? (§3.3) — *Stoyan to send when his team finalises the format*
+1. **Metadata file schema.** What's in the Evosep automation CSV, and what subset do we ingest? (§3.3 + §5.5) — *Stoyan to send when his team finalises the format*
 2. **Expected RT windows per peptide × SPD × column.** We need a structured spec to load. Format: a JSON/CSV table of `(column_part_no, method, peptide_sequence, expected_rt_seconds, window_width_seconds)` — *Stoyan said he can pull these from existing internal QC docs*
 3. **QC A : SSC₀ expected ratio.** Stoyan said "roughly 6×" but wants to nail down the calibration empirically. Plan: collect 20+ runs of each at install and define the per-method expected ratio
 4. **Reset semantics for installation baseline.** Does "reset" archive the old baseline (keep history) or replace? Recommendation: archive — multiple baselines per instrument with timestamps and labels. Stoyan agreed on the call
-5. **Beta tester list.** We have shared customers that could potentially trial the end-to-end pipeline. *Dorte has a list*
+5. **DIA-NN backend** (§5.5). Stoyan's tool uses DIA-NN for the run-level `precursors_identified` metric. Do we add a DIA-NN backend to mdqc to match, or do we treat the DIA-NN-style "broad ID count" signal as platform-side only (computed from a different pipeline)? *Conversation needed with Jeppe + Stoyan*
+6. **Event-log taxonomy.** Stoyan's tool has six event types (Instrumentation Change, Instrument Downtime, Reagent Change, Technician Change, Calibration, Column Change). Are these the right six for MD-platform customers, or do we adjust? Recommendation: ship with these six, allow customer-extensible
+7. **Beta tester list.** We have shared customers that could potentially trial the end-to-end pipeline. *Dorte has a list*
 
 ### For Peppe / MD platform
 
-1. **API auth model.** Per-instrument bearer token? mTLS? Both? Recommendation: bearer for v1 (simple to provision), mTLS as an option for customers with stricter posture
+1. **API auth model.** Per-instrument bearer token? mTLS? Both? Recommendation: bearer for v1 (simple to provision), mTLS as an option for customers with stricter posture. Note (§7.2) that event-log + baseline endpoints want **user-level auth**, not instrument-level — operator actions need an audit trail
 2. **Payload versioning policy on the server side.** The agent emits `schema_version`; what's the server's tolerance? Recommendation: accept v1.0 and v1.x; explicit migration when bumping to v2.0
-3. **Storage backend.** Postgres is the obvious default; the `extra_metrics` dict argues for JSONB on that column rather than fully relational
-4. **Where does baseline-set/activate live in the UI?** Customer-facing setting, or operator-facing? Stoyan's vision: customer-facing, with explicit "I cleaned the instrument" / "I changed the column" prompts that trigger a new baseline capture
-5. **Multi-instrument fleet view.** What does "all instruments at a glance" look like? Worth a design conversation with Stoyan and Nikolai early
-6. **What we offer free vs paid.** Stoyan suggested the basic system-suitability dashboard could be a free Evosep-customer perk. Worth a commercial discussion before we lock the surface area
+3. **Storage backend.** Postgres is the obvious default; the `extra_metrics` dict argues for JSONB on that column rather than fully relational. Event log + sample-batch metadata are first-class entities with FK relationships to payloads
+4. **Where does baseline-set/activate live in the UI?** Customer-facing setting, or operator-facing? Stoyan's vision: customer-facing, with explicit "I cleaned the instrument" / "I changed the column" prompts that trigger a new baseline capture. These prompts **and** the event-log entry should fire together — a baseline reset is itself an event
+5. **Instrument identity is a tuple, not a string** (§5.5). Stoyan's tool tracks `(ms_machine, lc_machine_id)` as separate fields. Our `RunClassification.instrument_id` is a single string today — the platform's instrument registry should normalise to the tuple form, and the agent should be extended in a later release to populate `lc_machine_id` separately. Won't affect ingest of current v1.0 payloads, but worth designing the schema for now
+6. **Filter dimensions to ingest as first-class metadata** (§5.5). Stoyan's tool surfaces these as left-sidebar filters and the platform's database needs columns for them: `sample_type`, `sample_batch`, `reagent_batch_id`, `load_ng`, `workflow` ("maintenance" vs "production"), `automation_method`, `evosep_type`. Most come from the Evosep automation CSV (§3.3) rather than the QC payload — so the ingestion pipeline needs to do the join
+7. **Multi-instrument fleet view.** What does "all instruments at a glance" look like? Worth a design conversation with Stoyan and Nikolai early. Stoyan's tool shows multi-LC-machine bars in a single chart (screenshot 1) coloured by `lc_machine_id` — that's one pattern
+8. **What we offer free vs paid.** Stoyan suggested the basic system-suitability dashboard could be a free Evosep-customer perk. Worth a commercial discussion before we lock the surface area
 
 ### For Andrew
 
