@@ -124,6 +124,15 @@ adjusting the lines marked **`<-- EDIT`**:
 agent_id = "evosep_pilot_001"
 log_level = "info"
 
+# [cloud]: push payloads to the MD platform. Leave the whole section out (or
+# omit api_token) to run local-only — payloads stay on disk in spool/completed.
+# With a token set, MDQC POSTs each payload to POST /api/evosep_qcs as
+# {"filename": "<id>_payload.json", "blob": <payload>}; unreachable uploads
+# stay in spool/pending and retry.
+# [cloud]
+# endpoint  = "https://dev.massdynamics.com/api/evosep_qcs"   # dev; swap for prod when ready
+# api_token = "<your API token from Account Details>"          # <-- EDIT
+
 [skyline]
 timeout_seconds = 900
 process_priority = "below_normal"

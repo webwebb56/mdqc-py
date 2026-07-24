@@ -100,8 +100,11 @@ class Uploader:
     def is_local_only(self) -> bool:
         return not self.cloud_cfg.api_token and not self.cloud_cfg.certificate_thumbprint
 
-    async def upload_payload(self, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload).encode("utf-8")
+    async def upload_payload(self, payload: dict[str, Any], filename: str) -> None:
+        # The platform's POST /api/evosep_qcs expects the payload wrapped as
+        # {"filename": ..., "blob": <payload object>}, not the bare payload.
+        envelope = {"filename": filename, "blob": payload}
+        body = json.dumps(envelope).encode("utf-8")
 
         async def _attempt() -> None:
             await self._post_once(body)
@@ -112,6 +115,8 @@ class Uploader:
         headers = {
             "User-Agent": f"mdqc-py/{self.agent_version}",
             "Content-Type": "application/json",
+            # The platform serves responses as its versioned media type.
+            "Accept": "application/vnd.md-v2+json",
         }
         if self.cloud_cfg.api_token:
             headers["Authorization"] = f"Bearer {self.cloud_cfg.api_token}"
@@ -163,7 +168,7 @@ class UploaderWorker:
             return True
 
         try:
-            await self.uploader.upload_payload(payload)
+            await self.uploader.upload_payload(payload, path.name)
         except (PermanentUploadError, AuthenticationError) as e:
             log.error("Permanent upload failure", extra={"path": str(path), "error": str(e)})
             self.spool.mark_failed(path, str(e))

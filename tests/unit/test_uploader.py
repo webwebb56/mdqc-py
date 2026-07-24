@@ -78,7 +78,7 @@ async def test_auth_token_happy_path() -> None:
     route = respx.post(ENDPOINT).mock(return_value=httpx.Response(200))
     uploader = _make_uploader()
     try:
-        await uploader.upload_payload(_payload())
+        await uploader.upload_payload(_payload(), "test_payload.json")
     finally:
         await uploader.aclose()
 
@@ -87,6 +87,31 @@ async def test_auth_token_happy_path() -> None:
     assert request.headers["Authorization"] == "Bearer tok-123"
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["User-Agent"] == "mdqc-py/0.1.0"
+
+
+# ─── 1b. POST /api/evosep_qcs contract: {filename, blob} envelope + Accept ────
+
+
+@respx.mock
+async def test_evosep_qcs_envelope_and_accept_header() -> None:
+    # 201 is the documented success code for POST /api/evosep_qcs.
+    route = respx.post(ENDPOINT).mock(return_value=httpx.Response(201))
+    uploader = _make_uploader()
+    payload = _payload()
+    try:
+        await uploader.upload_payload(payload, "abc123_payload.json")
+    finally:
+        await uploader.aclose()
+
+    assert route.call_count == 1
+    request = route.calls[0].request
+    # Versioned media type the platform serves.
+    assert request.headers["Accept"] == "application/vnd.md-v2+json"
+    # Body is the {filename, blob} wrapper, blob = the payload object verbatim.
+    body = json.loads(request.content)
+    assert set(body.keys()) == {"filename", "blob"}
+    assert body["filename"] == "abc123_payload.json"
+    assert body["blob"] == payload
 
 
 # ─── 2. Local-only mode ──────────────────────────────────────────────────────
@@ -135,7 +160,7 @@ async def test_401_raises_authentication_error_no_retry() -> None:
     uploader = _make_uploader(sleep_recorder=sleeps)
     try:
         with pytest.raises(AuthenticationError):
-            await uploader.upload_payload(_payload())
+            await uploader.upload_payload(_payload(), "test_payload.json")
     finally:
         await uploader.aclose()
 
@@ -157,7 +182,7 @@ async def test_5xx_then_200_retries_once() -> None:
     sleeps: list[float] = []
     uploader = _make_uploader(sleep_recorder=sleeps)
     try:
-        await uploader.upload_payload(_payload())
+        await uploader.upload_payload(_payload(), "test_payload.json")
     finally:
         await uploader.aclose()
 
@@ -182,7 +207,7 @@ async def test_tenacity_timing_canary_exactly_four_sleeps() -> None:
     uploader = _make_uploader(sleep_recorder=sleeps)
     try:
         with pytest.raises(TransientUploadError):
-            await uploader.upload_payload(_payload())
+            await uploader.upload_payload(_payload(), "test_payload.json")
     finally:
         await uploader.aclose()
 
@@ -233,7 +258,7 @@ async def test_connection_error_retries() -> None:
     sleeps: list[float] = []
     uploader = _make_uploader(sleep_recorder=sleeps)
     try:
-        await uploader.upload_payload(_payload())
+        await uploader.upload_payload(_payload(), "test_payload.json")
     finally:
         await uploader.aclose()
 
@@ -301,7 +326,7 @@ async def test_permanent_4xx_raises_directly() -> None:
         uploader = _make_uploader(sleep_recorder=sleeps)
         try:
             with pytest.raises(PermanentUploadError):
-                await uploader.upload_payload(_payload())
+                await uploader.upload_payload(_payload(), "test_payload.json")
         finally:
             await uploader.aclose()
         assert route.call_count == 1
@@ -355,7 +380,7 @@ async def test_idempotency_body_byte_equal_across_retries() -> None:
     sleeps: list[float] = []
     uploader = _make_uploader(sleep_recorder=sleeps)
     try:
-        await uploader.upload_payload(_payload())
+        await uploader.upload_payload(_payload(), "test_payload.json")
     finally:
         await uploader.aclose()
 
