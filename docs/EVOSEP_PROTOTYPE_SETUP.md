@@ -231,6 +231,18 @@ A browser tab should open at `http://localhost:8501`.
 
 If it doesn't open automatically, navigate there manually.
 
+This Streamlit dashboard is a separate, read-only trend view. The agent's own
+web UI (Dashboard / Settings / Gold standards / Diagnostics / Failed / Logs —
+opened via the tray icon or the link printed at `service_started`) is where
+you record a **gold standard baseline**: run your SSC0 set (15-20 injections
+per SPD, at install or after a column change), open **Gold standards**, tick
+the runs that look representative — the page shades any run/peptide that
+deviates from the currently-ticked set so an equilibration-run outlier is
+visible before you save — then **Save baseline**. That baseline is stored
+locally per (instrument, SPD) under `gold_standards\` (see §11); it is not
+yet used to compute the ratios embedded in QC A / QC B payloads (that wiring
+is still open — see `docs/PLAN_2026-07-24.md` §3.9).
+
 ---
 
 ## 7. Verify the pipeline end-to-end
@@ -320,6 +332,7 @@ shapes that roadmap.
 | `C:\ProgramData\MassDynamics\QC\config.toml`    | Agent config |
 | `C:\ProgramData\MassDynamics\QC\methods\`       | Skyline template + libraries + report |
 | `C:\ProgramData\MassDynamics\QC\spool\completed\` | Per-run JSON payloads |
+| `C:\ProgramData\MassDynamics\QC\gold_standards\` | SSC0 run index + saved gold-standard baselines (Web UI → Gold standards) |
 | `C:\ProgramData\MassDynamics\QC\logs\mdqc.log`  | Agent log (JSONL) |
 | `C:\ProgramData\MassDynamics\QC\runtime.json`   | IPC port + token (auto-managed) |
 | `http://localhost:8501`                          | Streamlit dashboard |

@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+{% block title %}Gold standards — MD QC Agent{% endblock %}
+{% block content %}
+<style>
+  .gs-header { display:flex; align-items:baseline; gap:1rem; margin-bottom:1rem; flex-wrap:wrap; }
+  .gs-header h1 { margin:0; }
+  .gs-instrument-select { max-width:260px; display:inline-block; width:auto; }
+
+  .gs-tabs { display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap; }
+  .gs-tab {
+    padding:0.4rem 0.9rem; border:1px solid var(--border); background:var(--panel);
+    color:var(--fg); text-decoration:none; font-size:0.9em;
+  }
+  .gs-tab.active { border-color:var(--accent); color:var(--accent); font-weight:600; }
+
+  .banner { padding:0.5rem 0.75rem; margin-bottom:1rem; font-size:0.9em; }
+  .banner.ok  { background:#eef8ee; border:1px solid var(--good); color:var(--good); }
+  .banner.bad { background:#fdf0f0; border:1px solid var(--bad);  color:var(--bad); }
+
+  .baseline-chip {
+    display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0.9rem;
+    border:1px solid var(--border); background:var(--panel); font-size:0.88em; margin-bottom:1rem;
+  }
+  .baseline-chip .dot { color:var(--good); }
+  .baseline-chip.none .dot { color:var(--muted); }
+
+  .gs-table-wrap { overflow-x:auto; }
+  table.gs-runs { width:auto; min-width:100%; border-collapse:collapse; font-size:0.85em; }
+  table.gs-runs th, table.gs-runs td { padding:0.4rem 0.6rem; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.gs-runs th { background:#f0f0f0; }
+  table.gs-runs td.pep-col { text-align:right; font-variant-numeric: tabular-nums; }
+  table.gs-runs td.pep-col.dev1 { background:#fdf3e0; }
+  table.gs-runs td.pep-col.dev2 { background:#fdece9; outline:2px solid var(--bad); outline-offset:-2px; }
+  table.gs-runs tbody tr.unchecked td { color:var(--muted); }
+
+  .gs-baseline-table { width:100%; border-collapse:collapse; font-size:0.85em; }
+  .gs-baseline-table td.num, .gs-baseline-table th.num { text-align:right; font-variant-numeric: tabular-nums; }
+
+  .gs-run-row { display:flex; align-items:center; gap:0.6rem; padding:3px 0; }
+  .gs-run-label { width:220px; flex:0 0 220px; font-size:0.85em; }
+  .gs-track { position:relative; flex:1; height:22px; background:#f5f5f5; border:1px solid var(--border); }
+  .gs-stick { position:absolute; top:3px; width:3px; height:14px; border-radius:1px; }
+  .gs-stick.flag { outline:2px solid var(--bad); }
+  .gs-stick.dim { opacity:0.3; }
+  .gs-stick.big { width:5px; height:16px; top:2px; }
+  .gs-axis { position:relative; flex:1; height:16px; font-size:0.75em; color:var(--muted); }
+  .gs-axis span { position:absolute; }
+
+  .gs-legend { display:flex; flex-wrap:wrap; gap:10px; font-size:0.8em; color:var(--muted); margin-bottom:0.6rem; }
+  .gs-swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+
+  .gs-save-bar { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem; }
+</style>
+
+<div class="gs-header">
+  <h1>Gold standards</h1>
+  {% if instruments | length > 1 %}
+  <select class="gs-instrument-select" onchange="window.location='/gold-standards?instrument='+encodeURIComponent(this.value)">
+    {% for i in instruments %}
+    <option value="{{ i }}" {% if i == instrument_id %}selected{% endif %}>{{ i }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+</div>
+
+{% if saved %}<div class="banner ok">&#10003; Baseline saved and set active.</div>{% endif %}
+{% if error %}<div class="banner bad">&#10007; {{ error }}</div>{% endif %}
+
+{% if not instrument_id %}
+<section class="panel">
+  <p class="muted">No instrument configured yet. <a href="/settings">Open Settings</a> to add one.</p>
+</section>
+{% elif not available_spds %}
+<section class="panel">
+  <p class="muted">
+    No SSC0 runs recorded yet for <strong>{{ instrument_id }}</strong>. Run your system-suitability
+    control set (typically 15-20 SSC0 injections at install, or after a column change) — each one
+    is indexed here automatically as it completes.
+  </p>
+</section>
+{% else %}
+
+<div class="gs-tabs">
+  {% for s in available_spds %}
+  <a class="gs-tab {% if s == spd %}active{% endif %}"
+     href="/gold-standards?instrument={{ instrument_id }}&amp;spd={{ s }}">{{ s }} SPD</a>
+  {% endfor %}
+</div>
+
+{% if active_baseline %}
+<div class="baseline-chip">
+  <span class="dot">&#9679;</span>
+  <span>Active baseline: <strong>{{ active_baseline.label }}</strong>
+  &mdash; {{ active_baseline.source_run_ids | length }} runs, saved {{ active_baseline.created_at[:10] }}</span>
+</div>
+{% else %}
+<div class="baseline-chip none">
+  <span class="dot">&#9679;</span>
+  <span>No baseline saved yet for {{ spd }} SPD &mdash; select representative runs below and save.</span>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem;">
+    <h2 style="margin:0;">SSC0 runs</h2>
+    <span class="muted" style="margin-left:auto; font-size:0.85em;" id="gs-selected-summary"></span>
+  </div>
+  <div class="gs-legend" id="gs-legend"></div>
+  <div class="gs-table-wrap">
+    <table class="gs-runs" id="gs-runs-table"></table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Retention time</h2>
+  <div id="gs-rt-plot"></div>
+</section>
+
+<section class="panel">
+  <h2>Resulting baseline</h2>
+  <div class="gs-table-wrap">
+    <table class="gs-baseline-table" id="gs-baseline-table"></table>
+  </div>
+</section>
+
+<form method="post" action="/gold-standards/save" id="gs-save-form">
+  <input type="hidden" name="instrument_id" value="{{ instrument_id }}">
+  <input type="hidden" name="spd" value="{{ spd }}">
+  <div id="gs-save-run-ids"></div>
+  <div class="field-row" style="display:grid; grid-template-columns:160px 1fr; gap:0.5rem 1rem; align-items:center; max-width:520px;">
+    <label style="margin:0;">Label (optional)</label>
+    <input type="text" name="label" placeholder="e.g. Install 2026-07-30, after column change">
+  </div>
+  <div class="gs-save-bar">
+    <button type="submit" class="btn btn-primary">Save baseline for {{ spd }} SPD</button>
+    <span class="muted" style="font-size:0.85em;">Applies to all QC A / QC B runs at {{ spd }} SPD going forward.</span>
+  </div>
+</form>
+
+{% endif %}
+
+<script>
+const SSC0_RUNS = {{ runs_data | tojson }};
+const DEFAULT_CHECKED = {{ default_checked | tojson }};
+
+(function () {
+  if (!SSC0_RUNS.length) return;
+  const runs = SSC0_RUNS;
+  const checked = new Set(DEFAULT_CHECKED);
+
+  const peptideOrder = [];
+  const peptideMeta = {};
+  runs.forEach(r => {
+    Object.keys(r.peptides || {}).forEach(k => {
+      if (!(k in peptideMeta)) {
+        peptideMeta[k] = r.peptides[k];
+        peptideOrder.push(k);
+      }
+    });
+  });
+
+  const PALETTE = ['#0a4f88', '#b87900', '#2a7a2a', '#b22222', '#6a3d9a', '#1f9e9e', '#c2478b', '#5a5a2a'];
+  const colorFor = i => PALETTE[i % PALETTE.length];
+  const pepLabel = key => peptideMeta[key].peptide_sequence || key;
+
+  function fmtNum(v, digits) {
+    if (v === null || v === undefined || Number.isNaN(v)) return '—';
+    return Number(v).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+  }
+  function runLabel(r) { return r.raw_file_name || r.run_id.slice(0, 8); }
+  function median(vals) {
+    if (!vals.length) return null;
+    const s = vals.slice().sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+  function mean(vals) {
+    if (!vals.length) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+  function sd(vals) {
+    if (vals.length < 2) return vals.length === 1 ? 0 : null;
+    const m = mean(vals);
+    return Math.sqrt(vals.reduce((a, b) => a + (b - m) * (b - m), 0) / vals.length);
+  }
+
+  function computeStats() {
+    const checkedRuns = runs.filter(r => checked.has(r.run_id));
+    const out = {};
+    peptideOrder.forEach(key => {
+      const areas = [];
+      const rts = [];
+      checkedRuns.forEach(r => {
+        const p = r.peptides[key];
+        if (!p) return;
+        if (p.peak_area !== null && p.peak_area !== undefined) areas.push(p.peak_area);
+        if (p.retention_time !== null && p.retention_time !== undefined) rts.push(p.retention_time);
+      });
+      out[key] = {
+        areaMedian: median(areas), areaMean: mean(areas), areaSd: sd(areas), n: areas.length,
+        rtMedian: median(rts), rtSd: sd(rts),
+      };
+    });
+    return out;
+  }
+
+  function devClass(value, st) {
+    if (value === null || value === undefined || !st || st.areaSd === null || st.areaSd === 0 || st.n < 2) return '';
+    const z = Math.abs(value - st.areaMedian) / st.areaSd;
+    if (z >= 2) return 'dev2';
+    if (z >= 1) return 'dev1';
+    return '';
+  }
+
+  function rtRange() {
+    let lo = Infinity, hi = -Infinity;
+    runs.forEach(r => Object.values(r.peptides || {}).forEach(p => {
+      if (p.retention_time !== null && p.retention_time !== undefined) {
+        lo = Math.min(lo, p.retention_time);
+        hi = Math.max(hi, p.retention_time);
+      }
+    }));
+    if (!isFinite(lo) || !isFinite(hi)) return [0, 1];
+    const pad = Math.max((hi - lo) * 0.08, 0.1);
+    return [Math.max(0, lo - pad), hi + pad];
+  }
+
+  function renderLegend() {
+    document.getElementById('gs-legend').innerHTML = peptideOrder.map((key, i) =>
+      '<span><span class="gs-swatch" style="background:' + colorFor(i) + '"></span>' + pepLabel(key) + '</span>'
+    ).join('');
+  }
+
+  function renderRunsTable(s) {
+    const table = document.getElementById('gs-runs-table');
+    let head = '<thead><tr><th></th><th>Run</th><th>Acquired</th><th>Found</th>';
+    peptideOrder.forEach((key, i) => {
+      head += '<th class="pep-col" style="color:' + colorFor(i) + '">' + pepLabel(key) + '</th>';
+    });
+    head += '</tr></thead>';
+
+    let body = '<tbody>';
+    runs.forEach(r => {
+      const isChecked = checked.has(r.run_id);
+      body += '<tr class="' + (isChecked ? '' : 'unchecked') + '">';
+      body += '<td><input type="checkbox" data-run="' + r.run_id + '"' + (isChecked ? ' checked' : '') + '></td>';
+      body += '<td>' + runLabel(r) + '</td>';
+      body += '<td>' + (r.acquisition_time ? r.acquisition_time.slice(0, 16).replace('T', ' ') : '—') + '</td>';
+      body += '<td>' + (r.targets_found ?? '—') + '/' + (r.targets_expected ?? '—') + '</td>';
+      peptideOrder.forEach(key => {
+        const p = r.peptides[key];
+        const val = p ? p.peak_area : null;
+        const cls = devClass(val, s[key]);
+        body += '<td class="pep-col ' + cls + '" title="' + pepLabel(key) + '">' + fmtNum(val, 0) + '</td>';
+      });
+      body += '</tr>';
+    });
+    body += '</tbody>';
+    table.innerHTML = head + body;
+
+    table.querySelectorAll('input[data-run]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) checked.add(cb.dataset.run); else checked.delete(cb.dataset.run);
+        render();
+      });
+    });
+  }
+
+  function renderRtPlot(s) {
+    const el = document.getElementById('gs-rt-plot');
+    const [rtMin, rtMax] = rtRange();
+    const span = (rtMax - rtMin) || 1;
+    const pct = v => ((v - rtMin) / span * 100).toFixed(1);
+
+    let html = '';
+    runs.forEach(r => {
+      const isChecked = checked.has(r.run_id);
+      let sticks = '';
+      peptideOrder.forEach((key, i) => {
+        const p = r.peptides[key];
+        if (!p || p.retention_time === null || p.retention_time === undefined) return;
+        const st = s[key];
+        const flagged = st && st.rtSd !== null && Math.abs(p.retention_time - st.rtMedian) > Math.max(0.15, 2 * st.rtSd);
+        sticks += '<div class="gs-stick' + (flagged ? ' flag' : '') + (isChecked ? '' : ' dim') +
+          '" style="left:' + pct(p.retention_time) + '%;background:' + colorFor(i) +
+          '" title="' + pepLabel(key) + ' ' + p.retention_time.toFixed(2) + ' min"></div>';
+      });
+      html += '<div class="gs-run-row"><div class="gs-run-label ' + (isChecked ? '' : 'muted') + '">' +
+        runLabel(r) + '</div><div class="gs-track">' + sticks + '</div></div>';
+    });
+
+    let baseSticks = '';
+    peptideOrder.forEach((key, i) => {
+      const st = s[key];
+      if (st.rtMedian === null) return;
+      baseSticks += '<div class="gs-stick big" style="left:' + pct(st.rtMedian) + '%;background:' + colorFor(i) +
+        '" title="median ' + st.rtMedian.toFixed(2) + ' min"></div>';
+    });
+    html += '<div class="gs-run-row" style="border-top:1px solid var(--border); margin-top:4px; padding-top:6px;">' +
+      '<div class="gs-run-label"><strong>Baseline median</strong></div><div class="gs-track">' + baseSticks + '</div></div>';
+
+    const ticks = [0, 1, 2, 3, 4].map(i => rtMin + (rtMax - rtMin) * i / 4);
+    html += '<div class="gs-run-row"><div class="gs-run-label muted">RT (min)</div><div class="gs-axis">' +
+      ticks.map(t => '<span style="left:' + pct(t) + '%;">' + t.toFixed(1) + '</span>').join('') + '</div></div>';
+
+    el.innerHTML = html;
+  }
+
+  function renderBaselineTable(s) {
+    const table = document.getElementById('gs-baseline-table');
+    let head = '<thead><tr><th>Peptide</th><th class="num">Median area</th><th class="num">CV%</th>' +
+      '<th class="num">Median RT</th><th class="num">n</th></tr></thead>';
+    let body = '<tbody>';
+    peptideOrder.forEach((key, i) => {
+      const st = s[key];
+      const cv = (st.areaSd !== null && st.areaMean) ? (st.areaSd / st.areaMean * 100) : null;
+      body += '<tr>';
+      body += '<td><span class="gs-swatch" style="background:' + colorFor(i) + '"></span>' + pepLabel(key) + '</td>';
+      body += '<td class="num">' + fmtNum(st.areaMedian, 0) + '</td>';
+      body += '<td class="num">' + (cv !== null ? cv.toFixed(1) + '%' : '—') + '</td>';
+      body += '<td class="num">' + (st.rtMedian !== null ? st.rtMedian.toFixed(2) : '—') + '</td>';
+      body += '<td class="num">' + st.n + '</td>';
+      body += '</tr>';
+    });
+    body += '</tbody>';
+    table.innerHTML = head + body;
+  }
+
+  function renderSaveInputs() {
+    document.getElementById('gs-save-run-ids').innerHTML =
+      Array.from(checked).map(id => '<input type="hidden" name="run_id" value="' + id + '">').join('');
+  }
+
+  function render() {
+    const s = computeStats();
+    renderLegend();
+    renderRunsTable(s);
+    renderRtPlot(s);
+    renderBaselineTable(s);
+    renderSaveInputs();
+    document.getElementById('gs-selected-summary').textContent =
+      checked.size + ' of ' + runs.length + ' runs selected for baseline';
+  }
+
+  render();
+})();
+</script>
+{% endblock %}

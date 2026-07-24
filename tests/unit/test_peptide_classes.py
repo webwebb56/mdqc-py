@@ -8,6 +8,7 @@ from mdqc.config.schema import PeptideClassRule
 from mdqc.peptide_classes import (
     assign_peptide_classes,
     compute_digest_efficiency,
+    filter_for_baseline,
     filter_for_recovery,
 )
 from mdqc.types import TargetMetric
@@ -100,6 +101,34 @@ def test_filter_for_recovery_keeps_unclassified() -> None:
     metrics = [_make("A", "UnknownProtein")]
     assign_peptide_classes(metrics, rules)
     assert filter_for_recovery(metrics, rules) == metrics
+
+
+def test_filter_for_baseline_respects_exclude_flag() -> None:
+    rules = [
+        PeptideClassRule(
+            protein_name="MissCleavage", purpose="digest_efficiency",
+            exclude_from_recovery=True, exclude_from_baseline=True,
+        ),
+    ]
+    metrics = [_make("A", "MissCleavage"), _make("B", None)]
+    assign_peptide_classes(metrics, rules)
+    kept = filter_for_baseline(metrics, rules)
+    assert [m.peptide_sequence for m in kept] == ["B"]
+
+
+def test_filter_for_baseline_purpose_alone_does_not_exclude() -> None:
+    """Unlike filter_for_recovery, digest_efficiency purpose alone is not excluded."""
+    rules = [
+        PeptideClassRule(protein_name="MissCleavage", purpose="digest_efficiency"),
+    ]
+    metrics = [_make("A", "MissCleavage")]
+    assign_peptide_classes(metrics, rules)
+    assert filter_for_baseline(metrics, rules) == metrics
+
+
+def test_filter_for_baseline_no_rules_is_noop() -> None:
+    metrics = [_make("A", "Anything")]
+    assert filter_for_baseline(metrics, []) == metrics
 
 
 def test_compute_digest_efficiency_returns_ratio() -> None:

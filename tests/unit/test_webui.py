@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI, Request
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from mdqc import gold_standards as gs
 from mdqc.config.schema import (
     AgentConfig,
     CloudConfig,
@@ -29,7 +31,16 @@ from mdqc.config.schema import (
 )
 from mdqc.failed_files import FailedFilesStore
 from mdqc.spool import Spool
-from mdqc.types import Vendor
+from mdqc.types import (
+    ClassificationSource,
+    Confidence,
+    ControlType,
+    ExtractionResult,
+    RunClassification,
+    RunMetrics,
+    TargetMetric,
+    Vendor,
+)
 from mdqc.webui import register
 
 _FAKE_TOKEN = "test-token-12345"
@@ -497,6 +508,193 @@ def test_logs_index(state_with_instruments: _FakeAppState, tmp_path: Path) -> No
     finally:
         # the autouse session fixture restores the dir at session teardown.
         pass
+
+
+# ─── Gold standards ────────────────────────────────────────────────────────
+
+
+def _seed_ssc0_run(
+    instrument_id: str = "qe-test", spd: int = 200, area: float = 1000.0, rt: float = 5.0
+) -> str:
+    classification = RunClassification(
+        control_type=ControlType.SSC0,
+        well_position=None,
+        instrument_id=instrument_id,
+        plate_id=None,
+        confidence=Confidence.HIGH,
+        source=ClassificationSource.FILENAME,
+        spd=spd,
+    )
+    metric = TargetMetric(
+        target_id="PEPA", peptide_sequence="PEPA", protein_name="Targets",
+        peak_area=area, retention_time=rt,
+    )
+    extraction = ExtractionResult(
+        run_id=uuid4(),
+        target_metrics=[metric],
+        run_metrics=RunMetrics(targets_found=1, targets_expected=1, target_recovery_pct=100.0),
+    )
+    gs.record_ssc0_run(classification, extraction)
+    return str(extraction.run_id)
+
+
+def test_gold_standards_empty_state(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.get("/gold-standards")
+    assert response.status_code == 200
+    assert "No SSC0 runs recorded yet" in response.text
+    assert "qe-test" in response.text
+
+
+def test_gold_standards_renders_runs_table(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    _seed_ssc0_run()
+    _seed_ssc0_run()
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.get("/gold-standards?instrument=qe-test&spd=200")
+    assert response.status_code == 200
+    body = response.text
+    assert "200 SPD" in body
+    assert "PEPA" in body
+    assert "No baseline saved yet" in body
+
+
+def test_gold_standards_save_persists_and_activates_baseline(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    run_id_1 = _seed_ssc0_run()
+    run_id_2 = _seed_ssc0_run()
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post(
+        "/gold-standards/save",
+        data={
+            "instrument_id": "qe-test",
+            "spd": "200",
+            "label": "Install baseline",
+            "run_id": [run_id_1, run_id_2],
+        },
+    )
+    assert response.status_code == 200
+    assert "Baseline saved" in response.text
+    assert "Install baseline" in response.text
+
+    active = gs.get_active_baseline("qe-test", 200)
+    assert active is not None
+    assert sorted(active["source_run_ids"]) == sorted([run_id_1, run_id_2])
+
+
+def test_gold_standards_save_without_selection_shows_error(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    _seed_ssc0_run()
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post(
+        "/gold-standards/save",
+        data={"instrument_id": "qe-test", "spd": "200", "label": ""},
+    )
+    assert response.status_code == 200
+    assert "Select at least one" in response.text
+    assert gs.get_active_baseline("qe-test", 200) is None
+
+
+def test_nav_shows_gold_standards_link(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    assert 'href="/gold-standards"' in response.text
+    assert "Gold standards" in response.text
+
+
+def test_nav_platform_link_when_cloud_configured(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    # state_with_instruments' cloud config carries an api_token (see _build_config),
+    # so it is not local-only and the platform link should replace the plots link.
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    body = response.text
+    assert "Mass Dynamics ↗" in body
+    assert state_with_instruments.cfg.cloud.endpoint.split("/api/")[0] in body
+    assert "Local QC plots" not in body
+
+
+def test_gold_standards_shows_instrument_selector_when_multiple(
+    tmp_path: Path, tmp_data_dir: Path
+) -> None:
+    watch_a = tmp_path / "watch_a"
+    watch_b = tmp_path / "watch_b"
+    watch_a.mkdir()
+    watch_b.mkdir()
+    cfg = Config(
+        agent=AgentConfig(),
+        cloud=CloudConfig(api_token="abc"),
+        skyline=SkylineConfig(),
+        watcher=WatcherConfig(),
+        spool=SpoolConfig(),
+        instruments=[
+            InstrumentConfig(
+                id="Astral_0001", vendor=Vendor.THERMO, watch_path=watch_a,
+                file_pattern="*.raw", template="QC_Method.sky",
+            ),
+            InstrumentConfig(
+                id="Exploris01", vendor=Vendor.THERMO, watch_path=watch_b,
+                file_pattern="*.raw", template="QC_Method.sky",
+            ),
+        ],
+    )
+    spool = Spool(agent_id="agent-test", agent_version="0.1.0", root=tmp_path / "spool")
+    failed = FailedFilesStore(path=tmp_path / "failed.json")
+    state = _FakeAppState(cfg=cfg, spool=spool, failed=failed, activity=_FakeActivityLog())
+    app = _build_app(state)
+    client = _client(app)
+
+    response = client.get("/gold-standards")
+    assert response.status_code == 200
+    body = response.text
+    assert "<select" in body
+    assert "Astral_0001" in body
+    assert "Exploris01" in body
+
+    # Defaults to the first instrument when none is requested.
+    assert "No SSC0 runs recorded yet for <strong>Astral_0001</strong>" in body
+
+    response2 = client.get("/gold-standards?instrument=Exploris01")
+    assert response2.status_code == 200
+    assert "No SSC0 runs recorded yet for <strong>Exploris01</strong>" in response2.text
+
+
+def test_nav_falls_back_to_streamlit_when_local_only(tmp_path: Path) -> None:
+    cfg = Config(
+        agent=AgentConfig(),
+        cloud=CloudConfig(),  # no api_token -> local-only
+        skyline=SkylineConfig(),
+        watcher=WatcherConfig(),
+        spool=SpoolConfig(),
+        instruments=[],
+    )
+    spool = Spool(agent_id="agent-test", agent_version="0.1.0", root=tmp_path / "spool")
+    failed = FailedFilesStore(path=tmp_path / "failed.json")
+    activity = _FakeActivityLog()
+    state = _FakeAppState(cfg=cfg, spool=spool, failed=failed, activity=activity)
+    app = _build_app(state)
+    client = _client(app)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    body = response.text
+    assert "Local QC plots" in body
+    assert "Mass Dynamics ↗" not in body
 
 
 # Marker so pytest collection doesn't drop unused symbol warnings.

@@ -72,6 +72,35 @@ def filter_for_recovery(
     return [m for m in metrics if _keep(m)]
 
 
+def filter_for_baseline(
+    metrics: list[TargetMetric],
+    rules: list[PeptideClassRule] | None,
+) -> list[TargetMetric]:
+    """Return only metrics that should feed a gold-standard baseline.
+
+    A metric is excluded when its assigned class has ``exclude_from_baseline``
+    set to True — e.g. a digest_efficiency pair measures an internal ratio,
+    not an absolute quantity, so it may not belong in an SSC0 peak-area/RT
+    baseline. Unlike ``filter_for_recovery``, purpose alone does not imply
+    exclusion here; only the explicit flag does.
+    """
+    if not rules:
+        return metrics
+    rules_by_label: dict[str, PeptideClassRule] = {}
+    for r in rules:
+        rules_by_label[(r.label or r.protein_name)] = r
+
+    def _keep(m: TargetMetric) -> bool:
+        if m.peptide_class is None:
+            return True
+        rule = rules_by_label.get(m.peptide_class)
+        if rule is None:
+            return True
+        return not rule.exclude_from_baseline
+
+    return [m for m in metrics if _keep(m)]
+
+
 def compute_digest_efficiency(
     metrics: list[TargetMetric],
 ) -> float | None:
@@ -111,5 +140,6 @@ def compute_digest_efficiency(
 __all__ = [
     "assign_peptide_classes",
     "compute_digest_efficiency",
+    "filter_for_baseline",
     "filter_for_recovery",
 ]

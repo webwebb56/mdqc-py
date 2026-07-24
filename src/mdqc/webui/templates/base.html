@@ -31,10 +31,15 @@
       <nav>
         <a href="/dashboard">Dashboard</a>
         <a href="/settings">Settings</a>
+        <a href="/gold-standards">Gold standards</a>
         <a href="/diagnostics">Diagnostics</a>
         <a href="/failed">Failed</a>
         <a href="/logs">Logs</a>
+        {% if platform_app_url %}
+        <a href="{{ platform_app_url }}" target="_blank" rel="noopener" title="Open Mass Dynamics in a new tab">Mass Dynamics ↗</a>
+        {% else %}
         <a href="http://localhost:8501" target="_blank" rel="noopener" title="Open Streamlit QC plots in new tab">Local QC plots ↗</a>
+        {% endif %}
       </nav>
     </header>
     <main>

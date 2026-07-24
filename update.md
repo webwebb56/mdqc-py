@@ -137,6 +137,8 @@ This is the big architectural ask. Three sub-points:
 
 **This is where the platform comes in.** mdqc's local payloads aren't the right place to manage "the active baseline for this instrument" — that's user-curated state that should live in the platform's database with explicit baseline-set / baseline-reset events.
 
+> **Superseded 2026-07-24** — see `docs/PLAN_2026-07-24.md` §5.2. The call landed the other way: baselines are recorded and owned **locally, per instrument, in each mdqc install** (not platform-owned), then linked into every payload via `baseline_context`/`comparison_metrics`. A "Gold Standards" web UI page (agent-local, shipped v0.5.5) lets the engineer review recorded SSC0 runs and pick which are representative per (instrument, SPD); the resulting baseline is stored under `%PROGRAMDATA%\MassDynamics\QC\gold_standards\`. The platform still receives each baseline as its own uploaded record for provenance/re-referencing — see PLAN §5.3 — but does not own the active-baseline state.
+
 ### 3.3 The Evosep automation metadata file
 
 The digestion liquid handler emits a CSV per batch with **column info, reagent lot numbers, every step of the prep**. Customer-grade traceability data. Stoyan wants this linked to the QC payloads so that when a QC drift is detected, the customer can see "what changed in the sample prep between Run 47 and Run 48."

@@ -98,6 +98,25 @@ def activity_log_path() -> Path:
     return data_dir() / "activity_log.json"
 
 
+def gold_standards_dir() -> Path:
+    """Local gold-standard baseline storage — survives spool/completed pruning.
+
+    spool/completed only retains the newest COMPLETED_RETENTION_COUNT (10)
+    payloads, so SSC0 runs used to build a baseline (15-20 at install) would
+    otherwise be pruned away before an engineer gets to review them. This is
+    a separate, durable index.
+    """
+    return data_dir() / "gold_standards"
+
+
+def ssc0_runs_path() -> Path:
+    return gold_standards_dir() / "ssc0_runs.json"
+
+
+def baselines_path() -> Path:
+    return gold_standards_dir() / "baselines.json"
+
+
 def processed_registry_path() -> Path:
     return data_dir() / "processed_files.json"
 
@@ -120,6 +139,7 @@ def ensure_dirs() -> None:
         methods_dir(),
         templates_dir(),
         crashes_dir(),
+        gold_standards_dir(),
     ):
         d.mkdir(parents=True, exist_ok=True)
 

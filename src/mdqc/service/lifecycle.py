@@ -32,6 +32,7 @@ from mdqc.diagnostics import run_diagnostics
 from mdqc.extractor import Extractor
 from mdqc.extractor.skyline import is_clickonce_install
 from mdqc.failed_files import FailedFilesStore
+from mdqc.gold_standards import record_ssc0_run
 from mdqc.ipc.runtime import RuntimeFile, RuntimeInfo, generate_token
 from mdqc.log import configure_logging
 from mdqc.service.agent_id import resolve_agent_id
@@ -484,6 +485,7 @@ async def _build_state(cfg: Config) -> AppState:
             spool_path = state.spool.enqueue(
                 classification, extraction_result, baseline_context=None
             )
+            record_ssc0_run(classification, extraction_result)
 
             run_metrics = extraction_result.run_metrics
             state.activity.record(

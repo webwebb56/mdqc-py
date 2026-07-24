@@ -2,7 +2,7 @@
 
 Called by `mdqc.service.lifecycle.attach_webui(state)`. Mounts static files,
 sets up the Jinja2 environment, and includes the wizard, dashboard,
-diagnostics, failed-files, and logs routers.
+diagnostics, failed-files, logs, and gold-standards routers.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def register(app: FastAPI, state: AppState) -> None:
     _ensure_static_assets()
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    from mdqc.webui import dashboard, diagnostics, failed, logs, settings, wizard
+    from mdqc.webui import dashboard, diagnostics, failed, gold_standards, logs, settings, wizard
 
     app.include_router(dashboard.router)
     app.include_router(settings.router)
@@ -56,6 +56,7 @@ def register(app: FastAPI, state: AppState) -> None:
     app.include_router(diagnostics.router)
     app.include_router(failed.router)
     app.include_router(logs.router)
+    app.include_router(gold_standards.router)
 
 
 __all__ = ["STATIC_DIR", "TEMPLATES_DIR", "build_templates", "register"]
