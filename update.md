@@ -497,9 +497,17 @@ When `status == "FAILED"`, `error_message` contains the **full** Skyline stdout 
   "target_recovery_pct":    97.92,
   "median_rt_shift":        0.012,            // minutes; null if no RT data
   "median_mass_error_ppm":  -0.21,            // ppm; null if no mass-error data
-  "chromatography_score":   null              // reserved
+  "chromatography_score":   null,             // reserved
+  "digest_efficiency_pct":  82.84             // cleaved/(cleaved+miss-cleaved) %, or null
 }
 ```
+
+`digest_efficiency_pct` (added v0.5.0) is the miss-cleavage-pair digestion
+efficiency as a percentage 0–100 — `cleaved / (cleaved + miss-cleaved)` peak
+area, where the cleaved (shorter) peptide is the numerator. `null` when no
+`digest_efficiency`-class peptides are configured/present. Colour banding
+(Stoyan's >80 green / 70–80 yellow / <60 red) is a **display** decision for the
+platform; the agent emits only the number.
 
 **Important:** `targets_found / targets_expected` is computed **after** peptide-class filtering. Peptides whose class has `exclude_from_recovery: true` (or whose purpose is `digest_efficiency`) are excluded from both numerator and denominator. This is why we surface them in the dashboard as `Peptides: 47/48` rather than `Transitions: 407/407` (the row count).
 

@@ -168,7 +168,8 @@
     "target_recovery_pct": 97.92,
     "median_rt_shift": 0.012,
     "median_mass_error_ppm": -0.21,
-    "chromatography_score": null
+    "chromatography_score": null,
+    "digest_efficiency_pct": 82.84
   },
   "baseline_context": null,
   "comparison_metrics": null

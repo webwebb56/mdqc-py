@@ -29,6 +29,7 @@ from mdqc.extractor.skyline import (
 )
 from mdqc.peptide_classes import (
     assign_peptide_classes,
+    compute_digest_efficiency,
     filter_for_recovery,
 )
 from mdqc.types import ExtractionResult, ExtractionStatus, RunMetrics
@@ -99,12 +100,18 @@ def _run_metrics(
     mass_errors = sorted(t.mass_error_ppm for t in targets if t.mass_error_ppm is not None)
     median_mass = _median(mass_errors)
 
+    # Digestion efficiency from the miss-cleavage pair (config-driven via the
+    # digest_efficiency peptide class). None when no such class is present.
+    digest_ratio = compute_digest_efficiency(targets)
+    digest_pct = digest_ratio * 100.0 if digest_ratio is not None else None
+
     return RunMetrics(
         targets_found=targets_found,
         targets_expected=targets_expected,
         target_recovery_pct=recovery,
         median_rt_shift=median_rt,
         median_mass_error_ppm=median_mass,
+        digest_efficiency_pct=digest_pct,
     )
 
 

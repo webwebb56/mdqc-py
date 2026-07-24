@@ -154,6 +154,22 @@ file_pattern = "*.raw"
 template = "QC_Method.sky"
 method_name = "Whisper200SPD"                                 # <-- EDIT (free text)
 column_info = "EV3837"                                        # <-- EDIT (your column ID)
+
+# Peptide classes — map the Skyline Protein column to a purpose. The
+# miss-cleavage pair drives the digest-efficiency % in the payload and is
+# excluded from target recovery (the 1-miss peptide is often below LOQ, so
+# counting it would drag recovery down). Match the exact Protein names in
+# your .skyr.
+[[peptide_classes]]
+protein_name = "Non_reactive_Targets"
+label = "Non-reactive targets"
+purpose = "recovery"
+
+[[peptide_classes]]
+protein_name = "Miss-clevage_pair"                           # <-- EDIT (your exact Protein name)
+label = "Miss-cleavage pair"
+purpose = "digest_efficiency"
+exclude_from_recovery = true
 ```
 
 > **File encoding matters.** Save as **plain UTF-8 (no BOM)**. Notepad's

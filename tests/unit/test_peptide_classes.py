@@ -128,3 +128,41 @@ def test_compute_digest_efficiency_none_when_both_zero() -> None:
     rules = [PeptideClassRule(protein_name="MissCleavage", purpose="digest_efficiency")]
     assign_peptide_classes(metrics, rules)
     assert compute_digest_efficiency(metrics) is None
+
+
+# ─── _run_metrics emits digest_efficiency_pct (v0.5.0 §3.6) ───────────────────
+
+def test_run_metrics_emits_digest_efficiency_pct() -> None:
+    from mdqc.extractor import _run_metrics
+
+    # Cleaved (shorter) ISGLIYEETR area 4.2e6; miss-cleaved RISGLIYEETR 0.87e6.
+    # digest efficiency = 4.2 / (4.2 + 0.87) = 82.84%.
+    metrics = [
+        _make("ISGLIYEETR", "Miss-clevage_pair", area=4_200_000.0),
+        _make("RISGLIYEETR", "Miss-clevage_pair", area=870_000.0),
+        _make("IGGIGTVPVGR", "Non_reactive_Targets", area=5_000_000.0),
+    ]
+    rules = [
+        PeptideClassRule(protein_name="Non_reactive_Targets", purpose="recovery"),
+        PeptideClassRule(
+            protein_name="Miss-clevage_pair",
+            purpose="digest_efficiency",
+            exclude_from_recovery=True,
+        ),
+    ]
+    assign_peptide_classes(metrics, rules)
+    rm = _run_metrics(metrics, rules)
+
+    assert rm.digest_efficiency_pct == pytest.approx(82.84, abs=0.01)
+    # The miss-cleavage pair is excluded from recovery: only the 1 recovery
+    # peptide counts, not all 3.
+    assert rm.targets_expected == 1
+    assert rm.targets_found == 1
+
+
+def test_run_metrics_digest_efficiency_none_without_class() -> None:
+    from mdqc.extractor import _run_metrics
+
+    metrics = [_make("PEP", "Targets", area=1000.0)]
+    rm = _run_metrics(metrics, None)
+    assert rm.digest_efficiency_pct is None

@@ -159,6 +159,11 @@ class RunMetrics:
     median_rt_shift: float | None = None
     median_mass_error_ppm: float | None = None
     chromatography_score: float | None = None
+    # Digestion efficiency for the miss-cleavage pair, as a percentage
+    # 0-100: cleaved / (cleaved + miss-cleaved) peak area. None when no
+    # digest_efficiency-class peptides are configured/present. Colour banding
+    # (e.g. >80 green) is a display concern for the dashboard/platform.
+    digest_efficiency_pct: float | None = None
 
 
 @dataclass
