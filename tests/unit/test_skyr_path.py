@@ -16,6 +16,7 @@ import pytest
 from mdqc.config.paths import methods_dir
 from mdqc.config.schema import SkylineConfig
 from mdqc.extractor import Extractor
+from mdqc.extractor.report import read_skyr_report_name
 from mdqc.extractor.skyline import SkylineRunResult
 from mdqc.types import ExtractionStatus
 
@@ -86,6 +87,59 @@ async def test_extract_fails_cleanly_on_missing_explicit_skyr(tmp_path: Path) ->
     assert result.status == ExtractionStatus.FAILED
     assert "report_skyr_path" in result.error_message
     mocked.assert_not_called()
+
+
+# ─── read_skyr_report_name ───────────────────────────────────────────────────
+
+def test_read_report_name_versioned(tmp_path: Path) -> None:
+    skyr = tmp_path / "r.skyr"
+    skyr.write_text(
+        '<?xml version="1.0"?>\n<views>\n'
+        '  <view name="MD_QC_Report_20260723" rowsource="pwiz.X" sublist="Results!*">\n'
+        '    <column name="Foo" />\n  </view>\n</views>'
+    )
+    assert read_skyr_report_name(skyr) == "MD_QC_Report_20260723"
+
+
+def test_read_report_name_default(tmp_path: Path) -> None:
+    skyr = tmp_path / "r.skyr"
+    skyr.write_text('<views><view name="MD_QC_Report"><column name="A"/></view></views>')
+    assert read_skyr_report_name(skyr) == "MD_QC_Report"
+
+
+def test_read_report_name_missing_returns_none(tmp_path: Path) -> None:
+    skyr = tmp_path / "r.skyr"
+    skyr.write_text("<views></views>")
+    assert read_skyr_report_name(skyr) is None
+
+
+def test_read_report_name_unreadable_returns_none(tmp_path: Path) -> None:
+    assert read_skyr_report_name(tmp_path / "nope.skyr") is None
+
+
+@pytest.mark.asyncio
+async def test_extract_uses_report_name_from_skyr(tmp_path: Path) -> None:
+    # Regression for the live-test catch: --report-name must match the .skyr's
+    # <view name>, else Skyline errors "The report MD_QC_Report does not exist".
+    template = tmp_path / "template.sky"
+    template.write_text("t")
+    raw = tmp_path / "sample.raw"
+    raw.write_text("r")
+    skyr = tmp_path / "custom.skyr"
+    skyr.write_text('<views><view name="MD_QC_Report_20260723"><column name="A"/></view></views>')
+
+    ex = _extractor(tmp_path, report_skyr_path=str(skyr))
+
+    async def side_effect(**kwargs):
+        kwargs["output_csv"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["output_csv"].write_text("Peptide,Total Area\nPEP,1000\n")
+        return SkylineRunResult(returncode=0, stdout="ok", stderr="", duration_ms=1, version="26")
+
+    with patch("mdqc.extractor.run_skyline", new=AsyncMock(side_effect=side_effect)) as mocked:
+        result = await ex.extract(template=template, raw_file=raw)
+
+    assert result.status == ExtractionStatus.SUCCESS
+    assert mocked.call_args.kwargs["report_name"] == "MD_QC_Report_20260723"
 
 
 @pytest.mark.asyncio

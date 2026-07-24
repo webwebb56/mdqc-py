@@ -10,12 +10,41 @@ import csv
 import hashlib
 import logging
 import math
+import re
 from datetime import datetime
 from pathlib import Path
 
 from mdqc.types import TargetMetric
 
 logger = logging.getLogger(__name__)
+
+# First <view name="..."> in a .skyr — the report name Skyline's --report-name
+# must match. Non-greedy so it captures the name attribute wherever it sits in
+# the opening tag.
+_VIEW_NAME_RE = re.compile(rb'<view\b[^>]*?\bname\s*=\s*"([^"]+)"', re.DOTALL)
+
+
+def read_skyr_report_name(path: Path) -> str | None:
+    """Read the report (view) name defined inside a Skyline ``.skyr`` file.
+
+    A ``.skyr`` declares one or more ``<view name="...">`` elements; Skyline's
+    ``--report-name`` must match one exactly. mdqc reads the first view name so
+    the export request always matches whatever the operator named their
+    report — a versioned name like ``MD_QC_Report_20260723`` works without any
+    extra config. Returns ``None`` if the file can't be read or has no view
+    name (caller then keeps its default report name).
+    """
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    match = _VIEW_NAME_RE.search(data)
+    if match is None:
+        return None
+    try:
+        return match.group(1).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 # Skyline writes AcquiredTime / ModifiedTime in the instrument PC's locale.
 # The pilot Astral emits US 12-hour ("7/22/2026 2:44:30 AM"); other locales

@@ -15,6 +15,7 @@ from mdqc.extractor.report import (
     collapse_transitions_to_peptides,
     parse_skyline_csv,
     parse_skyline_run_metadata,
+    read_skyr_report_name,
 )
 from mdqc.extractor.skyline import (
     SkylineClickOnceUnsupported,
@@ -202,6 +203,19 @@ class Extractor:
             result.error_message = skyr_error
             logger.error("%s", skyr_error)
             return result
+
+        # The report Skyline exports (--report-name) must match a <view name>
+        # inside the .skyr. Auto-detect it so a custom/versioned report name
+        # (e.g. MD_QC_Report_20260723) works without extra config, instead of
+        # failing with "The report MD_QC_Report does not exist".
+        if skyr_path is not None:
+            detected_name = read_skyr_report_name(skyr_path)
+            if detected_name and detected_name != report_name:
+                logger.info(
+                    "using report name %r from %s (was %r)",
+                    detected_name, skyr_path.name, report_name,
+                )
+                report_name = detected_name
 
         self._work_dir.mkdir(parents=True, exist_ok=True)
         output_csv = self._work_dir / f"{uuid.uuid4().hex}_report.csv"
