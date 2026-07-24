@@ -365,10 +365,26 @@
     </div>
 
     <div class="field-row">
-      <label for="cloud_endpoint">Endpoint</label>
-      <input type="text" id="cloud_endpoint" name="cloud_endpoint"
-             value="{{ cfg.cloud.endpoint }}"
-             placeholder="https://dev.massdynamics.com/api/evosep_qcs">
+      <label for="cloud_environment">Environment</label>
+      <select id="cloud_environment" name="cloud_environment" onchange="mdqcToggleCloudCustom()">
+        <option value="dev" {% if cloud_environment == "dev" %}selected{% endif %}>
+          Development — dev.massdynamics.com
+        </option>
+        <option value="prod" {% if cloud_environment == "prod" %}selected{% endif %}>
+          Production — app.massdynamics.com
+        </option>
+        <option value="custom" {% if cloud_environment == "custom" %}selected{% endif %}>
+          Custom URL…
+        </option>
+      </select>
+    </div>
+
+    <div class="field-row" id="cloud_endpoint_custom_row"
+         style="{% if cloud_environment != 'custom' %}display:none;{% endif %}">
+      <label for="cloud_endpoint_custom">Custom endpoint</label>
+      <input type="text" id="cloud_endpoint_custom" name="cloud_endpoint_custom"
+             value="{% if cloud_environment == 'custom' %}{{ cfg.cloud.endpoint }}{% endif %}"
+             placeholder="https://…/api/evosep_qcs">
     </div>
 
     <div class="field-row">
@@ -451,6 +467,12 @@
 
 <script>
 const VENDORS = {{ vendors | tojson }};
+
+function mdqcToggleCloudCustom() {
+  const select = document.getElementById('cloud_environment');
+  const row = document.getElementById('cloud_endpoint_custom_row');
+  row.style.display = select.value === 'custom' ? '' : 'none';
+}
 
 function nextIdx() {
   const panels = document.querySelectorAll('#instruments-container .instrument-panel');

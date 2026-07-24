@@ -129,8 +129,17 @@ log_level = "info"
 # With a token set, MDQC POSTs each payload to POST /api/evosep_qcs as
 # {"filename": "<id>_payload.json", "blob": <payload>}; unreachable uploads
 # stay in spool/pending and retry.
+#
+# Easiest path: leave this section out of config.toml entirely and set it
+# from the Settings page instead (Web UI → Settings → Cloud) — pick
+# Development or Production from the dropdown, paste your token, save,
+# restart the agent. That's the only thing a fresh install needs to start
+# pushing automatically.
+#
+# Or set it here directly:
 # [cloud]
-# endpoint  = "https://dev.massdynamics.com/api/evosep_qcs"   # dev; swap for prod when ready
+# endpoint  = "https://dev.massdynamics.com/api/evosep_qcs"    # dev (default) — live-verified
+# # endpoint = "https://app.massdynamics.com/api/evosep_qcs"   # production — use once confirmed live
 # api_token = "<your API token from Account Details>"          # <-- EDIT
 
 [skyline]

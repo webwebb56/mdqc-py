@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mdqc"
-version = "0.5.3"
+version = "0.5.4"
 description = "MD Local QC Agent — Python port of the Rust mdqc-agent"
 readme = "README.md"
 requires-python = ">=3.11"

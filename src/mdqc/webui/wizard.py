@@ -16,7 +16,7 @@ import tomli_w
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from mdqc.config import paths
+from mdqc.config import defaults, paths
 from mdqc.config.schema import (
     AgentConfig,
     CloudConfig,
@@ -162,10 +162,12 @@ async def wizard_step_4(
 async def wizard_step_5(
     request: Request,
     output_mode: str = Form("cloud"),
+    cloud_environment: str = Form("dev"),
     api_token: str = Form(""),
 ) -> HTMLResponse:
     sess = _session(request)
     sess["output_mode"] = output_mode
+    sess["cloud_environment"] = cloud_environment if cloud_environment in ("dev", "prod") else "dev"
     sess["api_token"] = api_token.strip()
     return await wizard_save(request)
 
@@ -178,6 +180,7 @@ def _build_config(data: dict[str, Any]) -> Config:
     template = data.get("template_path") or "QC_Method.sky"
     skyline_path = data.get("skyline_path") or "auto"
     output_mode = data.get("output_mode", "cloud")
+    cloud_environment = data.get("cloud_environment", "dev")
     api_token = data.get("api_token") or None
 
     instrument = InstrumentConfig(
@@ -187,7 +190,9 @@ def _build_config(data: dict[str, Any]) -> Config:
         file_pattern="*",
         template=template,
     )
+    endpoint = defaults.ENDPOINT_PROD if cloud_environment == "prod" else defaults.ENDPOINT_DEV
     cloud = CloudConfig(
+        endpoint=endpoint,
         api_token=api_token if output_mode == "cloud" else None,
     )
     return Config(

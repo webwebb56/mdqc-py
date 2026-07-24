@@ -300,19 +300,90 @@ def test_wizard_save_writes_config(
     contents = config_path.read_text(encoding="utf-8")
     assert "qe-99" in contents
     assert "thermo" in contents
+    # No cloud_environment posted -> defaults to "dev".
+    assert "https://dev.massdynamics.com/api/evosep_qcs" in contents
+
+
+def test_wizard_save_prod_environment(
+    state_without_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    client.post("/wizard/step/1", data={"vendor": "thermo"})
+    client.post(
+        "/wizard/step/2",
+        data={"instrument_id": "qe-99", "watch_path": str(tmp_path / "data")},
+    )
+    client.post("/wizard/step/3", data={"skyline_path": ""})
+    client.post("/wizard/step/4", data={"template_path": ""})
+    response = client.post(
+        "/wizard/step/5",
+        data={"output_mode": "cloud", "cloud_environment": "prod", "api_token": "tok"},
+    )
+    assert response.status_code == 200
+    contents = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    assert "https://app.massdynamics.com/api/evosep_qcs" in contents
 
 
 def test_settings_get_prefills_default_cloud_endpoint(
     state_without_instruments: _FakeAppState,
 ) -> None:
-    # A fresh Config() has no endpoint override, so Settings should show the
-    # real ingest URL out of the box — an operator only needs to paste a
-    # token, not also learn/guess the endpoint.
+    # A fresh Config() has no endpoint override, so Settings should show
+    # "Development" pre-selected out of the box — an operator only needs to
+    # paste a token, not also learn/guess the endpoint.
     app = _build_app(state_without_instruments)
     client = _client(app)
     response = client.get("/settings")
     assert response.status_code == 200
-    assert "https://dev.massdynamics.com/api/evosep_qcs" in response.text
+    assert "dev.massdynamics.com" in response.text
+    assert 'value="dev" selected' in response.text.replace("\n", " ")
+
+
+def test_settings_get_prod_endpoint_preselects_prod(
+    state_without_instruments: _FakeAppState,
+) -> None:
+    state_without_instruments.cfg.cloud.endpoint = "https://app.massdynamics.com/api/evosep_qcs"
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    response = client.get("/settings")
+    assert response.status_code == 200
+    assert 'value="prod" selected' in response.text.replace("\n", " ")
+
+
+def test_settings_post_prod_environment_resolves_prod_endpoint(
+    state_without_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data={"log_level": "info", "skyline_priority": "below_normal",
+              "skyline_path": "auto", "skyline_timeout": "900",
+              "api_token": "prod-token", "cloud_environment": "prod"},
+    )
+    assert response.status_code == 200
+    contents = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    assert "https://app.massdynamics.com/api/evosep_qcs" in contents
+
+
+def test_settings_post_custom_environment_uses_custom_field(
+    state_without_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data={"log_level": "info", "skyline_priority": "below_normal",
+              "skyline_path": "auto", "skyline_timeout": "900",
+              "api_token": "tok", "cloud_environment": "custom",
+              "cloud_endpoint_custom": "https://staging.example.com/api/evosep_qcs"},
+    )
+    assert response.status_code == 200
+    contents = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    assert "https://staging.example.com/api/evosep_qcs" in contents
 
 
 def test_settings_post_token_only_uses_default_endpoint(

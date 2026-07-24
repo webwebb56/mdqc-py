@@ -56,7 +56,16 @@ UPLOAD_RETRY_SLEEPS: list[tuple[int, int]] = [
 
 HTTP_TIMEOUT_S = 30
 HTTP_CONNECT_TIMEOUT_S = 10
-DEFAULT_ENDPOINT = "https://dev.massdynamics.com/api/evosep_qcs"
+
+# Named MD platform environments for POST /api/evosep_qcs. "dev" is
+# live-verified (returned 201 in testing, 2026-07-24). "prod" follows the
+# same host-swap pattern Giuseppe's platform uses elsewhere (app.massdynamics.com
+# is the customer-facing app — see the Evosep QC screenshots) but has NOT been
+# independently confirmed with a live request — verify before routing real
+# customer data through it.
+ENDPOINT_DEV = "https://dev.massdynamics.com/api/evosep_qcs"
+ENDPOINT_PROD = "https://app.massdynamics.com/api/evosep_qcs"
+DEFAULT_ENDPOINT = ENDPOINT_DEV
 
 # ─── Failure tracking ───────────────────────────────────────────────────────
 FAILED_FILES_MAX = 100

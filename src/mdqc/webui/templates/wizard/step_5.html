@@ -4,9 +4,19 @@
     <input type="radio" name="output_mode" value="cloud" {% if data.output_mode != "local" %}checked{% endif %}>
     Cloud upload (requires API token)
   </label>
-  <label>API token
-    <input type="text" name="api_token" value="{{ data.api_token or "" }}" placeholder="paste token from MD console">
-  </label>
+  <div style="margin-left:1.5rem;">
+    <label>
+      <input type="radio" name="cloud_environment" value="dev" {% if data.cloud_environment != "prod" %}checked{% endif %}>
+      Development — dev.massdynamics.com
+    </label>
+    <label>
+      <input type="radio" name="cloud_environment" value="prod" {% if data.cloud_environment == "prod" %}checked{% endif %}>
+      Production — app.massdynamics.com
+    </label>
+    <label>API token
+      <input type="text" name="api_token" value="{{ data.api_token or "" }}" placeholder="paste token from MD console">
+    </label>
+  </div>
   <label>
     <input type="radio" name="output_mode" value="local" {% if data.output_mode == "local" %}checked{% endif %}>
     Local-only mode (no cloud auth, payloads stay on disk)

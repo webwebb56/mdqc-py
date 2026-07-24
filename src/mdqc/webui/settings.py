@@ -86,6 +86,15 @@ def _status_cloud(cfg: Config) -> SectionStatus:
     return SectionStatus("muted", "Local-only (no upload)")
 
 
+def _cloud_environment(endpoint: str) -> str:
+    """Classify a saved endpoint as one of the named presets, or 'custom'."""
+    if endpoint == defaults.ENDPOINT_DEV:
+        return "dev"
+    if endpoint == defaults.ENDPOINT_PROD:
+        return "prod"
+    return "custom"
+
+
 def _instruments_ctx(instruments: list[InstrumentConfig]) -> list[dict[str, Any]]:
     result = []
     for i, inst in enumerate(instruments):
@@ -132,6 +141,9 @@ def _settings_context(
         "control_types": CONTROL_TYPES,
         "status_skyline": _status_skyline(cfg),
         "status_cloud": _status_cloud(cfg),
+        "cloud_environment": _cloud_environment(cfg.cloud.endpoint),
+        "endpoint_dev": defaults.ENDPOINT_DEV,
+        "endpoint_prod": defaults.ENDPOINT_PROD,
         "saved": saved,
         "error": error,
         "cloud_changed": cloud_changed,
@@ -210,7 +222,13 @@ async def settings_post(request: Request) -> HTMLResponse:
         skyline_path = str(form.get("skyline_path", "auto")).strip() or "auto"
         skyline_timeout = int(form.get("skyline_timeout", 900) or 900)
         api_token = str(form.get("api_token", "")).strip() or None
-        cloud_endpoint = str(form.get("cloud_endpoint", "")).strip() or defaults.DEFAULT_ENDPOINT
+        cloud_environment = str(form.get("cloud_environment", "dev"))
+        if cloud_environment == "prod":
+            cloud_endpoint = defaults.ENDPOINT_PROD
+        elif cloud_environment == "custom":
+            cloud_endpoint = str(form.get("cloud_endpoint_custom", "")).strip() or defaults.DEFAULT_ENDPOINT
+        else:
+            cloud_endpoint = defaults.ENDPOINT_DEV
         enable_toasts = "enable_toasts" in form
 
         instruments = _parse_instruments(form)
