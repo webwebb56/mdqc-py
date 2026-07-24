@@ -363,7 +363,7 @@ UPLOAD_RETRY_SLEEPS = [
 ]
 HTTP_TIMEOUT_S = 30
 HTTP_CONNECT_TIMEOUT_S = 10
-DEFAULT_ENDPOINT = "https://qc-ingest.massdynamics.com/v1/"
+DEFAULT_ENDPOINT = "https://dev.massdynamics.com/api/evosep_qcs"
 AUMID = "MassDynamics.QCAgent"
 ```
 

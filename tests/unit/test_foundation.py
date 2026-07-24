@@ -248,4 +248,4 @@ def test_load_config_bad_toml_raises(tmp_data_dir: Path) -> None:
 
 def test_default_endpoint() -> None:
     cfg = Config()
-    assert cfg.cloud.endpoint == "https://qc-ingest.massdynamics.com/v1/"
+    assert cfg.cloud.endpoint == "https://dev.massdynamics.com/api/evosep_qcs"

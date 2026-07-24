@@ -56,7 +56,7 @@ UPLOAD_RETRY_SLEEPS: list[tuple[int, int]] = [
 
 HTTP_TIMEOUT_S = 30
 HTTP_CONNECT_TIMEOUT_S = 10
-DEFAULT_ENDPOINT = "https://qc-ingest.massdynamics.com/v1/"
+DEFAULT_ENDPOINT = "https://dev.massdynamics.com/api/evosep_qcs"
 
 # ─── Failure tracking ───────────────────────────────────────────────────────
 FAILED_FILES_MAX = 100

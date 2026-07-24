@@ -126,6 +126,13 @@
 
 {% if saved %}
 <div class="banner ok">✓ Settings saved successfully.</div>
+{% if cloud_changed %}
+<div class="banner ok" style="margin-top:-0.5rem;">
+  ⚠ Cloud settings changed — <strong>restart the agent</strong> for uploads to take effect
+  (Dashboard → Restart, or re-run <code>mdqc run</code>). Payloads extracted before the
+  restart will stay queued in the spool and upload automatically once it's back up.
+</div>
+{% endif %}
 {% endif %}
 {% if error %}
 <div class="banner bad">✗ {{ error }}</div>
@@ -361,7 +368,7 @@
       <label for="cloud_endpoint">Endpoint</label>
       <input type="text" id="cloud_endpoint" name="cloud_endpoint"
              value="{{ cfg.cloud.endpoint }}"
-             placeholder="https://qc-ingest.massdynamics.com/v1/">
+             placeholder="https://dev.massdynamics.com/api/evosep_qcs">
     </div>
 
     <div class="field-row">

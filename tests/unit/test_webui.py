@@ -302,6 +302,79 @@ def test_wizard_save_writes_config(
     assert "thermo" in contents
 
 
+def test_settings_get_prefills_default_cloud_endpoint(
+    state_without_instruments: _FakeAppState,
+) -> None:
+    # A fresh Config() has no endpoint override, so Settings should show the
+    # real ingest URL out of the box — an operator only needs to paste a
+    # token, not also learn/guess the endpoint.
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    response = client.get("/settings")
+    assert response.status_code == 200
+    assert "https://dev.massdynamics.com/api/evosep_qcs" in response.text
+
+
+def test_settings_post_token_only_uses_default_endpoint(
+    state_without_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Simulates the "out of the box" flow: operator pastes a token, leaves
+    # the endpoint field untouched (submitted blank), saves. The written
+    # config must point at the real endpoint, not an empty/stale one.
+    monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data={"log_level": "info", "skyline_priority": "below_normal",
+              "skyline_path": "auto", "skyline_timeout": "900",
+              "api_token": "my-real-token", "cloud_endpoint": ""},
+    )
+    assert response.status_code == 200
+    config_path = tmp_path / "config.toml"
+    contents = config_path.read_text(encoding="utf-8")
+    assert "https://dev.massdynamics.com/api/evosep_qcs" in contents
+    assert "my-real-token" in contents
+
+
+def test_settings_post_cloud_change_shows_restart_hint(
+    state_without_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The running Uploader is built once at startup from a config snapshot;
+    # saving a new token in Settings does not reach it. The operator must be
+    # told to restart, or their token silently does nothing.
+    monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data={"log_level": "info", "skyline_priority": "below_normal",
+              "skyline_path": "auto", "skyline_timeout": "900",
+              "api_token": "new-token"},
+    )
+    assert response.status_code == 200
+    assert "restart" in response.text.lower()
+
+
+def test_settings_post_no_cloud_change_no_restart_hint(
+    state_without_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # state_without_instruments already has api_token="abc" (see _build_config)
+    # — resubmitting the same value must not spuriously demand a restart.
+    monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
+    app = _build_app(state_without_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data={"log_level": "info", "skyline_priority": "below_normal",
+              "skyline_path": "auto", "skyline_timeout": "900",
+              "api_token": "abc",
+              "cloud_endpoint": state_without_instruments.cfg.cloud.endpoint},
+    )
+    assert response.status_code == 200
+    assert "restart the agent" not in response.text.lower()
+
+
 def test_reset_processed_clears_registry(
     state_with_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

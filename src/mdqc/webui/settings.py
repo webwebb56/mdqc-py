@@ -12,7 +12,7 @@ import tomli_w
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from mdqc.config import paths
+from mdqc.config import defaults, paths
 from mdqc.config.schema import (
     CONTROL_TYPE_VALUES,
     AgentConfig,
@@ -120,7 +120,9 @@ def _parse_classifier_rules(form: dict[str, Any]) -> list[ClassifierRule]:
     return rules
 
 
-def _settings_context(cfg: Config, saved: bool = False, error: str | None = None) -> dict[str, Any]:
+def _settings_context(
+    cfg: Config, saved: bool = False, error: str | None = None, cloud_changed: bool = False
+) -> dict[str, Any]:
     return {
         "cfg": cfg,
         "instruments_ctx": _instruments_ctx(cfg.instruments),
@@ -132,6 +134,7 @@ def _settings_context(cfg: Config, saved: bool = False, error: str | None = None
         "status_cloud": _status_cloud(cfg),
         "saved": saved,
         "error": error,
+        "cloud_changed": cloud_changed,
         "config_path": str(paths.config_path()),
     }
 
@@ -191,6 +194,7 @@ async def settings_get(request: Request) -> HTMLResponse:
 async def settings_post(request: Request) -> HTMLResponse:
     state = get_state(request)
     error: str | None = None
+    cloud_changed = False
 
     try:
         raw_form = await request.form()
@@ -206,7 +210,7 @@ async def settings_post(request: Request) -> HTMLResponse:
         skyline_path = str(form.get("skyline_path", "auto")).strip() or "auto"
         skyline_timeout = int(form.get("skyline_timeout", 900) or 900)
         api_token = str(form.get("api_token", "")).strip() or None
-        cloud_endpoint = str(form.get("cloud_endpoint", "")).strip() or "https://qc-ingest.massdynamics.com/v1/"
+        cloud_endpoint = str(form.get("cloud_endpoint", "")).strip() or defaults.DEFAULT_ENDPOINT
         enable_toasts = "enable_toasts" in form
 
         instruments = _parse_instruments(form)
@@ -226,6 +230,16 @@ async def settings_post(request: Request) -> HTMLResponse:
             classifier_rules=classifier_rules,
         )
 
+        # The running Uploader was built once at startup from a snapshot of
+        # cloud config — reassigning state.cfg below does not reach it. Flag
+        # the change so the UI can tell the operator a restart is needed,
+        # rather than silently leaving payloads un-pushed after they've
+        # entered a token and been told "saved successfully".
+        cloud_changed = (
+            state.cfg.cloud.endpoint != cfg.cloud.endpoint
+            or state.cfg.cloud.api_token != cfg.cloud.api_token
+        )
+
         _write_config(cfg)
         state.cfg = cfg
         log.info("settings_saved", extra={"path": str(paths.config_path()), "instruments": len(instruments)})
@@ -235,7 +249,10 @@ async def settings_post(request: Request) -> HTMLResponse:
         error = str(exc)
 
     ctx = common_context(request)
-    ctx.update(_settings_context(state.cfg, saved=error is None, error=error))
+    ctx.update(_settings_context(
+        state.cfg, saved=error is None, error=error,
+        cloud_changed=cloud_changed and error is None,
+    ))
     return get_templates(request).TemplateResponse(request, "settings/index.html", ctx)
 
 
