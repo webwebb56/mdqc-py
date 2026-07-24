@@ -11,7 +11,7 @@ from pathlib import Path
 
 from mdqc.config.paths import methods_dir
 from mdqc.config.schema import PeptideClassRule, SkylineConfig
-from mdqc.extractor.report import parse_skyline_csv
+from mdqc.extractor.report import collapse_transitions_to_peptides, parse_skyline_csv
 from mdqc.extractor.skyline import (
     SkylineClickOnceUnsupported,
     SkylineFailed,
@@ -134,6 +134,30 @@ class Extractor:
     def skyline_path(self) -> Path | None:
         return self._skyline_path
 
+    def _resolve_skyr_path(self) -> tuple[Path | None, str | None]:
+        """Resolve the report-definition (.skyr) path from config.
+
+        Returns ``(path, error)``:
+          - ``(path, None)`` — pass ``path`` to Skyline's ``--report-add``.
+          - ``(None, None)`` — no report to add; Skyline uses whatever report is
+            already defined in the template (the tolerant "auto" fallback).
+          - ``(None, error)`` — an explicit path was configured but does not
+            exist; the caller must fail the extraction with ``error`` rather
+            than silently falling back (a missing configured report is an
+            operator error, not a default to swallow — this was a real pilot
+            footgun).
+        """
+        configured = getattr(self._cfg, "report_skyr_path", "auto") or "auto"
+        if configured.lower() != "auto":
+            explicit = Path(configured)
+            if not explicit.is_file():
+                return None, (
+                    f"Configured [skyline].report_skyr_path does not exist: {explicit}"
+                )
+            return explicit, None
+        bundled = methods_dir() / "MD_QC_Report.skyr"
+        return (bundled if bundled.is_file() else None), None
+
     async def extract(
         self,
         template: Path,
@@ -161,12 +185,18 @@ class Extractor:
         if not raw_file.exists():
             raise FileNotFoundError(f"raw file not found: {raw_file}")
 
+        skyr_path, skyr_error = self._resolve_skyr_path()
+        if skyr_error is not None:
+            result.status = ExtractionStatus.FAILED
+            result.error_message = skyr_error
+            logger.error("%s", skyr_error)
+            return result
+
         self._work_dir.mkdir(parents=True, exist_ok=True)
         output_csv = self._work_dir / f"{uuid.uuid4().hex}_report.csv"
 
         start = time.monotonic()
         try:
-            skyr_path = methods_dir() / "MD_QC_Report.skyr"
             run_result: SkylineRunResult = await run_skyline(
                 skyline_exe=skyline_path,
                 template=template,
@@ -175,7 +205,7 @@ class Extractor:
                 output_csv=output_csv,
                 timeout_s=self._cfg.timeout_seconds,
                 priority=self._cfg.process_priority,
-                report_skyr=skyr_path if skyr_path.exists() else None,
+                report_skyr=skyr_path,
             )
         except SkylineTimeout as exc:
             result.status = ExtractionStatus.FAILED
@@ -231,6 +261,18 @@ class Extractor:
             return result
         finally:
             self._cleanup(output_csv)
+
+        # Collapse transition-level rows to one row per peptide (see report.py).
+        # Transition-rowsource reports emit 3-8 rows per peptide; the payload
+        # should carry one. Config-gated so a deployment can opt out.
+        if getattr(self._cfg, "collapse_transitions_to_peptides", True):
+            n_before = len(target_metrics)
+            target_metrics = collapse_transitions_to_peptides(target_metrics)
+            if len(target_metrics) != n_before:
+                logger.info(
+                    "collapsed %d transition rows to %d peptides",
+                    n_before, len(target_metrics),
+                )
 
         assign_peptide_classes(target_metrics, self._peptide_class_rules)
         result.target_metrics = target_metrics

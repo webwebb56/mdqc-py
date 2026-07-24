@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import logging
+import math
 from pathlib import Path
 
 from mdqc.types import TargetMetric
@@ -215,16 +216,27 @@ def _map_columns(
 _NA_TOKENS = frozenset({"#n/a", "n/a", "na", "nan", "null", "none", ""})
 
 
-def _get_float(row: list[str], idx: int | None) -> float | None:
-    if idx is None or idx >= len(row):
-        return None
-    raw = row[idx].strip()
+def _parse_float(raw: str) -> float | None:
+    """Parse a CSV cell to a finite float, or None.
+
+    Rejects NA tokens *and* non-finite values. ``float("NaN")`` /
+    ``float("inf")`` succeed in Python, so a plain ``float()`` would let
+    Skyline's ``NaN`` (emitted for per-fragment metrics on non-lead
+    fragments) leak in as a real value and poison any downstream mean.
+    """
     if raw.lower() in _NA_TOKENS:
         return None
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         return None
+    return value if math.isfinite(value) else None
+
+
+def _get_float(row: list[str], idx: int | None) -> float | None:
+    if idx is None or idx >= len(row):
+        return None
+    return _parse_float(row[idx].strip())
 
 
 def _get_str(row: list[str], idx: int | None) -> str | None:
@@ -232,6 +244,20 @@ def _get_str(row: list[str], idx: int | None) -> str | None:
         return None
     raw = row[idx].strip()
     return raw or None
+
+
+def _mean_or_none(values: list[float | None]) -> float | None:
+    """Mean of the non-null values, or None if all are null.
+
+    Used by the transition→peptide collapse: for a field that repeats
+    identically across a peptide's transitions the mean is that value; for a
+    genuinely per-fragment field (Skewness, Kurtosis) it is the per-peptide
+    average, skipping the ``NaN`` fragments Skyline emits.
+    """
+    present = [v for v in values if v is not None and math.isfinite(v)]
+    if not present:
+        return None
+    return sum(present) / len(present)
 
 
 def _hash_target_id(seq: str | None, mz: float | None, fallback_idx: int) -> str:
@@ -326,10 +352,11 @@ def parse_skyline_csv(
                 raw = row[idx].strip()
                 if not raw:
                     continue
-                try:
-                    extra_metrics[name] = float(raw)
-                except ValueError:
-                    logger.debug("dropping non-numeric extra column %s=%r", name, raw)
+                value = _parse_float(raw)
+                if value is None:
+                    logger.debug("dropping non-numeric/non-finite extra column %s=%r", name, raw)
+                    continue
+                extra_metrics[name] = value
 
             target = TargetMetric(
                 target_id=_hash_target_id(peptide_seq, precursor_mz, row_idx),
@@ -352,3 +379,83 @@ def parse_skyline_csv(
             metrics.append(target)
 
     return metrics
+
+
+def collapse_transitions_to_peptides(metrics: list[TargetMetric]) -> list[TargetMetric]:
+    """Collapse transition-level rows to one row per peptide.
+
+    Skyline reports with ``rowsource="Transition"`` emit one CSV row per
+    transition (3-8 per peptide). Most metrics repeat identically across a
+    peptide's transitions; a few (Skewness, Kurtosis) are genuinely
+    per-fragment.
+
+    The universal rule: for every numeric field and numeric extra-metric, take
+    the mean of the non-null values in the peptide group. Mean of N identical
+    values is that value (handles the repeats correctly — e.g. Total Area is
+    not summed); mean of the per-fragment values is the correct per-peptide
+    summary. String fields take the first non-null; ``detected`` is OR-ed.
+
+    Grouping key is ``(protein_name, peptide_sequence)``, falling back to
+    ``target_id`` when a peptide sequence is absent. Peptide order is preserved
+    by first appearance. Idempotent: a list that is already one-row-per-peptide
+    passes through unchanged (each group has size 1).
+    """
+    if not metrics:
+        return metrics
+
+    groups: dict[tuple[str, str], list[TargetMetric]] = {}
+    order: list[tuple[str, str]] = []
+    for m in metrics:
+        key = (m.protein_name or "", m.peptide_sequence or m.target_id)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(m)
+
+    collapsed: list[TargetMetric] = []
+    for idx, key in enumerate(order):
+        group = groups[key]
+        if len(group) == 1:
+            collapsed.append(group[0])
+            continue
+
+        # Union of extra-metric keys (first-appearance order), each averaged
+        # across the group; drop keys that are null in every row.
+        extra_keys: list[str] = []
+        seen_keys: set[str] = set()
+        for m in group:
+            for k in m.extra_metrics:
+                if k not in seen_keys:
+                    seen_keys.add(k)
+                    extra_keys.append(k)
+        merged_extra: dict[str, float] = {}
+        for k in extra_keys:
+            mean = _mean_or_none([m.extra_metrics.get(k) for m in group])
+            if mean is not None:
+                merged_extra[k] = mean
+
+        seq = next((m.peptide_sequence for m in group if m.peptide_sequence), None)
+        protein = next((m.protein_name for m in group if m.protein_name), None)
+        mz = _mean_or_none([m.precursor_mz for m in group])
+
+        collapsed.append(
+            TargetMetric(
+                target_id=_hash_target_id(seq, mz, idx),
+                peptide_sequence=seq,
+                protein_name=protein,
+                precursor_mz=mz,
+                retention_time=_mean_or_none([m.retention_time for m in group]),
+                rt_expected=_mean_or_none([m.rt_expected for m in group]),
+                rt_delta=_mean_or_none([m.rt_delta for m in group]),
+                peak_area=_mean_or_none([m.peak_area for m in group]),
+                peak_height=_mean_or_none([m.peak_height for m in group]),
+                peak_width_fwhm=_mean_or_none([m.peak_width_fwhm for m in group]),
+                peak_symmetry=_mean_or_none([m.peak_symmetry for m in group]),
+                mass_error_ppm=_mean_or_none([m.mass_error_ppm for m in group]),
+                isotope_dot_product=_mean_or_none([m.isotope_dot_product for m in group]),
+                library_dot_product=_mean_or_none([m.library_dot_product for m in group]),
+                detected=any(m.detected for m in group),
+                extra_metrics=merged_extra,
+            )
+        )
+    return collapsed

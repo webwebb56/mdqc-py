@@ -127,6 +127,13 @@ log_level = "info"
 [skyline]
 timeout_seconds = 900
 process_priority = "below_normal"
+# report_skyr_path: which Skyline report (.skyr) defines the CSV columns.
+#   "auto" (default) uses the bundled MD_QC_Report.skyr in the methods folder.
+#   Point it at your own .skyr to change the exported metrics without renaming:
+# report_skyr_path = "C:\\ProgramData\\MassDynamics\\QC\\methods\\MD_QC_Report_20260723.skyr"
+# collapse_transitions_to_peptides: fold Skyline's per-transition rows down to
+#   one row per peptide (default true). Leave on for the diagnostic-peptide QC.
+# collapse_transitions_to_peptides = true
 
 [watcher]
 use_filesystem_events = true

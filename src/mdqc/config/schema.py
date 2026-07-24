@@ -79,6 +79,18 @@ class SkylineConfig(BaseModel):
     timeout_seconds: int = defaults.SKYLINE_TIMEOUT_S
     process_priority: Literal["normal", "below_normal", "idle"] = "below_normal"
     report_columns: ReportColumnsConfig = ReportColumnsConfig()
+    # Report definition (.skyr) path. "auto" uses the bundled
+    # methods_dir()/MD_QC_Report.skyr (tolerant — falls back to the template's
+    # own report if absent). An explicit path is used verbatim and, if it does
+    # not exist, fails the extraction with a clear message rather than silently
+    # falling back — a missing configured report is an operator error, not a
+    # default to swallow.
+    report_skyr_path: str = "auto"
+    # Skyline reports with rowsource="Transition" emit one CSV row per
+    # transition (3-8 per peptide). When true (default) mdqc collapses these to
+    # one row per peptide before emitting the payload. Set false only if a
+    # deployment genuinely wants transition-level detail in the payload.
+    collapse_transitions_to_peptides: bool = True
 
 
 class WatcherConfig(BaseModel):
