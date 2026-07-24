@@ -11,7 +11,11 @@ from pathlib import Path
 
 from mdqc.config.paths import methods_dir
 from mdqc.config.schema import PeptideClassRule, SkylineConfig
-from mdqc.extractor.report import collapse_transitions_to_peptides, parse_skyline_csv
+from mdqc.extractor.report import (
+    collapse_transitions_to_peptides,
+    parse_skyline_csv,
+    parse_skyline_run_metadata,
+)
 from mdqc.extractor.skyline import (
     SkylineClickOnceUnsupported,
     SkylineFailed,
@@ -254,6 +258,7 @@ class Extractor:
             else None
         )
         try:
+            acquired_time, modified_time = parse_skyline_run_metadata(output_csv)
             target_metrics = parse_skyline_csv(output_csv, column_overrides=column_overrides)
         except FileNotFoundError as exc:
             result.status = ExtractionStatus.FAILED
@@ -261,6 +266,9 @@ class Extractor:
             return result
         finally:
             self._cleanup(output_csv)
+
+        result.acquired_time = acquired_time
+        result.modified_time = modified_time
 
         # Collapse transition-level rows to one row per peptide (see report.py).
         # Transition-rowsource reports emit 3-8 rows per peptide; the payload

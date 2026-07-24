@@ -155,7 +155,12 @@ class Spool:
             "run_id": str(run_id),
             "raw_file_name": raw_file_path.name if raw_file_path else None,
             "raw_file_hash": extraction.raw_file_hash,
-            "acquisition_time": _file_acquisition_time(raw_file_path),
+            # Prefer the real acquisition time Skyline read from the raw-file
+            # header; fall back to the file mtime when the report has no
+            # AcquiredTime column (older .skyr).
+            "acquisition_time": (
+                extraction.acquired_time or _file_acquisition_time(raw_file_path)
+            ),
             "instrument_id": classification.instrument_id,
             "vendor": _vendor_from_extension(raw_file_path),
             "control_type": classification.control_type.value,

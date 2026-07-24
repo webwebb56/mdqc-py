@@ -179,6 +179,11 @@ class ExtractionResult:
     run_metrics: RunMetrics | None = None
     stdout: str | None = None
     stderr: str | None = None
+    # Real acquisition / modification timestamps read by Skyline from the
+    # raw-file header (offset-aware local ISO-8601). None when the report has
+    # no AcquiredTime column — the spool then falls back to the file mtime.
+    acquired_time: str | None = None
+    modified_time: str | None = None
 
 
 @dataclass

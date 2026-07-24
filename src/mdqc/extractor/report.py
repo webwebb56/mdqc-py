@@ -10,11 +10,22 @@ import csv
 import hashlib
 import logging
 import math
+from datetime import datetime
 from pathlib import Path
 
 from mdqc.types import TargetMetric
 
 logger = logging.getLogger(__name__)
+
+# Skyline writes AcquiredTime / ModifiedTime in the instrument PC's locale.
+# The pilot Astral emits US 12-hour ("7/22/2026 2:44:30 AM"); other locales
+# vary. Try the common shapes, ISO first.
+_SKYLINE_TIME_FORMATS = (
+    "%m/%d/%Y %I:%M:%S %p",   # 7/22/2026 2:44:30 AM  (US 12h — Skyline default)
+    "%m/%d/%Y %H:%M:%S",       # US 24h
+    "%d/%m/%Y %H:%M:%S",       # EU 24h
+    "%Y-%m-%d %H:%M:%S",       # ISO-ish, space-separated
+)
 
 _ALIASES: dict[str, list[str]] = {
     "protein_name": [
@@ -246,6 +257,32 @@ def _get_str(row: list[str], idx: int | None) -> str | None:
     return raw or None
 
 
+def _parse_skyline_time(raw: str) -> str | None:
+    """Parse a Skyline AcquiredTime/ModifiedTime cell to offset-aware ISO-8601.
+
+    Skyline's value is a naive wall-clock in the instrument PC's local
+    timezone (read from the raw-file header). mdqc runs *on* that PC, so we
+    attach the machine's local offset — preserving the wall clock the operator
+    recognizes ("the 2:44 AM run") while making the timestamp unambiguous and
+    comparable. Returns None on an unparseable value (caller falls back to
+    file mtime).
+    """
+    if not raw or raw.lower() in _NA_TOKENS:
+        return None
+    try:
+        return datetime.fromisoformat(raw).astimezone().isoformat()
+    except ValueError:
+        pass
+    for fmt in _SKYLINE_TIME_FORMATS:
+        try:
+            naive = datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+        return naive.astimezone().isoformat()
+    logger.warning("could not parse Skyline time %r; falling back to file mtime", raw)
+    return None
+
+
 def _mean_or_none(values: list[float | None]) -> float | None:
     """Mean of the non-null values, or None if all are null.
 
@@ -379,6 +416,43 @@ def parse_skyline_csv(
             metrics.append(target)
 
     return metrics
+
+
+def parse_skyline_run_metadata(path: Path) -> tuple[str | None, str | None]:
+    """Extract run-level ``(acquired_time, modified_time)`` from a Skyline CSV.
+
+    These columns (added to the ``.skyr`` in 2026-07) carry the real
+    acquisition timestamp Skyline reads from the raw-file header — identical on
+    every row, so we read the first data row only. Returns offset-aware local
+    ISO-8601 strings, or ``None`` for each column that is absent or
+    unparseable (the caller then falls back to the raw-file mtime).
+    """
+    with open(path, newline="", encoding="utf-8-sig") as fh:
+        reader = csv.reader(fh)
+        try:
+            headers = next(reader)
+        except StopIteration:
+            return None, None
+        norm = {_normalise(h): i for i, h in enumerate(headers) if h}
+        acq_idx = norm.get("acquiredtime")
+        mod_idx = norm.get("modifiedtime")
+        if acq_idx is None and mod_idx is None:
+            return None, None
+        for row in reader:
+            if not row or all(not cell.strip() for cell in row):
+                continue
+            acquired = (
+                _parse_skyline_time(row[acq_idx].strip())
+                if acq_idx is not None and acq_idx < len(row)
+                else None
+            )
+            modified = (
+                _parse_skyline_time(row[mod_idx].strip())
+                if mod_idx is not None and mod_idx < len(row)
+                else None
+            )
+            return acquired, modified
+        return None, None
 
 
 def collapse_transitions_to_peptides(metrics: list[TargetMetric]) -> list[TargetMetric]:
