@@ -108,6 +108,12 @@ class RunClassification:
     # detectable from the filename. Surfaced as an orthogonal dashboard
     # filter (independent of control_type).
     spd: int | None = None
+    # Dilution level of the control as a percentage 1-100, parsed from
+    # filename markers like `QCB_75perc`. ``None`` for a neat control (the
+    # normal case). The independent variable in a dilution series, so the
+    # platform can group a threshold-calibration run by it without having to
+    # re-parse the filename.
+    dilution_pct: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +124,7 @@ class RunClassification:
             "classification_confidence": self.confidence.value,
             "classification_source": self.source.value,
             "spd": self.spd,
+            "dilution_pct": self.dilution_pct,
         }
 
 

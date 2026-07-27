@@ -34,10 +34,30 @@ MAX_PENDING_MB = 1000
 """Reject new payloads if pending dir exceeds this size."""
 
 MAX_AGE_DAYS = 30
-"""Delete payloads older than this from pending/ and failed/."""
+"""Delete payloads older than this from pending/ and failed/.
 
-COMPLETED_RETENTION_COUNT = 10
-"""Keep only the N most recent (by mtime) in completed/."""
+Also governs completed/ when the agent is running local-only — see
+COMPLETED_RETENTION_COUNT.
+"""
+
+COMPLETED_RETENTION_COUNT = 200
+"""Keep only the N most recent (by mtime) in completed/ — CLOUD MODE ONLY.
+
+completed/ means two different things depending on whether cloud upload is
+configured, and the retention policy has to follow:
+
+- **Cloud mode**: the payload has already been accepted by the platform, so
+  completed/ is a local receipt. A count cap is the right bound.
+- **Local-only**: nothing was uploaded — completed/ is the *only* copy of
+  that run. A count cap here silently destroys data the operator cannot get
+  back, so `prune_spool` switches to age-based pruning (MAX_AGE_DAYS) and
+  ignores this value entirely.
+
+Raised 10 -> 200 in v0.5.6: 10 was set when completed/ was assumed to be a
+throwaway receipt trail, but it is far too small to survive a single
+overnight batch. Evosep's 2026-07-24 timsTOF HT stress test spooled 176
+payloads in one night and retained 10 of them.
+"""
 
 # ─── Uploader ───────────────────────────────────────────────────────────────
 UPLOAD_TOTAL_ATTEMPTS = 5

@@ -159,6 +159,28 @@ def test_dashboard_renders(state_with_instruments: _FakeAppState) -> None:
     assert "Dashboard" in body
 
 
+def test_dashboard_shows_version(state_with_instruments: _FakeAppState) -> None:
+    from mdqc import __version__
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    body = response.text
+    assert "Version" in body
+    assert f"v{__version__}" in body
+
+
+def test_dashboard_status_fragment_shows_version(state_with_instruments: _FakeAppState) -> None:
+    from mdqc import __version__
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.get("/dashboard/status")
+    assert response.status_code == 200
+    assert f"v{__version__}" in response.text
+
+
 def test_root_redirects_to_dashboard_when_configured(
     state_with_instruments: _FakeAppState,
 ) -> None:
@@ -508,6 +530,98 @@ def test_logs_index(state_with_instruments: _FakeAppState, tmp_path: Path) -> No
     finally:
         # the autouse session fixture restores the dir at session teardown.
         pass
+
+
+# ─── Settings preserves config it does not render ──────────────────────────
+
+
+def _base_settings_form(**overrides: Any) -> dict[str, Any]:
+    form: dict[str, Any] = {
+        "log_level": "info",
+        "skyline_priority": "below_normal",
+        "skyline_path": "auto",
+        "skyline_timeout": "900",
+        "api_token": "abc",
+        "cloud_environment": "dev",
+    }
+    form.update(overrides)
+    return form
+
+
+def test_settings_save_preserves_unrendered_config(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """Regression: saving Settings must not reset fields it has no control for.
+
+    The docs tell operators to set their cloud token from this page. Before
+    the fix that also silently reverted report_skyr_path to "auto" and
+    dropped every peptide_classes rule, which would stop digest efficiency
+    being computed without any visible error.
+    """
+    from mdqc.config.schema import PeptideClassRule
+
+    cfg = state_with_instruments.cfg
+    cfg.skyline.report_skyr_path = r"C:\ProgramData\MassDynamics\QC\methods\Custom.skyr"
+    cfg.skyline.collapse_transitions_to_peptides = False
+    cfg.peptide_classes = [
+        PeptideClassRule(
+            protein_name="Miss-clevage_pair",
+            purpose="digest_efficiency",
+            exclude_from_recovery=True,
+        )
+    ]
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post("/settings", data=_base_settings_form())
+    assert response.status_code == 200
+
+    saved = state_with_instruments.cfg
+    assert saved.skyline.report_skyr_path == (
+        r"C:\ProgramData\MassDynamics\QC\methods\Custom.skyr"
+    )
+    assert saved.skyline.collapse_transitions_to_peptides is False
+    assert len(saved.peptide_classes) == 1
+    assert saved.peptide_classes[0].purpose == "digest_efficiency"
+
+
+def test_settings_save_updates_retention_fields(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data=_base_settings_form(completed_retention_count="750", max_age_days="60"),
+    )
+    assert response.status_code == 200
+    assert state_with_instruments.cfg.spool.completed_retention_count == 750
+    assert state_with_instruments.cfg.spool.max_age_days == 60
+
+
+def test_settings_retention_absent_from_form_keeps_current_value(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """The count input is disabled in local-only mode, so it never submits."""
+    state_with_instruments.cfg.spool.completed_retention_count = 999
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post("/settings", data=_base_settings_form())
+    assert response.status_code == 200
+    assert state_with_instruments.cfg.spool.completed_retention_count == 999
+
+
+def test_settings_page_shows_retention_panel(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.get("/settings")
+    assert response.status_code == 200
+    body = response.text
+    assert "Payload retention" in body
+    assert "completed_retention_count" in body
+    assert "max_age_days" in body
 
 
 # ─── Gold standards ────────────────────────────────────────────────────────

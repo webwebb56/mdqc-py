@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from mdqc.classifier import classify_file, classify_filename
+from mdqc.config.schema import ClassifierRule
 from mdqc.types import (
     ClassificationSource,
     Confidence,
@@ -165,6 +166,50 @@ def test_spd_ignored_inside_other_word() -> None:
     # `200spdx` should NOT match — delimiters required after the digits+SPD.
     result = classify_filename("astral_200spdx_k562_QCA.raw")
     assert result.spd is None
+
+
+# ─── Dilution level (threshold-calibration series) ───────────────────────────
+
+def test_dilution_extracted_perc() -> None:
+    result = classify_filename(
+        "QCB_75perc_2026-07-24_ss_50ng_Manual_200spd_k562_S1-H5_1.d"
+    )
+    assert result.dilution_pct == 75
+    assert result.control_type is ControlType.QC_B
+    assert result.spd == 200
+
+
+def test_dilution_extracted_pct_and_percent_and_symbol() -> None:
+    assert classify_filename("QCB_50pct_200spd.raw").dilution_pct == 50
+    assert classify_filename("QCB_25percent_200spd.raw").dilution_pct == 25
+    assert classify_filename("QCB_100%_200spd.raw").dilution_pct == 100
+
+
+def test_dilution_absent_returns_none() -> None:
+    result = classify_filename("SSC0_2026-07-24_ss_50ng_Manual_200spd_k562_S1-B1_1.d")
+    assert result.dilution_pct is None
+
+
+def test_dilution_out_of_range_rejected() -> None:
+    # A concentration token above 100% isn't a dilution — don't invent one.
+    assert classify_filename("QCB_150perc_200spd.raw").dilution_pct is None
+    assert classify_filename("QCB_0perc_200spd.raw").dilution_pct is None
+
+
+def test_dilution_does_not_collide_with_spd() -> None:
+    """`200spd` must not be read as a dilution, nor `75perc` as an SPD."""
+    result = classify_filename("QCB_75perc_500spd_k562.raw")
+    assert result.dilution_pct == 75
+    assert result.spd == 500
+
+
+def test_dilution_survives_custom_classifier_rule() -> None:
+    """The custom-rule early-return path must populate dilution too."""
+    rules = [ClassifierRule(pattern="QCB", control_type="QC_B")]
+    result = classify_filename("QCB_50perc_300spd_k562.raw", rules=rules)
+    assert result.control_type is ControlType.QC_B
+    assert result.dilution_pct == 50
+    assert result.spd == 300
 
 
 def test_priority_ssc0_before_qca() -> None:

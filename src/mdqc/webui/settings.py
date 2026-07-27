@@ -20,9 +20,6 @@ from mdqc.config.schema import (
     CloudConfig,
     Config,
     InstrumentConfig,
-    SkylineConfig,
-    SpoolConfig,
-    WatcherConfig,
 )
 from mdqc.extractor.skyline import find_skyline
 from mdqc.types import Vendor
@@ -86,6 +83,15 @@ def _status_cloud(cfg: Config) -> SectionStatus:
     return SectionStatus("muted", "Local-only (no upload)")
 
 
+def _parse_int(raw: Any, fallback: int) -> int:
+    """Parse a form integer, falling back to the current value when unusable."""
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return fallback
+    return value if value >= 0 else fallback
+
+
 def _cloud_environment(endpoint: str) -> str:
     """Classify a saved endpoint as one of the named presets, or 'custom'."""
     if endpoint == defaults.ENDPOINT_DEV:
@@ -144,6 +150,9 @@ def _settings_context(
         "cloud_environment": _cloud_environment(cfg.cloud.endpoint),
         "endpoint_dev": defaults.ENDPOINT_DEV,
         "endpoint_prod": defaults.ENDPOINT_PROD,
+        # Drives the spool-retention copy: local-only means completed/ holds
+        # the only copy of every payload and is pruned by age, not by count.
+        "local_only": cfg.is_local_only(),
         "saved": saved,
         "error": error,
         "cloud_changed": cloud_changed,
@@ -234,18 +243,42 @@ async def settings_post(request: Request) -> HTMLResponse:
         instruments = _parse_instruments(form)
         classifier_rules = _parse_classifier_rules(form)
 
+        completed_retention = _parse_int(
+            form.get("completed_retention_count"),
+            state.cfg.spool.completed_retention_count,
+        )
+        max_age_days = _parse_int(
+            form.get("max_age_days"), state.cfg.spool.max_age_days
+        )
+
+        # Rebuild from the CURRENT config, overriding only what this form
+        # actually renders. Constructing bare SkylineConfig()/SpoolConfig()/
+        # Config() here would silently reset every field without a form
+        # control — report_skyr_path, collapse_transitions_to_peptides,
+        # peptide_classes, and the watcher block — so an operator following
+        # the docs to paste in a cloud token would also lose their custom
+        # .skyr and their digest-efficiency peptide classes.
+        prev = state.cfg
         cfg = Config(
             agent=AgentConfig(log_level=log_level, enable_toast_notifications=enable_toasts),
             cloud=CloudConfig(endpoint=cloud_endpoint, api_token=api_token),
-            skyline=SkylineConfig(
-                path=skyline_path,
-                timeout_seconds=skyline_timeout,
-                process_priority=skyline_priority,
+            skyline=prev.skyline.model_copy(
+                update={
+                    "path": skyline_path,
+                    "timeout_seconds": skyline_timeout,
+                    "process_priority": skyline_priority,
+                }
             ),
-            watcher=WatcherConfig(),
-            spool=SpoolConfig(),
+            watcher=prev.watcher,
+            spool=prev.spool.model_copy(
+                update={
+                    "completed_retention_count": completed_retention,
+                    "max_age_days": max_age_days,
+                }
+            ),
             instruments=instruments,
             classifier_rules=classifier_rules,
+            peptide_classes=prev.peptide_classes,
         )
 
         # The running Uploader was built once at startup from a snapshot of
@@ -318,7 +351,10 @@ async def open_template(name: str = Query(...)) -> JSONResponse:
         os.startfile(str(resolved))  # Windows: opens with registered app (Skyline)
         return JSONResponse({"ok": True, "path": str(resolved)})
     except Exception as exc:
-        log.warning("open_template_failed", path=str(resolved), error=str(exc))
+        log.warning(
+            "open_template_failed",
+            extra={"path": str(resolved), "error": str(exc)},
+        )
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 

@@ -37,6 +37,13 @@ _PLATE_RE = re.compile(
 _DATE_RE = re.compile(r"\d{4}[-_]\d{2}[-_]\d{2}")
 # Evosep "samples per day" — `100spd`, `200SPD`, `500_spd`, etc.
 _SPD_RE = re.compile(rf"{_DELIM_BEFORE}(\d{{2,4}})[-_]?SPD{_DELIM_AFTER}", re.IGNORECASE)
+# Dilution level of a control — `QCB_100perc`, `75pct`, `50%`. The independent
+# variable in a dilution series (Evosep's threshold-calibration stress test
+# runs QC B at 100/75/50%), so it needs to be a first-class payload field
+# rather than something the platform has to re-parse out of the filename.
+_DILUTION_RE = re.compile(
+    rf"{_DELIM_BEFORE}(\d{{1,3}})[-_]?(?:perc|pct|percent|%){_DELIM_AFTER}", re.IGNORECASE
+)
 
 
 def classify_file(
@@ -61,6 +68,7 @@ def classify_filename(
                 plate = _extract_plate(stem)
                 instrument = _extract_instrument(stem)
                 spd = _extract_spd(stem)
+                dilution = _extract_dilution_pct(stem)
                 return RunClassification(
                     control_type=ct,
                     well_position=well,
@@ -69,6 +77,7 @@ def classify_filename(
                     confidence=Confidence.HIGH,
                     source=ClassificationSource.FILENAME,
                     spd=spd,
+                    dilution_pct=dilution,
                 )
 
     control_type, source = _extract_control_type(stem)
@@ -76,6 +85,7 @@ def classify_filename(
     plate = _extract_plate(stem)
     instrument = _extract_instrument(stem)
     spd = _extract_spd(stem)
+    dilution = _extract_dilution_pct(stem)
     confidence = _confidence(control_type, well, source)
     return RunClassification(
         control_type=control_type,
@@ -85,6 +95,7 @@ def classify_filename(
         confidence=confidence,
         source=source,
         spd=spd,
+        dilution_pct=dilution,
     )
 
 
@@ -97,6 +108,22 @@ def _extract_spd(stem: str) -> int | None:
         return int(m.group(1))
     except (ValueError, IndexError):
         return None
+
+
+def _extract_dilution_pct(stem: str) -> int | None:
+    """Parse a control's dilution level from a filename (e.g. ``QCB_75perc``).
+
+    Returns ``None`` when the filename carries no dilution marker — the
+    common case for routine QC, where the control is run neat.
+    """
+    m = _DILUTION_RE.search(stem)
+    if not m:
+        return None
+    try:
+        value = int(m.group(1))
+    except (ValueError, IndexError):
+        return None
+    return value if 0 < value <= 100 else None
 
 
 def _strip_vendor_ext(name: str) -> str:

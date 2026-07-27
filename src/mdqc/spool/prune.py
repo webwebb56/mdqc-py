@@ -20,7 +20,16 @@ def prune_spool(
     max_pending_mb: int = MAX_PENDING_MB,
     max_age_days: int = MAX_AGE_DAYS,
     completed_retention: int = COMPLETED_RETENTION_COUNT,
+    local_only: bool = False,
 ) -> dict[str, int]:
+    """Bound spool disk usage.
+
+    ``local_only`` selects the completed/ retention policy. When the agent has
+    no cloud destination, completed/ holds the only copy of every payload, so
+    pruning it down to a fixed count destroys data the operator cannot
+    recover — completed/ is then bounded by age instead, exactly like
+    pending/ and failed/. See COMPLETED_RETENTION_COUNT for the rationale.
+    """
     spool_root = root if root is not None else paths.spool_dir()
     pending_dir = spool_root / "pending"
     failed_dir = spool_root / "failed"
@@ -29,7 +38,10 @@ def prune_spool(
     cutoff = time.time() - max_age_days * 86400
     pending_aged = _remove_older_than(pending_dir, cutoff)
     failed_aged = _remove_older_than(failed_dir, cutoff)
-    completed_pruned = _retain_newest(completed_dir, completed_retention)
+    if local_only:
+        completed_pruned = _remove_older_than(completed_dir, cutoff)
+    else:
+        completed_pruned = _retain_newest(completed_dir, completed_retention)
 
     if max_pending_mb > 0:
         size_mb = _dir_size_bytes(pending_dir) / (1024 * 1024)

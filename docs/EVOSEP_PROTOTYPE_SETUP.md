@@ -273,6 +273,8 @@ the acquisition. See *Troubleshooting* below.
 | Dashboard tiles never update | Streamlit cache TTL is 30 s — interact with any widget to force refresh | Or enable **Auto-refresh** in the sidebar |
 | `instrument_id` shows as filename prefix instead of your config ID | The watch path differs from `instrument.watch_path` after `.resolve()` (mapped/UNC drive issue) | The agent has a single-instrument fallback; if you have one instrument configured, this works automatically. For multi-instrument setups use UNC paths consistently. |
 | Empty Library Dot Product panel | Skyline didn't compute library scores for these peaks (insufficient fragments or no library match) | The dashboard now auto-hides empty metrics — refresh to reflow |
+| Only the last ~10 payloads remain in `spool\completed\` after an overnight batch | **Fixed in v0.5.6.** Older builds capped `completed\` at 10 files and pruned hourly, which destroyed payloads that had never been uploaded | Upgrade to v0.5.6+. Retention is now visible and editable under **Settings → Payload retention**; with no cloud token configured, `completed\` is kept by age (30 days) instead of by count |
+| Custom `.skyr` path or peptide classes revert to defaults after using the Settings page | **Fixed in v0.5.6.** Saving Settings rebuilt the whole config and reset every field the page doesn't render | Upgrade to v0.5.6+. If you hit this, re-add `report_skyr_path` and `[[peptide_classes]]` to `config.toml` and restart |
 
 ### Where to look for logs
 - **Agent**: `C:\ProgramData\MassDynamics\QC\logs\mdqc.log` (JSONL format)

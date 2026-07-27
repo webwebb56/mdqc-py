@@ -591,6 +591,9 @@ async def _prune_loop(state: AppState) -> None:
                     max_pending_mb=state.cfg.spool.max_pending_mb,
                     max_age_days=state.cfg.spool.max_age_days,
                     completed_retention=state.cfg.spool.completed_retention_count,
+                    # Without a cloud destination, completed/ is the only copy
+                    # of every payload — prune it by age, not by count.
+                    local_only=state.cfg.is_local_only(),
                 )
             except Exception:
                 log.exception("prune_failed")

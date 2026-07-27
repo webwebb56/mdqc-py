@@ -204,6 +204,72 @@ def test_completed_retention_keeps_n_most_recent(tmp_data_dir: Path) -> None:
     assert actual == expected_kept
 
 
+def test_local_only_does_not_count_prune_completed(tmp_data_dir: Path) -> None:
+    """Regression: Evosep timsTOF HT, 2026-07-24.
+
+    In local-only mode the uploader moves pending -> completed without an
+    upload, so completed/ holds the ONLY copy of each payload. Count-based
+    pruning destroyed 166 of 176 overnight stress-test payloads. Recent
+    payloads must survive regardless of how low completed_retention is.
+    """
+    spool_root = tmp_data_dir / "spool"
+    _make_spool(spool_root)
+    completed = spool_root / "completed"
+
+    for i in range(176):
+        (completed / f"completed_{i:03d}.json").write_text("{}")
+
+    counts = prune_spool(spool_root, completed_retention=10, local_only=True)
+
+    assert counts["completed_pruned"] == 0
+    assert len(list(completed.iterdir())) == 176
+
+
+def test_local_only_still_ages_out_completed(tmp_data_dir: Path) -> None:
+    """Local-only completed/ is bounded by age, not left to grow forever."""
+    spool_root = tmp_data_dir / "spool"
+    _make_spool(spool_root)
+    completed = spool_root / "completed"
+
+    old = completed / "old_payload.json"
+    old.write_text("{}")
+    fresh = completed / "fresh_payload.json"
+    fresh.write_text("{}")
+    way_old = time.time() - (40 * 86400)
+    os.utime(old, (way_old, way_old))
+
+    counts = prune_spool(spool_root, max_age_days=30, local_only=True)
+
+    assert counts["completed_pruned"] == 1
+    assert not old.exists()
+    assert fresh.exists()
+
+
+def test_cloud_mode_still_count_prunes_completed(tmp_data_dir: Path) -> None:
+    """Cloud mode is unchanged — completed/ is a receipt trail, capped by count."""
+    spool_root = tmp_data_dir / "spool"
+    _make_spool(spool_root)
+    completed = spool_root / "completed"
+
+    base = time.time() - 1000
+    for i in range(15):
+        p = completed / f"completed_{i:02d}.json"
+        p.write_text("{}")
+        os.utime(p, (base + i, base + i))
+
+    counts = prune_spool(spool_root, completed_retention=10, local_only=False)
+
+    assert counts["completed_pruned"] == 5
+    assert len(list(completed.iterdir())) == 10
+
+
+def test_default_completed_retention_survives_an_overnight_batch() -> None:
+    """The old default of 10 could not hold one night of Evosep acquisition."""
+    from mdqc.config.defaults import COMPLETED_RETENTION_COUNT
+
+    assert COMPLETED_RETENTION_COUNT >= 176
+
+
 def test_orphan_tmp_cleanup(tmp_data_dir: Path) -> None:
     spool_root = tmp_data_dir / "spool"
     _make_spool(spool_root)

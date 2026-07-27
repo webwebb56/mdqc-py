@@ -465,12 +465,23 @@ Top-level invariants:
   "well_position":             "A1",                                  // null if not extracted
   "plate_id":                  "P087",                                // null if not extracted
   "spd":                       200,                                   // null if not extracted
+  "dilution_pct":              75,                                    // null unless the filename marks one
   "classification_confidence": "HIGH",                                // HIGH|MEDIUM|LOW
   "classification_source":     "FILENAME",                            // FILENAME|METADATA|POSITION|DEFAULT
   "method_name":               null,                                  // reserved for Evosep metadata file
   "column_info":               null                                   // reserved for Evosep metadata file
 }
 ```
+
+**`dilution_pct` (added v0.5.6)** — integer 1-100, parsed from filename markers
+like `QCB_75perc` / `50pct` / `25%`. `null` for a neat control, which is the
+normal case for routine QC. This is the independent variable in a
+threshold-calibration dilution series: Evosep's stress test runs QC B at
+100/75/50% × 200/300/500 SPD × 8 replicates, and grouping the response curve
+by this field is what turns that run into green/yellow/red thresholds (§5.4).
+Before v0.5.6 all three dilutions were indistinguishable in the payload —
+every one classified simply as `QC_B` — so the platform had to re-parse the
+filename to tell them apart.
 
 `method_name` and `column_info` are placeholders for the Evosep automation metadata (§3.3 / §4 v0.7.0). When that schema is finalised they get populated; existing payloads have nulls there.
 
@@ -813,6 +824,7 @@ A real payload from Stoyan's pilot, abbreviated for readability:
     "well_position":  null,
     "plate_id":       "P087",
     "spd":            200,
+    "dilution_pct":   null,
     "classification_confidence": "HIGH",
     "classification_source":     "FILENAME",
     "method_name":    null,

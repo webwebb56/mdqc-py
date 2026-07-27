@@ -169,6 +169,7 @@ class Spool:
             ),
             "plate_id": classification.plate_id,
             "spd": classification.spd,
+            "dilution_pct": classification.dilution_pct,
             "classification_confidence": classification.confidence.value,
             "classification_source": classification.source.value,
             "method_name": None,

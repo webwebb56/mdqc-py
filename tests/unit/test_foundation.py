@@ -113,7 +113,10 @@ def test_critical_timeouts_match_spec() -> None:
     assert defaults.BRUKER_STABILITY_WINDOW_S == 90
     assert defaults.MAX_PENDING_MB == 1000
     assert defaults.MAX_AGE_DAYS == 30
-    assert defaults.COMPLETED_RETENTION_COUNT == 10
+    # Raised 10 -> 200 in v0.5.6. 10 could not survive a single night of
+    # acquisition; see COMPLETED_RETENTION_COUNT and the local-only branch in
+    # prune_spool for why this is a data-loss boundary, not just a disk cap.
+    assert defaults.COMPLETED_RETENTION_COUNT == 200
     assert defaults.FAILED_FILES_MAX == 100
 
 

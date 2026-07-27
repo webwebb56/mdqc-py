@@ -438,6 +438,56 @@
 
 </form>
 
+{# ── Payload retention ──────────────────────────────────────────────── #}
+<section class="panel">
+  <div class="section-heading">
+    <span class="dot {% if local_only %}muted{% else %}ok{% endif %}">●</span>
+    <h2>Payload retention</h2>
+    <span class="status-msg muted">
+      {% if local_only %}Local-only — kept by age{% else %}Cloud — kept by count{% endif %}
+    </span>
+  </div>
+
+  {% if local_only %}
+  <div class="field-hint" style="margin-bottom:0.8rem;">
+    No cloud upload is configured, so <code>spool\completed\</code> holds the
+    <strong>only</strong> copy of every payload. It is pruned by age only —
+    the count limit below is ignored until an API token is set.
+  </div>
+  {% else %}
+  <div class="field-hint" style="margin-bottom:0.8rem;">
+    Payloads are uploaded to Mass Dynamics, so <code>spool\completed\</code> is
+    a local receipt trail and is capped at the newest N files.
+  </div>
+  {% endif %}
+
+  <div class="field-row">
+    <label>Keep newest</label>
+    <div>
+      <input type="number" name="completed_retention_count" min="0" step="1"
+             value="{{ cfg.spool.completed_retention_count }}" style="max-width:140px;"
+             {% if local_only %}disabled{% endif %}>
+      <div class="field-hint">
+        Maximum payloads retained in <code>completed\</code> in cloud mode.
+        A single overnight batch can exceed 150 runs — set this above your
+        busiest expected night.
+      </div>
+    </div>
+  </div>
+
+  <div class="field-row">
+    <label>Keep for (days)</label>
+    <div>
+      <input type="number" name="max_age_days" min="1" step="1"
+             value="{{ cfg.spool.max_age_days }}" style="max-width:140px;">
+      <div class="field-hint">
+        Payloads older than this are removed. In local-only mode this is the
+        only thing bounding <code>completed\</code>.
+      </div>
+    </div>
+  </div>
+</section>
+
 {# ── Maintenance ────────────────────────────────────────────────────── #}
 <section class="panel">
   <div class="section-heading">
