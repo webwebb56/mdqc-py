@@ -18,6 +18,13 @@ def classify_cmd(
     typer.echo("=====================")
     typer.echo(f"File: {path}")
     typer.echo(f"Control Type: {result.control_type.value}")
+    # SPD selects which gold-standard baseline a run is compared against, and
+    # dilution groups a threshold-calibration series, so both belong in the
+    # preview an engineer uses to verify a site's naming convention.
+    typer.echo(f"SPD: {result.spd if result.spd is not None else '-'}")
+    typer.echo(
+        f"Dilution: {str(result.dilution_pct) + '%' if result.dilution_pct is not None else '-'}"
+    )
     typer.echo(f"Well Position: {result.well_position or '-'}")
     typer.echo(f"Instrument: {result.instrument_id or '-'}")
     typer.echo(f"Plate ID: {result.plate_id or '-'}")
