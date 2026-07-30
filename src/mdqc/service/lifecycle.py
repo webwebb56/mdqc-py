@@ -32,7 +32,7 @@ from mdqc.diagnostics import run_diagnostics
 from mdqc.extractor import Extractor
 from mdqc.extractor.skyline import is_clickonce_install
 from mdqc.failed_files import FailedFilesStore
-from mdqc.gold_standards import record_ssc0_run
+from mdqc.gold_standards import build_payload_comparison, record_ssc0_run
 from mdqc.ipc.runtime import RuntimeFile, RuntimeInfo, generate_token
 from mdqc.log import configure_logging
 from mdqc.service.agent_id import resolve_agent_id
@@ -482,8 +482,18 @@ async def _build_state(cfg: Config) -> AppState:
                 await _fail(reason)
                 return
 
+            # Express this run against the active SSC0 baseline for its
+            # (instrument, SPD), if one has been recorded. Returns (None,
+            # None) until an engineer saves a baseline on the Gold Standards
+            # page, in which case the payload carries absolute values only.
+            baseline_context, comparison_metrics = build_payload_comparison(
+                classification, extraction_result, state.cfg.qc_thresholds
+            )
             spool_path = state.spool.enqueue(
-                classification, extraction_result, baseline_context=None
+                classification,
+                extraction_result,
+                baseline_context=baseline_context,
+                comparison_metrics=comparison_metrics,
             )
             record_ssc0_run(classification, extraction_result)
 

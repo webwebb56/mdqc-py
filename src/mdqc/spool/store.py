@@ -140,6 +140,7 @@ class Spool:
         extraction: ExtractionResult,
         baseline_context: dict[str, Any] | None = None,
         max_pending_mb: int = MAX_PENDING_MB,
+        comparison_metrics: dict[str, Any] | None = None,
     ) -> Path:
         size_mb = self.pending_size_mb()
         if size_mb >= max_pending_mb:
@@ -205,7 +206,7 @@ class Spool:
             target_metrics=target_metrics,
             run_metrics=run_metrics,
             baseline_context=baseline_context,
-            comparison_metrics=None,
+            comparison_metrics=comparison_metrics,
         )
 
         filename = f"{run_id}_payload.json"

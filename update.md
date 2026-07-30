@@ -439,8 +439,8 @@ Current `schema_version`: **"1.1"** (in `mdqc/config/defaults.py`).
   "run_metrics":          { /* see §6.4 */ },
   "target_metrics":       [ /* see §6.5 */ ],
 
-  "baseline_context":     null,  // reserved
-  "comparison_metrics":   null   // reserved
+  "baseline_context":     { /* see §6.6 — null until a baseline is saved */ },
+  "comparison_metrics":   { /* see §6.6 — null until a baseline is saved */ }
 }
 ```
 
@@ -565,11 +565,90 @@ One entry per (peptide, precursor, charge state) row from the Skyline CSV. **Thi
 
 `extra_metrics` is a **passthrough dict** — anything numeric in the Skyline CSV that doesn't map to a canonical field lands here. The platform should preserve this verbatim, since operators add columns to their `.skyr` for instrument-specific signals that we don't (and shouldn't) know about up front.
 
-### 6.6 Failed-payload shape
+### 6.6 `baseline_context` + `comparison_metrics` — run vs SSC0 (added v0.5.8)
+
+Both are `null` until an engineer saves a gold-standard baseline for that
+`(instrument_id, spd)` on the agent's Gold Standards page. A run whose SPD has
+no baseline keeps emitting absolute values only, so this is additive.
+
+```jsonc
+"baseline_context": {
+  "baseline_id":       "<uuid>",          // the durable link, for re-referencing
+  "label":             "Install 2026-07-30",
+  "created_at":        "2026-07-30T09:00:00+00:00",
+  "instrument_id":     "Astral_0001",
+  "spd":               200,
+  "source_run_count":  16,
+  "per_peptide": {                        // embedded snapshot -> payload is self-contained
+    "<protein>|<peptide>": {
+      "peak_area_median": 7.6e6, "peak_area_cv_pct": 5.1,
+      "retention_time_median": 2.22, "retention_time_sd": 0.01,
+      "isotope_dot_product_median": 0.95, "library_dot_product_median": 0.90,
+      "n": 16
+    }
+  }
+},
+
+"comparison_metrics": {
+  "baseline_id":                    "<uuid>",   // matches baseline_context
+  "targets_compared":               8,
+  "median_peak_area_ratio":         0.905,
+  "median_peak_area_deviation_pct": -9.5,
+  "median_rt_deviation_pct":        0.2,
+  "targets_extraction_suspect":     0,
+  "peak_area_verdict":              "ok",       // ok | warn | fail | null
+  "thresholds_applied":             { /* the QcThresholdsConfig used */ },
+  "per_peptide": {
+    "<protein>|<peptide>": {
+      "peptide_sequence":                  "ISGLIYEETR",
+      "peak_area_ratio_to_baseline":       0.91,
+      "peak_area_deviation_pct":           -9.0,
+      "rt_delta_from_baseline":            0.01,
+      "rt_deviation_pct":                  0.2,
+      "isotope_dot_product_deviation_pct": -0.5,
+      "library_dot_product_deviation_pct": -1.1,
+      "rt_outside_threshold":              false,
+      "target_extraction_suspect":         false
+    }
+  }
+}
+```
+
+**Where the thresholds come from.** Evosep's first-draft decision matrix
+(Stoyan Stoychev, 2026-07-28), derived from a timsTOF HT dilution series:
+
+| Condition | Rule (relative to SSC0) |
+|---|---|
+| Incorrect target extraction | >2% RT deviation **and** >10% dot-product deviation (or >30% peak-area deviation) |
+| Correct extraction | <2% RT deviation and <5% dot-product deviation |
+| Evotip load drop | −10% peak area ≈ 25% load loss (`warn`); −25% ≈ 50% loss (`fail`) |
+
+**Treat these as provisional.** They come from one instrument; the same series
+is being run across ~7 more platforms. They live in a `[qc_thresholds]` config
+block, so recalibrating is a config edit, not a release.
+
+Three things worth knowing on the platform side:
+
+1. **`target_extraction_suspect` is a conjunction, deliberately.** Evosep
+   observed a wrongly-extracted peak at idotp 0.92, so a dot product alone
+   does not identify one. It takes RT drift *together with* a dot-product or
+   peak-area anomaly. This separates "we picked the wrong peak" from "the
+   LC-MS is degrading" — they look identical in absolute peak area.
+2. **Every raw input is emitted alongside every flag**, and
+   `thresholds_applied` records the numbers that produced the verdict. Nothing
+   here has to be taken on trust: re-derive under your own thresholds, or
+   ignore the flags and use the deviations directly.
+3. **Known boundary case.** Against Evosep's own 200 SPD numbers, the 75% QC B
+   condition medians at −9.5% and therefore reads `ok`, clearing the 10% warn
+   threshold by half a point — the case that threshold exists to catch. Left
+   at Evosep's stated value pending the multi-platform data; ~8.0 would catch
+   it. Flagged rather than silently retuned.
+
+### 6.7 Failed-payload shape
 
 When `extraction.status == "FAILED"`, the payload **still gets written** to the spool. It carries `run`, `extraction` (with `error_message`), and empty `target_metrics: []`, `run_metrics: {}`. The platform should ingest these too — the dashboard surfaces failed runs distinctly from successful ones so operators can debug.
 
-### 6.7 Schema evolution policy
+### 6.8 Schema evolution policy
 
 - Adding optional fields is non-breaking; old payloads remain ingestable
 - Removing or renaming fields requires a `schema_version` bump (string-compared, not semver-parsed)

@@ -158,6 +158,62 @@ class PeptideClassRule(BaseModel):
         return v
 
 
+class QcThresholdsConfig(BaseModel):
+    """Thresholds for interpreting a run against its SSC0 gold-standard baseline.
+
+    Seeded from Evosep's first-draft decision matrix (Stoyan Stoychev,
+    2026-07-28), derived from a timsTOF HT dilution series: QC B at
+    100/75/50% x 200/300/500 SPD x 8 replicates, plus 16 SSC0 at 200 SPD.
+
+    **These numbers are provisional.** They come from one instrument; the
+    same series is being run across ~7 more platforms to check the pattern
+    holds. They are config so that recalibrating is an edit here, not a code
+    change. The agent emits the underlying measurements alongside any flag it
+    derives, so the platform can always re-derive or override.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    # "Correct target extraction: <2% RT CV ... relative to SSC0". Retention
+    # time is the single best discriminator of a wrongly-picked peak — it is
+    # stable to well under 1% across a batch absent LC changes.
+    rt_deviation_pct_max: float = 2.0
+    # "Correct target extraction: <5% idotp/dotp CV"; ">10%" indicates a
+    # wrong target. Note idotp alone is not sufficient — Evosep observed a
+    # wrongly-extracted peak at idotp 0.92 — hence the combination rule below.
+    dot_product_deviation_pct_max: float = 5.0
+    dot_product_deviation_pct_suspect: float = 10.0
+    # "potentially >30-40% Peak Area CV" on a wrongly-extracted target.
+    peak_area_deviation_pct_suspect: float = 30.0
+    # Response is buffered: "a 10% decrease in peak area, relative to SSC0,
+    # could indicate as much as 25% decrease in Evotip load, whilst a 25%
+    # decrease ... as much as 50%".
+    #
+    # CAVEAT, measured against Evosep's own 200 SPD numbers: the 75% QC B
+    # condition medians at -9.5% deviation, so a 10.0 warn threshold reads it
+    # as "ok" and misses the case the threshold exists to catch — it clears
+    # the boundary by half a percentage point. The 50% condition (-27.5%)
+    # trips "fail" correctly. Left at Evosep's stated 10.0 rather than
+    # silently retuned; ~8.0 would catch the 75% condition. Revisit once the
+    # series has run on the other platforms.
+    peak_area_deviation_pct_warn: float = 10.0
+    peak_area_deviation_pct_fail: float = 25.0
+
+    @field_validator(
+        "rt_deviation_pct_max",
+        "dot_product_deviation_pct_max",
+        "dot_product_deviation_pct_suspect",
+        "peak_area_deviation_pct_suspect",
+        "peak_area_deviation_pct_warn",
+        "peak_area_deviation_pct_fail",
+    )
+    @classmethod
+    def _non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("qc_thresholds values must be non-negative percentages")
+        return v
+
+
 class ClassifierRule(BaseModel):
     """A single filename-pattern → control-type mapping.
 
@@ -229,6 +285,7 @@ class Config(BaseModel):
         ]
     )
     peptide_classes: list[PeptideClassRule] = Field(default_factory=list)
+    qc_thresholds: QcThresholdsConfig = Field(default_factory=QcThresholdsConfig)
 
     # ─── Cross-field validation ─────────────────────────────────────────────
 

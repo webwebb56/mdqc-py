@@ -40,7 +40,7 @@ from mdqc.peptide_classes import filter_for_baseline
 from mdqc.types import ControlType, ExtractionResult, RunClassification, TargetMetric
 
 if TYPE_CHECKING:
-    from mdqc.config.schema import PeptideClassRule
+    from mdqc.config.schema import PeptideClassRule, QcThresholdsConfig
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +103,11 @@ def _record_ssc0_run_inner(
             "peptide_class_purpose": m.peptide_class_purpose,
             "retention_time": m.retention_time,
             "peak_area": m.peak_area,
+            # Dot products are part of the mis-extraction rule (a wrong peak
+            # shows RT drift *and* depressed dot products), so the baseline
+            # has to carry their reference values too.
+            "isotope_dot_product": m.isotope_dot_product,
+            "library_dot_product": m.library_dot_product,
         }
 
     run_metrics = extraction.run_metrics
@@ -165,6 +170,10 @@ class BaselinePeptideStat:
     retention_time_median: float | None
     retention_time_sd: float | None
     n: int
+    # None for baselines built from runs recorded before v0.5.8, which did
+    # not store dot products. Consumers must treat these as optional.
+    isotope_dot_product_median: float | None = None
+    library_dot_product_median: float | None = None
 
 
 def _sd(values: list[float]) -> float | None:
@@ -203,11 +212,15 @@ def compute_baseline_preview(
     for run in selected:
         for key, pep in run.get("peptides", {}).items():
             all_peps.setdefault(key, pep)
-            slot = values.setdefault(key, {"area": [], "rt": []})
+            slot = values.setdefault(key, {"area": [], "rt": [], "idotp": [], "dotp": []})
             if pep.get("peak_area") is not None:
                 slot["area"].append(float(pep["peak_area"]))
             if pep.get("retention_time") is not None:
                 slot["rt"].append(float(pep["retention_time"]))
+            if pep.get("isotope_dot_product") is not None:
+                slot["idotp"].append(float(pep["isotope_dot_product"]))
+            if pep.get("library_dot_product") is not None:
+                slot["dotp"].append(float(pep["library_dot_product"]))
 
     if rules:
         stand_ins = []
@@ -228,6 +241,8 @@ def compute_baseline_preview(
         pep = all_peps[key]
         areas = values[key]["area"]
         rts = values[key]["rt"]
+        idotps = values[key]["idotp"]
+        dotps = values[key]["dotp"]
         result[key] = BaselinePeptideStat(
             protein_name=pep.get("protein_name"),
             peptide_sequence=pep.get("peptide_sequence"),
@@ -239,6 +254,8 @@ def compute_baseline_preview(
             retention_time_median=statistics.median(rts) if rts else None,
             retention_time_sd=_sd(rts),
             n=len(areas),
+            isotope_dot_product_median=statistics.median(idotps) if idotps else None,
+            library_dot_product_median=statistics.median(dotps) if dotps else None,
         )
     return result
 
@@ -290,6 +307,160 @@ def save_baseline(
     return record
 
 
+def _pct_deviation(value: float | None, reference: float | None) -> float | None:
+    """Signed percentage deviation of ``value`` from ``reference``."""
+    if value is None or reference is None or reference == 0:
+        return None
+    return (value - reference) / abs(reference) * 100.0
+
+
+def compute_comparison_metrics(
+    targets: list[TargetMetric],
+    baseline: dict[str, Any],
+    thresholds: QcThresholdsConfig | None = None,
+) -> dict[str, Any]:
+    """Express a run's per-peptide measurements against its SSC0 baseline.
+
+    Implements Evosep's first-draft decision matrix (2026-07-28). The
+    thresholds are configurable and provisional — see ``QcThresholdsConfig``.
+
+    Both the raw measurements and any derived flag are emitted, so the
+    platform can re-derive the judgement under different thresholds rather
+    than having to trust the agent's. ``target_extraction_suspect`` is
+    deliberately a conjunction: Evosep observed a wrongly-extracted peak at
+    idotp 0.92, so a dot product alone does not identify one — it takes RT
+    drift together with a dot-product or peak-area anomaly.
+    """
+    from mdqc.config.schema import QcThresholdsConfig as _T
+
+    th = thresholds if thresholds is not None else _T()
+    per_baseline: dict[str, Any] = baseline.get("per_peptide", {})
+
+    per_peptide: dict[str, Any] = {}
+    area_ratios: list[float] = []
+    rt_devs: list[float] = []
+    suspect_count = 0
+
+    for m in targets:
+        key = _peptide_key(m)
+        ref = per_baseline.get(key)
+        if ref is None:
+            continue
+
+        area_ref = ref.get("peak_area_median")
+        rt_ref = ref.get("retention_time_median")
+
+        area_ratio = (
+            m.peak_area / area_ref
+            if m.peak_area is not None and area_ref not in (None, 0)
+            else None
+        )
+        area_dev = _pct_deviation(m.peak_area, area_ref)
+        rt_delta = (
+            m.retention_time - rt_ref
+            if m.retention_time is not None and rt_ref is not None
+            else None
+        )
+        rt_dev = _pct_deviation(m.retention_time, rt_ref)
+        idotp_dev = _pct_deviation(
+            m.isotope_dot_product, ref.get("isotope_dot_product_median")
+        )
+        dotp_dev = _pct_deviation(
+            m.library_dot_product, ref.get("library_dot_product_median")
+        )
+
+        rt_off = rt_dev is not None and abs(rt_dev) > th.rt_deviation_pct_max
+        dot_off = any(
+            d is not None and abs(d) > th.dot_product_deviation_pct_suspect
+            for d in (idotp_dev, dotp_dev)
+        )
+        area_off = (
+            area_dev is not None
+            and abs(area_dev) > th.peak_area_deviation_pct_suspect
+        )
+        suspect = bool(rt_off and (dot_off or area_off))
+        if suspect:
+            suspect_count += 1
+
+        if area_ratio is not None:
+            area_ratios.append(area_ratio)
+        if rt_dev is not None:
+            rt_devs.append(rt_dev)
+
+        per_peptide[key] = {
+            "peptide_sequence": m.peptide_sequence,
+            "peak_area_ratio_to_baseline": area_ratio,
+            "peak_area_deviation_pct": area_dev,
+            "rt_delta_from_baseline": rt_delta,
+            "rt_deviation_pct": rt_dev,
+            "isotope_dot_product_deviation_pct": idotp_dev,
+            "library_dot_product_deviation_pct": dotp_dev,
+            "rt_outside_threshold": rt_off,
+            "target_extraction_suspect": suspect,
+        }
+
+    median_area_ratio = statistics.median(area_ratios) if area_ratios else None
+    median_area_dev = (
+        (median_area_ratio - 1.0) * 100.0 if median_area_ratio is not None else None
+    )
+    if median_area_dev is None:
+        area_verdict = None
+    elif abs(median_area_dev) >= th.peak_area_deviation_pct_fail:
+        area_verdict = "fail"
+    elif abs(median_area_dev) >= th.peak_area_deviation_pct_warn:
+        area_verdict = "warn"
+    else:
+        area_verdict = "ok"
+
+    return {
+        "baseline_id": baseline.get("baseline_id"),
+        "targets_compared": len(per_peptide),
+        "median_peak_area_ratio": median_area_ratio,
+        "median_peak_area_deviation_pct": median_area_dev,
+        "median_rt_deviation_pct": statistics.median(rt_devs) if rt_devs else None,
+        "targets_extraction_suspect": suspect_count,
+        "peak_area_verdict": area_verdict,
+        "thresholds_applied": th.model_dump(),
+        "per_peptide": per_peptide,
+    }
+
+
+def build_payload_comparison(
+    classification: RunClassification,
+    extraction: ExtractionResult,
+    thresholds: QcThresholdsConfig | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Resolve the active baseline for a run and compute its comparison.
+
+    Returns ``(baseline_context, comparison_metrics)``, both ``None`` when no
+    baseline has been recorded for this (instrument, SPD) — which is the
+    normal state until an engineer saves one on the Gold Standards page.
+
+    Best-effort: never raises. A comparison is an enrichment of the payload,
+    so a failure here must not cost the run its extracted measurements.
+    """
+    try:
+        baseline = get_active_baseline(classification.instrument_id, classification.spd)
+        if baseline is None:
+            return None, None
+        context = {
+            "baseline_id": baseline.get("baseline_id"),
+            "label": baseline.get("label"),
+            "created_at": baseline.get("created_at"),
+            "instrument_id": baseline.get("instrument_id"),
+            "spd": baseline.get("spd"),
+            "source_run_count": len(baseline.get("source_run_ids", [])),
+            "per_peptide": baseline.get("per_peptide", {}),
+        }
+        metrics = compute_comparison_metrics(
+            extraction.target_metrics, baseline, thresholds
+        )
+        return context, metrics
+    except Exception as exc:  # enrichment must not fail the run
+        log.warning("baseline_comparison_failed", extra={"error": str(exc)})
+        return None, None
+
+
 def list_baselines(instrument_id: str | None, spd: int | None) -> list[dict[str, Any]]:
     """All versioned baseline records for (instrument, spd), newest first."""
     data = _read_json(paths.baselines_path())
@@ -312,7 +483,9 @@ def get_active_baseline(instrument_id: str | None, spd: int | None) -> dict[str,
 
 __all__ = [
     "BaselinePeptideStat",
+    "build_payload_comparison",
     "compute_baseline_preview",
+    "compute_comparison_metrics",
     "get_active_baseline",
     "list_available_spds",
     "list_baselines",

@@ -253,3 +253,237 @@ def test_get_active_baseline_none_when_unset(tmp_data_dir: Path) -> None:
 
 def test_list_baselines_empty_when_unset(tmp_data_dir: Path) -> None:
     assert gs.list_baselines("Astral_0001", 200) == []
+
+
+# ─── comparison_metrics (Evosep decision matrix, 2026-07-28) ───────────────
+
+
+def _baseline_with(area: float, rt: float, idotp: float = 0.95, dotp: float = 0.90) -> dict:
+    return {
+        "baseline_id": "bl-1",
+        "per_peptide": {
+            "Prot|PEP": {
+                "peak_area_median": area,
+                "retention_time_median": rt,
+                "isotope_dot_product_median": idotp,
+                "library_dot_product_median": dotp,
+            }
+        },
+    }
+
+
+def _target(
+    area: float | None = None,
+    rt: float | None = None,
+    idotp: float | None = None,
+    dotp: float | None = None,
+) -> TargetMetric:
+    return TargetMetric(
+        target_id="PEP", peptide_sequence="PEP", protein_name="Prot",
+        peak_area=area, retention_time=rt,
+        isotope_dot_product=idotp, library_dot_product=dotp,
+    )
+
+
+def test_comparison_healthy_run_is_close_to_baseline() -> None:
+    """QC B at full load reads ~100% of SSC0 (Evosep measured 101-105%)."""
+    baseline = _baseline_with(area=1000.0, rt=5.0)
+    targets = [_target(area=1020.0, rt=5.01, idotp=0.95, dotp=0.90)]
+    m = gs.compute_comparison_metrics(targets, baseline)
+
+    pep = m["per_peptide"]["Prot|PEP"]
+    assert pep["peak_area_ratio_to_baseline"] == pytest.approx(1.02)
+    assert pep["peak_area_deviation_pct"] == pytest.approx(2.0)
+    assert pep["rt_deviation_pct"] == pytest.approx(0.2)
+    assert pep["target_extraction_suspect"] is False
+    assert m["peak_area_verdict"] == "ok"
+    assert m["targets_extraction_suspect"] == 0
+    assert m["baseline_id"] == "bl-1"
+
+
+def test_comparison_flags_mis_extracted_target() -> None:
+    """Reproduces the RISGLIYEETR signature Evosep found at 500 SPD.
+
+    Wrong peak picked: retention time far off the SSC0 median, dot products
+    depressed, peak area collapsed. Must be flagged as an extraction problem
+    rather than read as an LC-MS performance drop.
+    """
+    baseline = _baseline_with(area=1000.0, rt=5.0, idotp=0.95, dotp=0.90)
+    targets = [_target(area=350.0, rt=6.5, idotp=0.59, dotp=0.60)]
+    m = gs.compute_comparison_metrics(targets, baseline)
+
+    pep = m["per_peptide"]["Prot|PEP"]
+    assert pep["rt_outside_threshold"] is True
+    assert pep["target_extraction_suspect"] is True
+    assert m["targets_extraction_suspect"] == 1
+
+
+def test_comparison_dot_product_alone_does_not_flag() -> None:
+    """Evosep saw a wrongly-extracted peak at idotp 0.92 — dot products alone
+    are not diagnostic, so a low one with stable RT must not be flagged."""
+    baseline = _baseline_with(area=1000.0, rt=5.0, idotp=0.95, dotp=0.90)
+    targets = [_target(area=980.0, rt=5.005, idotp=0.70, dotp=0.60)]
+    m = gs.compute_comparison_metrics(targets, baseline)
+    assert m["per_peptide"]["Prot|PEP"]["target_extraction_suspect"] is False
+
+
+def test_comparison_rt_drift_alone_does_not_flag() -> None:
+    """RT drift with healthy area and dot products is an LC shift, not a
+    mis-extraction — the rule is deliberately a conjunction."""
+    baseline = _baseline_with(area=1000.0, rt=5.0)
+    targets = [_target(area=1000.0, rt=5.5, idotp=0.95, dotp=0.90)]
+    m = gs.compute_comparison_metrics(targets, baseline)
+    pep = m["per_peptide"]["Prot|PEP"]
+    assert pep["rt_outside_threshold"] is True
+    assert pep["target_extraction_suspect"] is False
+
+
+@pytest.mark.parametrize(
+    ("area", "expected"),
+    [(1000.0, "ok"), (895.0, "warn"), (740.0, "fail")],
+)
+def test_comparison_peak_area_verdict_bands(area: float, expected: str) -> None:
+    """10% below SSC0 warns (~25% Evotip load loss); 25% fails (~50% loss)."""
+    m = gs.compute_comparison_metrics(
+        [_target(area=area, rt=5.0)], _baseline_with(area=1000.0, rt=5.0)
+    )
+    assert m["peak_area_verdict"] == expected
+
+
+def test_comparison_thresholds_are_configurable_and_recorded() -> None:
+    from mdqc.config.schema import QcThresholdsConfig
+
+    baseline = _baseline_with(area=1000.0, rt=5.0)
+    targets = [_target(area=1000.0, rt=5.15)]  # 3% RT deviation
+
+    default = gs.compute_comparison_metrics(targets, baseline)
+    assert default["per_peptide"]["Prot|PEP"]["rt_outside_threshold"] is True
+
+    relaxed = gs.compute_comparison_metrics(
+        targets, baseline, QcThresholdsConfig(rt_deviation_pct_max=5.0)
+    )
+    assert relaxed["per_peptide"]["Prot|PEP"]["rt_outside_threshold"] is False
+    # The applied thresholds travel with the payload so the platform can tell
+    # which numbers produced a verdict.
+    assert relaxed["thresholds_applied"]["rt_deviation_pct_max"] == 5.0
+
+
+def test_comparison_skips_peptides_absent_from_baseline() -> None:
+    baseline = _baseline_with(area=1000.0, rt=5.0)
+    other = TargetMetric(
+        target_id="X", peptide_sequence="OTHER", protein_name="Other",
+        peak_area=500.0, retention_time=9.0,
+    )
+    m = gs.compute_comparison_metrics([other], baseline)
+    assert m["targets_compared"] == 0
+    assert m["per_peptide"] == {}
+
+
+def test_comparison_tolerates_baseline_without_dot_products() -> None:
+    """Baselines recorded before v0.5.8 have no dot-product medians."""
+    baseline = {
+        "baseline_id": "bl-old",
+        "per_peptide": {
+            "Prot|PEP": {"peak_area_median": 1000.0, "retention_time_median": 5.0}
+        },
+    }
+    m = gs.compute_comparison_metrics([_target(area=1000.0, rt=5.0, idotp=0.9)], baseline)
+    pep = m["per_peptide"]["Prot|PEP"]
+    assert pep["isotope_dot_product_deviation_pct"] is None
+    assert pep["target_extraction_suspect"] is False
+
+
+def test_comparison_handles_missing_measurements() -> None:
+    m = gs.compute_comparison_metrics([_target()], _baseline_with(area=1000.0, rt=5.0))
+    pep = m["per_peptide"]["Prot|PEP"]
+    assert pep["peak_area_ratio_to_baseline"] is None
+    assert pep["rt_deviation_pct"] is None
+    assert m["median_peak_area_ratio"] is None
+    assert m["peak_area_verdict"] is None
+
+
+def test_comparison_against_evosep_measured_200spd_ratios() -> None:
+    """Replays Evosep's own measured SSC0 area ratios (2026-07-28, slide 70).
+
+    Documents a live calibration finding: the 75% QC B condition medians at
+    -9.5%, which clears the stated 10% warn threshold by half a point and so
+    reads "ok" — the very case the threshold was chosen to catch. Kept at
+    Evosep's number rather than silently retuned; see QcThresholdsConfig.
+    """
+    peps = [
+        "RISGLIYEETR", "ISGLIYEETR", "IGGIGTVPVGR", "GALQNIIPASTGAAK",
+        "TTPSYVAFTDTER", "VSFELFADK", "YISPDQLADLYK", "YRPGTVALR",
+    ]
+    observed = {
+        "100": ([101, 102, 101, 102, 105, 103, 104, 103], "ok"),
+        "75": ([88, 91, 87, 90, 91, 95, 97, 86], "ok"),
+        "50": ([66, 75, 61, 72, 73, 76, 81, 67], "fail"),
+    }
+    baseline = {
+        "baseline_id": "bl",
+        "per_peptide": {
+            f"P|{p}": {"peak_area_median": 1000.0, "retention_time_median": 5.0}
+            for p in peps
+        },
+    }
+    for cond, (vals, expected) in observed.items():
+        targets = [
+            TargetMetric(
+                target_id=p, peptide_sequence=p, protein_name="P",
+                peak_area=10.0 * v, retention_time=5.0,
+            )
+            for p, v in zip(peps, vals, strict=True)
+        ]
+        m = gs.compute_comparison_metrics(targets, baseline)
+        assert m["peak_area_verdict"] == expected, f"{cond}% condition"
+
+    m75 = gs.compute_comparison_metrics(
+        [
+            TargetMetric(
+                target_id=p, peptide_sequence=p, protein_name="P",
+                peak_area=10.0 * v, retention_time=5.0,
+            )
+            for p, v in zip(peps, observed["75"][0], strict=True)
+        ],
+        baseline,
+    )
+    assert m75["median_peak_area_deviation_pct"] == pytest.approx(-9.5)
+
+
+# ─── build_payload_comparison ──────────────────────────────────────────────
+
+
+def test_build_payload_comparison_returns_none_without_baseline(
+    tmp_data_dir: Path,
+) -> None:
+    assert gs.build_payload_comparison(
+        _classification(), _extraction([_pep("PEPA")])
+    ) == (None, None)
+
+
+def test_build_payload_comparison_populates_both_fields(tmp_data_dir: Path) -> None:
+    run_ids = _seed_runs(3, area=1000.0)
+    gs.save_baseline("Astral_0001", 200, run_ids, label="Install")
+
+    context, metrics = gs.build_payload_comparison(
+        _classification(control_type=ControlType.QC_B),
+        _extraction([_pep("PEPA", area=1020.0, rt=5.0)]),
+    )
+
+    assert context is not None and metrics is not None
+    assert context["label"] == "Install"
+    assert context["source_run_count"] == 3
+    assert "Non_reactive_Targets|PEPA" in context["per_peptide"]
+    assert metrics["baseline_id"] == context["baseline_id"]
+    assert metrics["median_peak_area_ratio"] == pytest.approx(1.02)
+
+
+def test_build_payload_comparison_matches_baseline_by_spd(tmp_data_dir: Path) -> None:
+    """A 200 SPD run must not be compared against a 500 SPD baseline."""
+    run_ids = _seed_runs(2, area=1000.0)
+    gs.save_baseline("Astral_0001", 200, run_ids, label="200 only")
+
+    context, metrics = gs.build_payload_comparison(
+        _classification(spd=500), _extraction([_pep("PEPA", area=1000.0)])
+    )
+    assert (context, metrics) == (None, None)
