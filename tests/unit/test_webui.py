@@ -602,13 +602,66 @@ def test_settings_save_updates_retention_fields(
 def test_settings_retention_absent_from_form_keeps_current_value(
     state_with_instruments: _FakeAppState, tmp_data_dir: Path
 ) -> None:
-    """The count input is disabled in local-only mode, so it never submits."""
+    """A retention field missing from the POST must not reset the saved value."""
     state_with_instruments.cfg.spool.completed_retention_count = 999
     app = _build_app(state_with_instruments)
     client = _client(app)
     response = client.post("/settings", data=_base_settings_form())
     assert response.status_code == 200
     assert state_with_instruments.cfg.spool.completed_retention_count == 999
+
+
+def test_retention_count_editable_in_local_only(tmp_path: Path, tmp_data_dir: Path) -> None:
+    """Regression: Stoyan, 2026-07-27 — the field was disabled and unusable.
+
+    Disabling it in local-only mode also stopped an operator raising a value
+    persisted from an older install before switching on cloud upload, at
+    which point the stale cap would immediately start deleting payloads.
+    """
+    cfg = Config(
+        agent=AgentConfig(),
+        cloud=CloudConfig(),  # no token -> local-only
+        skyline=SkylineConfig(),
+        watcher=WatcherConfig(),
+        spool=SpoolConfig(completed_retention_count=10),
+        instruments=[],
+    )
+    spool = Spool(agent_id="agent-test", agent_version="0.1.0", root=tmp_path / "spool")
+    failed = FailedFilesStore(path=tmp_path / "failed.json")
+    state = _FakeAppState(cfg=cfg, spool=spool, failed=failed, activity=_FakeActivityLog())
+    app = _build_app(state)
+    client = _client(app)
+
+    body = client.get("/settings").text
+    assert "disabled" not in body.split('name="completed_retention_count"')[1][:200]
+
+    client.post(
+        "/settings",
+        data=_base_settings_form(
+            api_token="", completed_retention_count="500", max_age_days="30"
+        ),
+    )
+    assert state.cfg.spool.completed_retention_count == 500
+
+
+def test_settings_warns_when_retention_too_low(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    state_with_instruments.cfg.spool.completed_retention_count = 10
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings").text
+    assert "below one night of acquisition" in body
+
+
+def test_settings_no_warning_at_healthy_retention(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    state_with_instruments.cfg.spool.completed_retention_count = 200
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings").text
+    assert "below one night of acquisition" not in body
 
 
 def test_settings_page_shows_retention_panel(

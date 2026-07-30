@@ -452,12 +452,27 @@
   <div class="field-hint" style="margin-bottom:0.8rem;">
     No cloud upload is configured, so <code>spool\completed\</code> holds the
     <strong>only</strong> copy of every payload. It is pruned by age only —
-    the count limit below is ignored until an API token is set.
+    the count limit below is dormant, and takes effect once an API token is set.
   </div>
   {% else %}
   <div class="field-hint" style="margin-bottom:0.8rem;">
-    Payloads are uploaded to Mass Dynamics, so <code>spool\completed\</code> is
-    a local receipt trail and is capped at the newest N files.
+    Payloads are uploaded to Mass Dynamics, so <code>spool\completed\</code>
+    is a local copy for checking against and is capped at the newest N files.
+  </div>
+  {% endif %}
+
+  {% if retention_low %}
+  <div class="banner bad" style="margin-bottom:0.8rem;">
+    ⚠ <strong>Keep newest is set to {{ cfg.spool.completed_retention_count }}</strong> —
+    below one night of acquisition.
+    {% if local_only %}
+    This limit is dormant right now, but it will start deleting payloads as
+    soon as you save an API token. Raise it before you do.
+    {% else %}
+    Payloads beyond the newest {{ cfg.spool.completed_retention_count }} are
+    being deleted every hour.
+    {% endif %}
+    Suggested: {{ retention_low_watermark }} or more.
   </div>
   {% endif %}
 
@@ -465,12 +480,11 @@
     <label>Keep newest</label>
     <div>
       <input type="number" name="completed_retention_count" min="0" step="1"
-             value="{{ cfg.spool.completed_retention_count }}" style="max-width:140px;"
-             {% if local_only %}disabled{% endif %}>
+             value="{{ cfg.spool.completed_retention_count }}" style="max-width:140px;">
       <div class="field-hint">
-        Maximum payloads retained in <code>completed\</code> in cloud mode.
-        A single overnight batch can exceed 150 runs — set this above your
-        busiest expected night.
+        Maximum payloads retained in <code>completed\</code> once cloud upload
+        is configured. A single overnight batch can exceed 150 runs — set this
+        above your busiest expected night.
       </div>
     </div>
   </div>

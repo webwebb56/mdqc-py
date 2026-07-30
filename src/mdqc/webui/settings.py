@@ -31,6 +31,8 @@ router = APIRouter()
 
 VENDORS = [v.value for v in Vendor]
 LOG_LEVELS = ["error", "warn", "info", "debug", "trace"]
+RETENTION_LOW_WATERMARK = 100
+"""Warn below this many retained payloads — under one night of acquisition."""
 PRIORITIES = ["normal", "below_normal", "idle"]
 CONTROL_TYPES = CONTROL_TYPE_VALUES
 
@@ -153,6 +155,13 @@ def _settings_context(
         # Drives the spool-retention copy: local-only means completed/ holds
         # the only copy of every payload and is pruned by age, not by count.
         "local_only": cfg.is_local_only(),
+        # A count this low cannot survive one night of acquisition. Warn even
+        # in local-only mode, where the cap is currently dormant — it goes
+        # live the moment an API token is saved, and a value persisted from
+        # an older install (the default used to be 10) would start deleting
+        # payloads with no further warning.
+        "retention_low": cfg.spool.completed_retention_count < RETENTION_LOW_WATERMARK,
+        "retention_low_watermark": RETENTION_LOW_WATERMARK,
         "saved": saved,
         "error": error,
         "cloud_changed": cloud_changed,
