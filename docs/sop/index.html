@@ -145,7 +145,7 @@ hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0}
       <td>Revision</td><td>A (draft)</td></tr>
   <tr><td>Issue date</td><td><em>[ on release ]</em></td>
       <td>Owner</td><td>Mass Dynamics</td></tr>
-  <tr><td>Applies to</td><td>MD QC agent v0.5.10 and later</td>
+  <tr><td>Applies to</td><td>MD QC agent v0.5.13 and later</td>
       <td>Supersedes</td><td>—</td></tr>
   <tr><td>Related</td><td colspan="3">Evosep Lupo IFU · Evosep Eno User Manual · MD Platform account documentation</td></tr>
 </table>
@@ -327,7 +327,7 @@ hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0}
 
 <h4>Route 1 — Windows installer (recommended)</h4>
 <ol class="steps">
-  <li>Obtain the current installer (<code>mdqc-setup-v0.5.12.exe</code> or later) from Mass Dynamics.</li>
+  <li>Obtain the current installer (<code>mdqc-setup-v0.5.13.exe</code> or later) from Mass Dynamics.</li>
   <li>Run it as administrator and accept the defaults. The installer registers the agent as a Windows service so it starts automatically with the PC.</li>
   <li>Confirm the service <code>MassDynamicsQC</code> appears in Services and is set to start automatically.</li>
 </ol>
@@ -601,7 +601,7 @@ themselves. Two options exist for looking at results on the instrument PC:</p>
   re-baselining.</li>
   <li><strong>The local plots dashboard</strong> — an optional component providing longitudinal
   trend views on the instrument PC. It is installed with
-  <code>pip install --user "mdqc[plots]"</code> and started from the Dashboard, or with
+  <code>pip install --user "mdqc[plots] @ git+https://github.com/webwebb56/mdqc-py.git@main"</code> and started from the Dashboard, or with
   <code>streamlit run &lt;install path&gt;/mdqc/plots/app.py</code>. It reads the stored result
   files directly and needs no network connection.</li>
 </ul>
@@ -643,7 +643,7 @@ themselves. Two options exist for looking at results on the instrument PC:</p>
   </tbody>
 </table>
 </div>
-<p>The ratio panels carry most of the diagnostic value. QC B and SSC₀ receive equivalent loads and both bypass digestion, so QC B relative to SSC₀ reports on LC-MS health. QC A additionally carries digestion, so QC A falling while QC B holds steady points at sample preparation rather than the instrument.</p>
+<p>The ratio panels carry most of the diagnostic value. QC B and SSC₀ are the same material at the same load and both bypass digestion, so QC B relative to SSC₀ reports on LC-MS health. QC A additionally carries digestion, so QC A falling while QC B holds steady points at sample preparation rather than the instrument.</p>
 
 <figure>
   <div class="fig-ph"><div class="fig-id">FIG-16, FIG-17</div>
@@ -665,7 +665,7 @@ themselves. Two options exist for looking at results on the instrument PC:</p>
 <table>
   <thead><tr><th style="width:15rem">Signature</th><th>Interpretation</th></tr></thead>
   <tbody>
-    <tr><td>Retention time within 2% of baseline, dot products within 5%</td><td>Correct target. Any area change is real.</td></tr>
+    <tr><td>Retention time within 2% of baseline, dot products within 5%</td><td>Correct target. Any area change is real. <em>The retention-time limit is being restated as a standard deviation in seconds — see <a href="#annex-4">Annex 4</a>.</em></td></tr>
     <tr><td>Retention time beyond 2% <em>together with</em> depressed dot products or a large area change</td><td>Probably the wrong peak. Flagged as an extraction problem, not a performance problem.</td></tr>
     <tr><td>Retention time shifted, everything else normal</td><td>A chromatographic shift affecting all peptides — check for a column or gradient change rather than a single-peptide issue.</td></tr>
   </tbody>
@@ -1064,7 +1064,7 @@ so expect these bands to be refined.</p>
 <p class="small">Working note for draft preparation; remove before issue.</p>
 
 <h4>Captured</h4>
-<p>Figures 1–13 were captured against MD QC agent v0.5.9 on a seeded demonstration
+<p>Figures 1–13 were captured against MD QC agent v0.5.9–v0.5.13 on a seeded demonstration
 instance — a real agent serving synthetic but representative data. No production
 instrument, customer data or credential appears in any of them. The values shown are
 plausible rather than measured, so any figure a reader might mistake for reference
@@ -1078,6 +1078,7 @@ data should be recaptured on a real instrument before issue.</p>
     <tr><td>8, 9</td><td>A8</td><td>Retention and cloud settings. The token field shows a masked value; no token appears.</td></tr>
     <tr><td>10–12</td><td>A9</td><td>Gold standards. The series deliberately contains one unequilibrated run so the exclusion described in §A9 is visible. Rendered at extended width so all eight peptide columns fit — in normal use the table scrolls horizontally.</td></tr>
     <tr><td>13</td><td>B2</td><td>Dashboard, clipped to the status-at-a-glance region.</td></tr>
+    <tr><td colspan="3" class="small">Figures 10–12 were recaptured on v0.5.13 following the Evosep review: the earlier set used retention times outside the 200 SPD gradient, and the baseline table has since gained a retention-time standard deviation column.</td></tr>
     <tr><td>18</td><td>Annex 4</td><td>QC thresholds panel, captured on v0.5.10 with one value off-default so the recommended-value hint and restore action are visible.</td></tr>
   </tbody>
 </table>
