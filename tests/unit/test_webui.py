@@ -677,6 +677,111 @@ def test_settings_page_shows_retention_panel(
     assert "max_age_days" in body
 
 
+# ─── QC thresholds panel ───────────────────────────────────────────────────
+
+
+def _threshold_form(**overrides: Any) -> dict[str, Any]:
+    """Base settings form carrying the current threshold values."""
+    from mdqc.config.schema import QC_THRESHOLD_FIELDS, QcThresholdsConfig
+
+    shipped = QcThresholdsConfig()
+    form = _base_settings_form()
+    form.update({f: str(getattr(shipped, f)) for f in QC_THRESHOLD_FIELDS})
+    form.update(overrides)
+    return form
+
+
+def test_settings_renders_threshold_panel(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    from mdqc.config.schema import QC_THRESHOLD_FIELDS
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings").text
+    assert "QC thresholds" in body
+    for field in QC_THRESHOLD_FIELDS:
+        assert f'name="{field}"' in body, field
+    assert "Using recommended values" in body
+    assert "provisional" in body
+
+
+def test_settings_marks_customised_thresholds(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    state_with_instruments.cfg.qc_thresholds.peak_area_deviation_pct_warn = 8.0
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings").text
+    assert "Customised" in body
+    # The shipped value stays visible so an operator can see what they moved from.
+    assert "recommended 10.0%" in body
+
+
+def test_settings_saves_new_thresholds(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data=_threshold_form(peak_area_deviation_pct_warn="8.0", rt_deviation_pct_max="1.5"),
+    )
+    assert response.status_code == 200
+    saved = state_with_instruments.cfg.qc_thresholds
+    assert saved.peak_area_deviation_pct_warn == 8.0
+    assert saved.rt_deviation_pct_max == 1.5
+    assert saved.is_default() is False
+
+
+def test_settings_rejects_warn_above_fail_with_a_readable_message(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """The operator must see the rule, not a pydantic report."""
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data=_threshold_form(
+            peak_area_deviation_pct_warn="30.0", peak_area_deviation_pct_fail="25.0"
+        ),
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert "never be reached" in body
+    assert "pydantic" not in body.lower()
+    # Nothing was saved.
+    assert state_with_instruments.cfg.qc_thresholds.is_default() is True
+
+
+def test_settings_restore_returns_shipped_defaults(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """Restore means the published Evosep values, not the last saved ones."""
+    state_with_instruments.cfg.qc_thresholds.peak_area_deviation_pct_warn = 3.0
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data=_threshold_form(peak_area_deviation_pct_warn="3.0", restore_thresholds="1"),
+    )
+    assert response.status_code == 200
+    assert state_with_instruments.cfg.qc_thresholds.is_default() is True
+    assert state_with_instruments.cfg.qc_thresholds.peak_area_deviation_pct_warn == 10.0
+
+
+def test_settings_threshold_absent_from_form_keeps_current_value(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """A form posted without the panel expanded must not reset thresholds."""
+    state_with_instruments.cfg.qc_thresholds.rt_deviation_pct_max = 1.5
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post("/settings", data=_base_settings_form())
+    assert response.status_code == 200
+    assert state_with_instruments.cfg.qc_thresholds.rt_deviation_pct_max == 1.5
+
+
 # ─── Gold standards ────────────────────────────────────────────────────────
 
 

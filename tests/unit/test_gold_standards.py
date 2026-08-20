@@ -368,6 +368,29 @@ def test_comparison_thresholds_are_configurable_and_recorded() -> None:
     assert relaxed["thresholds_applied"]["rt_deviation_pct_max"] == 5.0
 
 
+def test_comparison_reports_whether_thresholds_are_stock() -> None:
+    """The platform cannot infer "customised" from the values alone.
+
+    It would have to know our shipped defaults for every agent version. A warn
+    on a tuned instrument does not mean the same as a warn on a stock one, so
+    the distinction travels with the payload.
+    """
+    from mdqc.config.schema import QcThresholdsConfig
+
+    baseline = _baseline_with(area=1000.0, rt=5.0)
+    targets = [_target(area=1000.0, rt=5.0)]
+
+    stock = gs.compute_comparison_metrics(targets, baseline)
+    assert stock["thresholds_source"] == "default"
+
+    tuned = gs.compute_comparison_metrics(
+        targets, baseline, QcThresholdsConfig(peak_area_deviation_pct_warn=8.0)
+    )
+    assert tuned["thresholds_source"] == "custom"
+    # The values themselves still travel, so a verdict can always be re-derived.
+    assert tuned["thresholds_applied"]["peak_area_deviation_pct_warn"] == 8.0
+
+
 def test_comparison_skips_peptides_absent_from_baseline() -> None:
     baseline = _baseline_with(area=1000.0, rt=5.0)
     other = TargetMetric(

@@ -598,6 +598,7 @@ no baseline keeps emitting absolute values only, so this is additive.
   "targets_extraction_suspect":     0,
   "peak_area_verdict":              "ok",       // ok | warn | fail | null
   "thresholds_applied":             { /* the QcThresholdsConfig used */ },
+  "thresholds_source":              "default",   // default | custom
   "per_peptide": {
     "<protein>|<peptide>": {
       "peptide_sequence":                  "ISGLIYEETR",
@@ -638,7 +639,14 @@ Three things worth knowing on the platform side:
    `thresholds_applied` records the numbers that produced the verdict. Nothing
    here has to be taken on trust: re-derive under your own thresholds, or
    ignore the flags and use the deviations directly.
-3. **Known boundary case.** Against Evosep's own 200 SPD numbers, the 75% QC B
+3. **`thresholds_source` tells you whether an instrument has been tuned** (added
+   v0.5.10). Thresholds are editable in the agent's Settings page, because Evosep
+   asked for them to be adjustable in the field without a release. That means a
+   `warn` from a tuned instrument does not mean the same thing as a `warn` from a
+   stock one, and the values alone can't tell you which you have without tracking
+   our shipped defaults per agent version. Worth surfacing on any fleet view where
+   instruments are compared side by side.
+4. **Known boundary case.** Against Evosep's own 200 SPD numbers, the 75% QC B
    condition medians at −9.5% and therefore reads `ok`, clearing the 10% warn
    threshold by half a point — the case that threshold exists to catch. Left
    at Evosep's stated value pending the multi-platform data; ~8.0 would catch

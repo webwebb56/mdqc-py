@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mdqc.config import defaults
 from mdqc.types import Vendor
@@ -158,6 +158,22 @@ class PeptideClassRule(BaseModel):
         return v
 
 
+QC_THRESHOLD_FIELDS = (
+    "rt_deviation_pct_max",
+    "dot_product_deviation_pct_max",
+    "dot_product_deviation_pct_suspect",
+    "peak_area_deviation_pct_suspect",
+    "peak_area_deviation_pct_warn",
+    "peak_area_deviation_pct_fail",
+)
+"""The tunable thresholds, in the order the Settings page presents them.
+
+Module-level rather than a class attribute: pydantic converts underscore-
+prefixed class attributes into private attributes, which are unreadable from
+the class itself and so unusable for driving form parsing.
+"""
+
+
 class QcThresholdsConfig(BaseModel):
     """Thresholds for interpreting a run against its SSC0 gold-standard baseline.
 
@@ -199,19 +215,54 @@ class QcThresholdsConfig(BaseModel):
     peak_area_deviation_pct_warn: float = 10.0
     peak_area_deviation_pct_fail: float = 25.0
 
-    @field_validator(
-        "rt_deviation_pct_max",
-        "dot_product_deviation_pct_max",
-        "dot_product_deviation_pct_suspect",
-        "peak_area_deviation_pct_suspect",
-        "peak_area_deviation_pct_warn",
-        "peak_area_deviation_pct_fail",
-    )
+    @field_validator(*QC_THRESHOLD_FIELDS)
     @classmethod
     def _non_negative(cls, v: float) -> float:
         if v < 0:
             raise ValueError("qc_thresholds values must be non-negative percentages")
         return v
+
+    @model_validator(mode="after")
+    def _check_band_ordering(self) -> QcThresholdsConfig:
+        """Reject orderings that silently disable a band.
+
+        ``peak_area_verdict`` tests fail before warn, so a warn threshold above
+        the fail threshold makes the warn band unreachable — no run would ever
+        warn, which looks indistinguishable from everything passing. The
+        dot-product pair has the same trap: the "normal" bound must sit below
+        the "suspect" bound or the two describe overlapping states.
+
+        Enforced on the model rather than in the web UI so a hand-edited
+        config.toml is caught at load time too.
+        """
+        if self.peak_area_deviation_pct_warn > self.peak_area_deviation_pct_fail:
+            raise ValueError(
+                "peak_area_deviation_pct_warn "
+                f"({self.peak_area_deviation_pct_warn}) must not exceed "
+                f"peak_area_deviation_pct_fail ({self.peak_area_deviation_pct_fail}) "
+                "— the warn band would never be reached"
+            )
+        if self.dot_product_deviation_pct_max > self.dot_product_deviation_pct_suspect:
+            raise ValueError(
+                "dot_product_deviation_pct_max "
+                f"({self.dot_product_deviation_pct_max}) must not exceed "
+                f"dot_product_deviation_pct_suspect "
+                f"({self.dot_product_deviation_pct_suspect})"
+            )
+        return self
+
+    def is_default(self) -> bool:
+        """True when every threshold still holds its shipped value.
+
+        Emitted with each payload so the platform can distinguish an
+        instrument running stock thresholds from one an engineer has tuned,
+        without having to know our shipped defaults for every agent version.
+        """
+        shipped = QcThresholdsConfig()
+        return all(
+            getattr(self, name) == getattr(shipped, name)
+            for name in QC_THRESHOLD_FIELDS
+        )
 
 
 class ClassifierRule(BaseModel):

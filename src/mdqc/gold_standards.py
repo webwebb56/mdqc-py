@@ -420,7 +420,12 @@ def compute_comparison_metrics(
         "median_rt_deviation_pct": statistics.median(rt_devs) if rt_devs else None,
         "targets_extraction_suspect": suspect_count,
         "peak_area_verdict": area_verdict,
+        # Both the values and whether they are stock. The platform cannot
+        # infer "customised" from the values alone without tracking our
+        # shipped defaults per agent version, and it needs to know: a warn on
+        # a tuned instrument does not mean the same as a warn on a stock one.
         "thresholds_applied": th.model_dump(),
+        "thresholds_source": "default" if th.is_default() else "custom",
         "per_peptide": per_peptide,
     }
 

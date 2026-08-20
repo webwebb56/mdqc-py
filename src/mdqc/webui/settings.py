@@ -11,15 +11,18 @@ from typing import Any
 import tomli_w
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import ValidationError
 
 from mdqc.config import defaults, paths
 from mdqc.config.schema import (
     CONTROL_TYPE_VALUES,
+    QC_THRESHOLD_FIELDS,
     AgentConfig,
     ClassifierRule,
     CloudConfig,
     Config,
     InstrumentConfig,
+    QcThresholdsConfig,
 )
 from mdqc.extractor.skyline import find_skyline
 from mdqc.types import Vendor
@@ -83,6 +86,67 @@ def _status_cloud(cfg: Config) -> SectionStatus:
     if cfg.cloud.api_token:
         return SectionStatus("ok", "Bearer token configured")
     return SectionStatus("muted", "Local-only (no upload)")
+
+
+def _parse_float(raw: Any, fallback: float) -> float:
+    """Parse a form percentage, falling back to the current value when unusable."""
+    try:
+        return float(str(raw).strip())
+    except (TypeError, ValueError):
+        return fallback
+
+
+THRESHOLD_GROUPS: list[dict[str, Any]] = [
+    {
+        "title": "Target extraction",
+        "question": (
+            "Was the correct peak measured? A wrongly integrated peak and a genuine "
+            "performance drop look identical in peak area alone."
+        ),
+        "fields": [
+            ("rt_deviation_pct_max", "Retention time deviation",
+             "Beyond this, the peak may not be the intended target."),
+            ("dot_product_deviation_pct_max", "Dot product deviation — normal",
+             "Within this, extraction is considered sound."),
+            ("dot_product_deviation_pct_suspect", "Dot product deviation — suspect",
+             "Beyond this, combined with retention-time drift, flags a wrong peak."),
+            ("peak_area_deviation_pct_suspect", "Peak area deviation — suspect",
+             "Alternative corroborating signal for a wrong peak."),
+        ],
+    },
+    {
+        "title": "Signal level",
+        "question": (
+            "Is the run performing? The response is buffered — a modest change in peak "
+            "area can reflect a much larger change in material reaching the column."
+        ),
+        "fields": [
+            ("peak_area_deviation_pct_warn", "Warn at",
+             "Roughly a 25% reduction in material reaching the column."),
+            ("peak_area_deviation_pct_fail", "Fail at",
+             "Roughly a 50% reduction in material reaching the column."),
+        ],
+    },
+]
+
+
+def _thresholds_ctx(cfg: Config) -> list[dict[str, Any]]:
+    """Render-ready threshold groups with current and shipped values."""
+    shipped = QcThresholdsConfig()
+    groups = []
+    for group in THRESHOLD_GROUPS:
+        fields = [
+            {
+                "name": name,
+                "label": label,
+                "hint": hint,
+                "value": getattr(cfg.qc_thresholds, name),
+                "default": getattr(shipped, name),
+            }
+            for name, label, hint in group["fields"]
+        ]
+        groups.append({**group, "fields": fields})
+    return groups
 
 
 def _parse_int(raw: Any, fallback: int) -> int:
@@ -162,6 +226,8 @@ def _settings_context(
         # payloads with no further warning.
         "retention_low": cfg.spool.completed_retention_count < RETENTION_LOW_WATERMARK,
         "retention_low_watermark": RETENTION_LOW_WATERMARK,
+        "threshold_groups": _thresholds_ctx(cfg),
+        "thresholds_are_default": cfg.qc_thresholds.is_default(),
         "saved": saved,
         "error": error,
         "cloud_changed": cloud_changed,
@@ -260,6 +326,21 @@ async def settings_post(request: Request) -> HTMLResponse:
             form.get("max_age_days"), state.cfg.spool.max_age_days
         )
 
+        # "Restore recommended values" resets to the shipped defaults rather
+        # than to whatever was last saved — the point of the button is to get
+        # back to Evosep's published numbers from an unknown state.
+        if "restore_thresholds" in form:
+            qc_thresholds = QcThresholdsConfig()
+        else:
+            qc_thresholds = QcThresholdsConfig(
+                **{
+                    name: _parse_float(
+                        form.get(name), getattr(state.cfg.qc_thresholds, name)
+                    )
+                    for name in QC_THRESHOLD_FIELDS
+                }
+            )
+
         # Rebuild from the CURRENT config, overriding only what this form
         # actually renders. Constructing bare SkylineConfig()/SpoolConfig()/
         # Config() here would silently reset every field without a form
@@ -288,6 +369,7 @@ async def settings_post(request: Request) -> HTMLResponse:
             instruments=instruments,
             classifier_rules=classifier_rules,
             peptide_classes=prev.peptide_classes,
+            qc_thresholds=qc_thresholds,
         )
 
         # The running Uploader was built once at startup from a snapshot of
@@ -304,6 +386,13 @@ async def settings_post(request: Request) -> HTMLResponse:
         state.cfg = cfg
         log.info("settings_saved", extra={"path": str(paths.config_path()), "instruments": len(instruments)})
 
+    except ValidationError as exc:
+        # Surface the rule that was broken, not pydantic's full report — the
+        # threshold ordering checks exist to be read by an operator.
+        log.warning("settings_save_failed", extra={"error": str(exc)})
+        error = "; ".join(
+            str(e.get("msg", "")).removeprefix("Value error, ") for e in exc.errors()
+        ) or str(exc)
     except Exception as exc:
         log.warning("settings_save_failed", extra={"error": str(exc)})
         error = str(exc)
