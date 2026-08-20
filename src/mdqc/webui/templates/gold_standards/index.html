@@ -105,6 +105,13 @@
     <h2 style="margin:0;">SSC0 runs</h2>
     <span class="muted" style="margin-left:auto; font-size:0.85em;" id="gs-selected-summary"></span>
   </div>
+  <p class="muted" style="margin:0 0 0.5rem; font-size:0.85em;">
+    <strong>Peak area</strong> per peptide, one row per run. Cells are shaded where a value sits
+    outside the spread of the currently selected runs &mdash;
+    <span style="background:#fdf3e0; padding:0 0.3rem;">amber</span> beyond 1 SD,
+    <span style="background:#fdece9; outline:1px solid var(--bad); padding:0 0.3rem;">red</span>
+    beyond 2 SD. Colours below identify each peptide and are reused in the retention-time plot.
+  </p>
   <div class="gs-legend" id="gs-legend"></div>
   <div class="gs-table-wrap">
     <table class="gs-runs" id="gs-runs-table"></table>
@@ -113,6 +120,10 @@
 
 <section class="panel">
   <h2>Retention time</h2>
+  <p class="muted" style="margin:0 0 0.5rem; font-size:0.85em;">
+    Each mark is one peptide's retention time, coloured as above. A run whose marks sit
+    away from the rest has shifted &mdash; commonly a column that has not equilibrated.
+  </p>
   <div id="gs-rt-plot"></div>
 </section>
 
@@ -308,8 +319,13 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
 
   function renderBaselineTable(s) {
     const table = document.getElementById('gs-baseline-table');
-    let head = '<thead><tr><th>Peptide</th><th class="num">Median area</th><th class="num">CV%</th>' +
-      '<th class="num">Median RT</th><th class="num">n</th></tr></thead>';
+    // Peak area spread is reported as CV%; retention time as standard
+    // deviation in seconds, which is the convention in chromatography — a
+    // percentage of an absolute retention time is not comparable between
+    // peptides eluting at different points in the gradient.
+    let head = '<thead><tr><th>Peptide</th><th class="num">Median area</th><th class="num">Area CV%</th>' +
+      '<th class="num">Median RT (min)</th><th class="num">RT sd (s)</th>' +
+      '<th class="num">n</th></tr></thead>';
     let body = '<tbody>';
     peptideOrder.forEach((key, i) => {
       const st = s[key];
@@ -319,6 +335,7 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
       body += '<td class="num">' + fmtNum(st.areaMedian, 0) + '</td>';
       body += '<td class="num">' + (cv !== null ? cv.toFixed(1) + '%' : '—') + '</td>';
       body += '<td class="num">' + (st.rtMedian !== null ? st.rtMedian.toFixed(2) : '—') + '</td>';
+      body += '<td class="num">' + (st.rtSd !== null ? (st.rtSd * 60).toFixed(1) : '—') + '</td>';
       body += '<td class="num">' + st.n + '</td>';
       body += '</tr>';
     });
