@@ -232,9 +232,16 @@ def compute_baseline_preview(
             )
             tm.peptide_class = pep.get("peptide_class")
             stand_ins.append(tm)
-        kept_keys = {m.target_id for m in filter_for_baseline(stand_ins, rules)}
+        kept = {m.target_id for m in filter_for_baseline(stand_ins, rules)}
     else:
-        kept_keys = set(all_peps.keys())
+        kept = set(all_peps.keys())
+
+    # Emit in first-appearance order rather than set order. Python randomises
+    # string hashing per process, so iterating the set directly gives a
+    # different key order on every run — which lands in the stored baseline and
+    # in the baseline_context of every payload, making diffs between payloads
+    # unreadable for no reason.
+    kept_keys = [k for k in all_peps if k in kept]
 
     result: dict[str, BaselinePeptideStat] = {}
     for key in kept_keys:

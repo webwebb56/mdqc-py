@@ -368,6 +368,35 @@ def test_comparison_thresholds_are_configurable_and_recorded() -> None:
     assert relaxed["thresholds_applied"]["rt_deviation_pct_max"] == 5.0
 
 
+def test_baseline_peptide_order_is_stable() -> None:
+    """Baseline keys must follow first appearance, not set-iteration order.
+
+    Python randomises string hashing per process, so iterating the kept-key
+    set gave a different order on every run. That order lands in the stored
+    baseline and in the baseline_context of every payload, which made diffs
+    between two payloads unreadable.
+    """
+    runs = [
+        {
+            "run_id": "r1",
+            "peptides": {
+                f"Prot|PEP{i}": {
+                    "protein_name": "Prot",
+                    "peptide_sequence": f"PEP{i}",
+                    "peptide_class": None,
+                    "peptide_class_purpose": None,
+                    "retention_time": 1.0 + i,
+                    "peak_area": 1000.0 + i,
+                }
+                for i in range(12)
+            },
+        }
+    ]
+    expected = [f"Prot|PEP{i}" for i in range(12)]
+    stats = gs.compute_baseline_preview(runs, {"r1"})
+    assert list(stats) == expected
+
+
 def test_comparison_reports_whether_thresholds_are_stock() -> None:
     """The platform cannot infer "customised" from the values alone.
 

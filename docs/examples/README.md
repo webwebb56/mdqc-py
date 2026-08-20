@@ -2,7 +2,7 @@
 
 Reference payloads for the MD platform ingest team.
 
-## Current set — generated from mdqc v0.5.11
+## Current set — generated from mdqc v0.5.13
 
 The nine `payload_0*.json` files are produced by running the real
 `Spool.enqueue` and `gold_standards` code paths, so their shape is exactly
@@ -10,22 +10,41 @@ what an agent emits — not hand-written. Values are synthetic and modelled on
 the Evosep diagnostic panel at 200 SPD (eight targets, ~6.4 min gradient).
 No customer data or credentials appear in any of them.
 
-Regenerate with `scripts` — see the generator referenced in the release
-commit; re-run it after any schema change so these do not drift.
+Regenerate with:
+
+```
+python scripts/gen_example_payloads.py
+```
+
+Re-run after any schema change or change to the verdict logic. The generator
+is deterministic — same code in, byte-identical files out — so a diff shows
+only what genuinely moved.
 
 | File | Covers |
 |---|---|
 | `payload_01_ssc0_baseline_source.json` | SSC₀ — one of the runs the baseline was built from |
 | `payload_02_qcb_healthy.json` | QC B at full load → `peak_area_verdict: "ok"` |
-| `payload_03_qcb_75pct_warn.json` | QC B at 75% → `"warn"`, `dilution_pct: 75` |
+| `payload_03_qcb_75pct_boundary.json` | QC B at 75% → **`"ok"`**, `dilution_pct: 75` — the boundary case, see below |
 | `payload_04_qcb_50pct_fail.json` | QC B at 50% → `"fail"`, `dilution_pct: 50` |
 | `payload_05_mis_extracted_target.json` | One target wrongly integrated → `target_extraction_suspect: true` on that peptide |
-| `payload_06_custom_thresholds.json` | Same run as 03, tuned thresholds → `thresholds_source: "custom"` |
+| `payload_06_custom_thresholds.json` | Same run as 03 on tuned thresholds → **`"warn"`**, `thresholds_source: "custom"` |
 | `payload_07_qca.json` | QC A → verdict **withheld**, see below |
 | `payload_08_no_baseline.json` | No baseline recorded → `baseline_context` and `comparison_metrics` both `null` |
 | `payload_09_failed_extraction.json` | Failed extraction — still spooled, empty `target_metrics` |
 
-### Four things worth knowing before building against these
+### Payloads 03 and 06 are the same run, and disagree
+
+Both carry a median deviation of −9.5%. On stock thresholds that reads `ok`,
+because it clears the 10% warn band by half a percentage point. On thresholds
+tuned to warn at 8% the same run reads `warn`.
+
+This is the known boundary case: the 75% load condition is exactly what the
+10% figure was chosen to catch, and it does not catch it. Evosep is revising
+the thresholds from multi-platform data. The pair is included deliberately —
+it is the clearest demonstration of why a verdict cannot be interpreted
+without knowing which thresholds produced it.
+
+### Five things worth knowing before building against these
 
 **1. `comparison_metrics` and `baseline_context` are null until a baseline
 exists.** An instrument is in that state from installation until an engineer
@@ -48,7 +67,11 @@ instrument does not mean the same as a `warn` from a stock one, and the values
 alone cannot tell you which you have without tracking our shipped defaults per
 agent version. Worth surfacing anywhere instruments are compared side by side.
 
-**4. Every raw input is emitted alongside every derived flag.** Nothing here
+**4. Peptide order is stable.** Keys in `baseline_context.per_peptide` and
+`comparison_metrics.per_peptide` follow the order peptides first appear in the
+method, not hash order, so two payloads can be diffed meaningfully.
+
+**5. Every raw input is emitted alongside every derived flag.** Nothing here
 has to be taken on trust: `thresholds_applied` records the exact values that
 produced a verdict, and the per-peptide deviations are all present, so the
 platform can re-derive under its own policy or ignore the flags entirely.
