@@ -455,6 +455,126 @@
     </div>
   </section>
 
+  {# ── Payload retention ──────────────────────────────────────────────── #}
+  <section class="panel">
+    <div class="section-heading">
+      <span class="dot {% if local_only %}muted{% else %}ok{% endif %}">●</span>
+      <h2>Payload retention</h2>
+      <span class="status-msg muted">
+        {% if local_only %}Local-only — kept by age{% else %}Cloud — kept by count{% endif %}
+      </span>
+    </div>
+
+    {% if local_only %}
+    <div class="field-hint" style="margin-bottom:0.8rem;">
+      No cloud upload is configured, so <code>spool\completed\</code> holds the
+      <strong>only</strong> copy of every payload. It is pruned by age only —
+      the count limit below is dormant, and takes effect once an API token is set.
+    </div>
+    {% else %}
+    <div class="field-hint" style="margin-bottom:0.8rem;">
+      Payloads are uploaded to Mass Dynamics, so <code>spool\completed\</code>
+      is a local copy for checking against and is capped at the newest N files.
+    </div>
+    {% endif %}
+
+    {% if retention_low %}
+    <div class="banner bad" style="margin-bottom:0.8rem;">
+      ⚠ <strong>Keep newest is set to {{ cfg.spool.completed_retention_count }}</strong> —
+      below one night of acquisition.
+      {% if local_only %}
+      This limit is dormant right now, but it will start deleting payloads as
+      soon as you save an API token. Raise it before you do.
+      {% else %}
+      Payloads beyond the newest {{ cfg.spool.completed_retention_count }} are
+      being deleted every hour.
+      {% endif %}
+      Suggested: {{ retention_low_watermark }} or more.
+    </div>
+    {% endif %}
+
+    <div class="field-row">
+      <label>Keep newest</label>
+      <div>
+        <input type="number" name="completed_retention_count" min="0" step="1"
+               value="{{ cfg.spool.completed_retention_count }}" style="max-width:140px;">
+        <div class="field-hint">
+          Maximum payloads retained in <code>completed\</code> once cloud upload
+          is configured. A single overnight batch can exceed 150 runs — set this
+          above your busiest expected night.
+        </div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label>Keep for (days)</label>
+      <div>
+        <input type="number" name="max_age_days" min="1" step="1"
+               value="{{ cfg.spool.max_age_days }}" style="max-width:140px;">
+        <div class="field-hint">
+          Payloads older than this are removed. In local-only mode this is the
+          only thing bounding <code>completed\</code>.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── QC thresholds ──────────────────────────────────────────────────── #}
+  <section class="panel">
+    <details class="thresholds"{% if not thresholds_are_default %} open{% endif %}>
+      <summary>
+        <span class="dot {% if thresholds_are_default %}muted{% else %}ok{% endif %}">●</span>
+        <strong>QC thresholds</strong>
+        <span class="status-msg muted">
+          {% if thresholds_are_default %}Using recommended values{% else %}Customised{% endif %}
+        </span>
+      </summary>
+
+      <div class="threshold-body">
+        <div class="threshold-prov">
+          These decide when a run is flagged, relative to its SSC<sub>0</sub> baseline. The current
+          values come from Evosep's timsTOF HT dilution series (July 2026) and are
+          <strong>provisional</strong> — the same series is being repeated on further platforms.
+          Treat them as guidance for investigation, not as an instrument acceptance specification.
+        </div>
+
+        {% for group in threshold_groups %}
+        <div class="threshold-group">{{ group.title }}</div>
+        <p class="field-hint" style="margin:0 0 .5rem;">{{ group.question }}</p>
+        {% for f in group.fields %}
+        <div class="field-row threshold-row">
+          <label for="{{ f.name }}">{{ f.label }}</label>
+          <div>
+            <div class="threshold-input">
+              <input type="number" id="{{ f.name }}" name="{{ f.name }}"
+                     min="0" step="0.1" value="{{ f.value }}">
+              <span class="pct">%</span>
+              {% if f.value != f.default %}
+              <span class="threshold-changed">recommended {{ f.default }}%</span>
+              {% endif %}
+            </div>
+            <div class="field-hint">{{ f.hint }}</div>
+          </div>
+        </div>
+        {% endfor %}
+        {% endfor %}
+
+        <div style="margin-top:1rem;">
+          <button type="submit" name="restore_thresholds" value="1" class="btn"
+                  {% if thresholds_are_default %}disabled{% endif %}>
+            Restore recommended values
+          </button>
+        </div>
+
+        <div class="field-hint" style="margin-top:.9rem; border-top:1px solid var(--border); padding-top:.7rem;">
+          Changes apply to the <strong>next run</strong> — no restart needed, unlike cloud settings.
+          The values in force are written into every payload, so any result can be traced back to
+          the thresholds that produced it.
+        </div>
+      </div>
+    </details>
+  </section>
+
   <div class="save-bar">
     <button type="submit" class="btn btn-primary">Save settings</button>
     <span class="muted" style="font-size:0.85em;">
@@ -463,126 +583,6 @@
   </div>
 
 </form>
-
-{# ── Payload retention ──────────────────────────────────────────────── #}
-<section class="panel">
-  <div class="section-heading">
-    <span class="dot {% if local_only %}muted{% else %}ok{% endif %}">●</span>
-    <h2>Payload retention</h2>
-    <span class="status-msg muted">
-      {% if local_only %}Local-only — kept by age{% else %}Cloud — kept by count{% endif %}
-    </span>
-  </div>
-
-  {% if local_only %}
-  <div class="field-hint" style="margin-bottom:0.8rem;">
-    No cloud upload is configured, so <code>spool\completed\</code> holds the
-    <strong>only</strong> copy of every payload. It is pruned by age only —
-    the count limit below is dormant, and takes effect once an API token is set.
-  </div>
-  {% else %}
-  <div class="field-hint" style="margin-bottom:0.8rem;">
-    Payloads are uploaded to Mass Dynamics, so <code>spool\completed\</code>
-    is a local copy for checking against and is capped at the newest N files.
-  </div>
-  {% endif %}
-
-  {% if retention_low %}
-  <div class="banner bad" style="margin-bottom:0.8rem;">
-    ⚠ <strong>Keep newest is set to {{ cfg.spool.completed_retention_count }}</strong> —
-    below one night of acquisition.
-    {% if local_only %}
-    This limit is dormant right now, but it will start deleting payloads as
-    soon as you save an API token. Raise it before you do.
-    {% else %}
-    Payloads beyond the newest {{ cfg.spool.completed_retention_count }} are
-    being deleted every hour.
-    {% endif %}
-    Suggested: {{ retention_low_watermark }} or more.
-  </div>
-  {% endif %}
-
-  <div class="field-row">
-    <label>Keep newest</label>
-    <div>
-      <input type="number" name="completed_retention_count" min="0" step="1"
-             value="{{ cfg.spool.completed_retention_count }}" style="max-width:140px;">
-      <div class="field-hint">
-        Maximum payloads retained in <code>completed\</code> once cloud upload
-        is configured. A single overnight batch can exceed 150 runs — set this
-        above your busiest expected night.
-      </div>
-    </div>
-  </div>
-
-  <div class="field-row">
-    <label>Keep for (days)</label>
-    <div>
-      <input type="number" name="max_age_days" min="1" step="1"
-             value="{{ cfg.spool.max_age_days }}" style="max-width:140px;">
-      <div class="field-hint">
-        Payloads older than this are removed. In local-only mode this is the
-        only thing bounding <code>completed\</code>.
-      </div>
-    </div>
-  </div>
-</section>
-
-{# ── QC thresholds ──────────────────────────────────────────────────── #}
-<section class="panel">
-  <details class="thresholds"{% if not thresholds_are_default %} open{% endif %}>
-    <summary>
-      <span class="dot {% if thresholds_are_default %}muted{% else %}ok{% endif %}">●</span>
-      <strong>QC thresholds</strong>
-      <span class="status-msg muted">
-        {% if thresholds_are_default %}Using recommended values{% else %}Customised{% endif %}
-      </span>
-    </summary>
-
-    <div class="threshold-body">
-      <div class="threshold-prov">
-        These decide when a run is flagged, relative to its SSC<sub>0</sub> baseline. The current
-        values come from Evosep's timsTOF HT dilution series (July 2026) and are
-        <strong>provisional</strong> — the same series is being repeated on further platforms.
-        Treat them as guidance for investigation, not as an instrument acceptance specification.
-      </div>
-
-      {% for group in threshold_groups %}
-      <div class="threshold-group">{{ group.title }}</div>
-      <p class="field-hint" style="margin:0 0 .5rem;">{{ group.question }}</p>
-      {% for f in group.fields %}
-      <div class="field-row threshold-row">
-        <label for="{{ f.name }}">{{ f.label }}</label>
-        <div>
-          <div class="threshold-input">
-            <input type="number" id="{{ f.name }}" name="{{ f.name }}"
-                   min="0" step="0.1" value="{{ f.value }}">
-            <span class="pct">%</span>
-            {% if f.value != f.default %}
-            <span class="threshold-changed">recommended {{ f.default }}%</span>
-            {% endif %}
-          </div>
-          <div class="field-hint">{{ f.hint }}</div>
-        </div>
-      </div>
-      {% endfor %}
-      {% endfor %}
-
-      <div style="margin-top:1rem;">
-        <button type="submit" name="restore_thresholds" value="1" class="btn"
-                {% if thresholds_are_default %}disabled{% endif %}>
-          Restore recommended values
-        </button>
-      </div>
-
-      <div class="field-hint" style="margin-top:.9rem; border-top:1px solid var(--border); padding-top:.7rem;">
-        Changes apply to the <strong>next run</strong> — no restart needed, unlike cloud settings.
-        The values in force are written into every payload, so any result can be traced back to
-        the thresholds that produced it.
-      </div>
-    </div>
-  </details>
-</section>
 
 {# ── Maintenance ────────────────────────────────────────────────────── #}
 <section class="panel">

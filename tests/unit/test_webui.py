@@ -677,6 +677,58 @@ def test_settings_page_shows_retention_panel(
     assert "max_age_days" in body
 
 
+def test_every_settings_field_is_inside_the_form(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """Regression: Stoyan, 2026-08-06 — retention edits reverted on save.
+
+    The Payload retention and QC thresholds panels had been placed after
+    ``</form>``, so their inputs never submitted and the POST handler fell
+    back to the stored values. Every other test posts to /settings directly
+    with a hand-built dict, which bypasses the form entirely and so cannot
+    see this class of fault at all.
+    """
+    import re
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings").text
+
+    # Rows added by JS land inside containers that are themselves in the form,
+    # so the markup to check is everything outside <script>.
+    markup = re.sub(r"<script\b.*?</script>", "", body, flags=re.S | re.I)
+    start, end = markup.index("<form "), markup.index("</form>")
+
+    stray = [
+        m.group(1)
+        for m in re.finditer(
+            r'<(?:input|select|textarea)[^>]*\bname="([^"]+)"', markup
+        )
+        if not start < m.start() < end
+    ]
+    assert not stray, f"fields outside the form will never submit: {stray}"
+
+
+def test_settings_submit_button_is_inside_the_form(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """A submit button outside the form silently does nothing when clicked."""
+    import re
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    markup = re.sub(
+        r"<script\b.*?</script>", "", client.get("/settings").text, flags=re.S | re.I
+    )
+    start, end = markup.index("<form "), markup.index("</form>")
+    stray = [
+        m.start()
+        for m in re.finditer(r'<button[^>]*type="submit"', markup)
+        if not start < m.start() < end
+    ]
+    assert not stray, "a submit button sits outside the form"
+
+
 # ─── QC thresholds panel ───────────────────────────────────────────────────
 
 
