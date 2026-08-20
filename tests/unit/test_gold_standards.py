@@ -391,6 +391,46 @@ def test_comparison_reports_whether_thresholds_are_stock() -> None:
     assert tuned["thresholds_applied"]["peak_area_deviation_pct_warn"] == 8.0
 
 
+@pytest.mark.parametrize(
+    ("control_type", "expect_verdict"),
+    [
+        (ControlType.SSC0, True),
+        (ControlType.QC_B, True),
+        (ControlType.QC_A, False),
+        (ControlType.BLANK, False),
+    ],
+)
+def test_area_verdict_only_where_the_expected_ratio_is_one(
+    control_type: ControlType, expect_verdict: bool
+) -> None:
+    """QC A runs ~6x the SSC0 load, so QC B's bands would fail every one.
+
+    Surfaced while generating reference payloads for the platform team: a QC A
+    run scored 5.88x baseline and came back "fail", which would have marked
+    every process control as failing in the app.
+    """
+    baseline = _baseline_with(area=1000.0, rt=5.0)
+    targets = [_target(area=5900.0, rt=5.0)]  # ~6x, as QC A is by design
+    m = gs.compute_comparison_metrics(targets, baseline, control_type=control_type)
+
+    if expect_verdict:
+        assert m["peak_area_verdict"] == "fail"
+        assert m["peak_area_verdict_note"] is None
+    else:
+        assert m["peak_area_verdict"] is None
+        assert control_type.value in m["peak_area_verdict_note"]
+    # The underlying ratio is emitted either way — only the judgement is withheld.
+    assert m["median_peak_area_ratio"] == pytest.approx(5.9)
+
+
+def test_area_verdict_still_produced_when_control_type_unknown() -> None:
+    """Callers that don't pass a control type keep the previous behaviour."""
+    m = gs.compute_comparison_metrics(
+        [_target(area=1000.0, rt=5.0)], _baseline_with(area=1000.0, rt=5.0)
+    )
+    assert m["peak_area_verdict"] == "ok"
+
+
 def test_comparison_skips_peptides_absent_from_baseline() -> None:
     baseline = _baseline_with(area=1000.0, rt=5.0)
     other = TargetMetric(

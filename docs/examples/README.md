@@ -1,16 +1,73 @@
 # mdqc payload examples
 
-Reference payloads for the MD platform ingest team. Generated from real
-pilot data, sanitized (usernames + watch-folder paths replaced with
-placeholders, `agent_id` replaced with a demo string).
+Reference payloads for the MD platform ingest team.
 
-The canonical schema is documented in [../../update.md §6](../../update.md).
-Source of truth is [`src/mdqc/types.py`](../../src/mdqc/types.py) (the
-`QcPayload` / `TargetMetric` / `RunMetrics` dataclasses) and the payload
-construction in [`src/mdqc/spool/store.py`](../../src/mdqc/spool/store.py)
-(method `Spool.enqueue`, lines ~137-210).
+## Current set — generated from mdqc v0.5.11
 
-## Files
+The nine `payload_0*.json` files are produced by running the real
+`Spool.enqueue` and `gold_standards` code paths, so their shape is exactly
+what an agent emits — not hand-written. Values are synthetic and modelled on
+the Evosep diagnostic panel at 200 SPD (eight targets, ~6.4 min gradient).
+No customer data or credentials appear in any of them.
+
+Regenerate with `scripts` — see the generator referenced in the release
+commit; re-run it after any schema change so these do not drift.
+
+| File | Covers |
+|---|---|
+| `payload_01_ssc0_baseline_source.json` | SSC₀ — one of the runs the baseline was built from |
+| `payload_02_qcb_healthy.json` | QC B at full load → `peak_area_verdict: "ok"` |
+| `payload_03_qcb_75pct_warn.json` | QC B at 75% → `"warn"`, `dilution_pct: 75` |
+| `payload_04_qcb_50pct_fail.json` | QC B at 50% → `"fail"`, `dilution_pct: 50` |
+| `payload_05_mis_extracted_target.json` | One target wrongly integrated → `target_extraction_suspect: true` on that peptide |
+| `payload_06_custom_thresholds.json` | Same run as 03, tuned thresholds → `thresholds_source: "custom"` |
+| `payload_07_qca.json` | QC A → verdict **withheld**, see below |
+| `payload_08_no_baseline.json` | No baseline recorded → `baseline_context` and `comparison_metrics` both `null` |
+| `payload_09_failed_extraction.json` | Failed extraction — still spooled, empty `target_metrics` |
+
+### Four things worth knowing before building against these
+
+**1. `comparison_metrics` and `baseline_context` are null until a baseline
+exists.** An instrument is in that state from installation until an engineer
+saves a gold standard on the agent's Gold Standards page. Payload 08 is that
+state — treat it as normal, not as an error.
+
+**2. `peak_area_verdict` is withheld for QC A and blanks.** The warn/fail
+bands measure deviation from a ratio of 1.0, which only holds where the run
+should match the SSC₀ reference — SSC₀ itself and QC B. QC A is ~1 µg lysate
+against a 50 ng reference, roughly 6× on column, and the exact figure is still
+to be established. Scoring it against QC B's bands marked every QC A run as
+failing. When the verdict is withheld, `peak_area_verdict` is `null` and
+`peak_area_verdict_note` says why — so a withheld verdict is distinguishable
+from missing data. `median_peak_area_ratio` is still emitted either way.
+
+**3. `thresholds_source` tells you whether an instrument has been tuned.**
+Thresholds are editable in the agent's Settings page, because Evosep asked for
+them to be adjustable in the field without a release. A `warn` from a tuned
+instrument does not mean the same as a `warn` from a stock one, and the values
+alone cannot tell you which you have without tracking our shipped defaults per
+agent version. Worth surfacing anywhere instruments are compared side by side.
+
+**4. Every raw input is emitted alongside every derived flag.** Nothing here
+has to be taken on trust: `thresholds_applied` records the exact values that
+produced a verdict, and the per-peptide deviations are all present, so the
+platform can re-derive under its own policy or ignore the flags entirely.
+Given the thresholds are provisional, that is the expected path.
+
+### Threshold provenance
+
+Defaults come from Evosep's first-draft decision matrix (Stoyan Stoychev,
+2026-07-28), derived from a timsTOF HT dilution series. **They are
+provisional** — the series is being repeated across further platforms, and
+Evosep has since indicated that retention-time limits should move from % CV to
+standard deviation in seconds. Do not treat them as an acceptance
+specification.
+
+---
+
+## Earlier examples
+
+### Files (pre-v0.5.0)
 
 ### [`example_payload_v1.1.json`](example_payload_v1.1.json)
 

@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.1",
+  "payload_id": "f0822076-0f44-4191-be73-d5ed827a0344",
+  "correlation_id": "astral0001-md-20260820034512-98fd354a",
+  "agent_id": "astral0001-md",
+  "agent_version": "0.5.11",
+  "timestamp": "2026-08-20T03:45:12.627243+00:00",
+  "run": {
+    "run_id": "f218f6fc-5a42-4cff-a90f-539990244e49",
+    "raw_file_name": "QCB_100perc_2026-08-11_ss_50ng_200spd_k562_S1-A3.d",
+    "raw_file_hash": "sha256:0000000000000000",
+    "acquisition_time": "2026-08-11T18:00:00+00:00",
+    "instrument_id": "Astral_0001",
+    "vendor": "bruker",
+    "control_type": "QC_B",
+    "well_position": "A3",
+    "plate_id": null,
+    "spd": 200,
+    "dilution_pct": 100,
+    "classification_confidence": "HIGH",
+    "classification_source": "FILENAME",
+    "method_name": null,
+    "column_info": null,
+    "_raw_file_path": "D:\\Data\\Astral\\QC\\QCB_100perc_2026-08-11_ss_50ng_200spd_k562_S1-A3.d"
+  },
+  "extraction": {
+    "backend": "skyline",
+    "backend_version": "26.1.0.259",
+    "template_name": "QC_Method.sky",
+    "template_hash": "sha256:1111111111111111",
+    "extraction_time_ms": 21740,
+    "status": "FAILED",
+    "error_message": "Skyline extraction timed out after 900 s",
+    "_template_path": "C:\\ProgramData\\MassDynamics\\QC\\methods\\QC_Method.sky"
+  },
+  "target_metrics": [],
+  "run_metrics": {},
+  "baseline_context": null,
+  "comparison_metrics": null
+}

@@ -314,10 +314,26 @@ def _pct_deviation(value: float | None, reference: float | None) -> float | None
     return (value - reference) / abs(reference) * 100.0
 
 
+"""Control types whose expected peak area is the baseline itself.
+
+The warn/fail bands are deviations from a ratio of 1.0, so they only mean
+anything where the run is expected to match the SSC0 reference. SSC0 measures
+against its own baseline; QC B is the same material at the same load and
+bypasses digestion, so it too should read ~1.0.
+
+QC A is ~1 ug lysate against a 50 ng reference — roughly 6x on column, and the
+exact figure is still to be established from Evosep's data. Blanks should read
+near zero by design. Scoring either against QC B's bands would mark every run
+as failing, so the verdict is withheld rather than fabricated.
+"""
+_AREA_VERDICT_CONTROL_TYPES = frozenset({ControlType.SSC0, ControlType.QC_B})
+
+
 def compute_comparison_metrics(
     targets: list[TargetMetric],
     baseline: dict[str, Any],
     thresholds: QcThresholdsConfig | None = None,
+    control_type: ControlType | None = None,
 ) -> dict[str, Any]:
     """Express a run's per-peptide measurements against its SSC0 baseline.
 
@@ -403,7 +419,14 @@ def compute_comparison_metrics(
     median_area_dev = (
         (median_area_ratio - 1.0) * 100.0 if median_area_ratio is not None else None
     )
-    if median_area_dev is None:
+    verdict_note: str | None = None
+    if control_type is not None and control_type not in _AREA_VERDICT_CONTROL_TYPES:
+        area_verdict = None
+        verdict_note = (
+            f"not applicable for {control_type.value}: its expected ratio to the "
+            "SSC0 baseline is not 1.0"
+        )
+    elif median_area_dev is None:
         area_verdict = None
     elif abs(median_area_dev) >= th.peak_area_deviation_pct_fail:
         area_verdict = "fail"
@@ -420,6 +443,9 @@ def compute_comparison_metrics(
         "median_rt_deviation_pct": statistics.median(rt_devs) if rt_devs else None,
         "targets_extraction_suspect": suspect_count,
         "peak_area_verdict": area_verdict,
+        # Present only when the verdict is withheld, so a null verdict can be
+        # told apart from missing data.
+        "peak_area_verdict_note": verdict_note,
         # Both the values and whether they are stock. The platform cannot
         # infer "customised" from the values alone without tracking our
         # shipped defaults per agent version, and it needs to know: a warn on
@@ -458,7 +484,8 @@ def build_payload_comparison(
             "per_peptide": baseline.get("per_peptide", {}),
         }
         metrics = compute_comparison_metrics(
-            extraction.target_metrics, baseline, thresholds
+            extraction.target_metrics, baseline, thresholds,
+            control_type=classification.control_type,
         )
         return context, metrics
     except Exception as exc:  # enrichment must not fail the run

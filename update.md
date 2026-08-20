@@ -597,6 +597,7 @@ no baseline keeps emitting absolute values only, so this is additive.
   "median_rt_deviation_pct":        0.2,
   "targets_extraction_suspect":     0,
   "peak_area_verdict":              "ok",       // ok | warn | fail | null
+  "peak_area_verdict_note":         null,        // set when the verdict is withheld
   "thresholds_applied":             { /* the QcThresholdsConfig used */ },
   "thresholds_source":              "default",   // default | custom
   "per_peptide": {
@@ -639,14 +640,21 @@ Three things worth knowing on the platform side:
    `thresholds_applied` records the numbers that produced the verdict. Nothing
    here has to be taken on trust: re-derive under your own thresholds, or
    ignore the flags and use the deviations directly.
-3. **`thresholds_source` tells you whether an instrument has been tuned** (added
+3. **`peak_area_verdict` is withheld for QC A and blanks** (added v0.5.12). The
+   warn/fail bands measure deviation from a ratio of 1.0, which only holds for
+   SSC₀ and QC B. QC A is ~1 µg lysate against a 50 ng reference — roughly 6× on
+   column, with the exact figure still to be established — so scoring it against
+   QC B's bands marked every QC A run as failing. When withheld the field is
+   `null` and `peak_area_verdict_note` says why, so it can be told apart from
+   missing data. `median_peak_area_ratio` is emitted either way.
+4. **`thresholds_source` tells you whether an instrument has been tuned** (added
    v0.5.10). Thresholds are editable in the agent's Settings page, because Evosep
    asked for them to be adjustable in the field without a release. That means a
    `warn` from a tuned instrument does not mean the same thing as a `warn` from a
    stock one, and the values alone can't tell you which you have without tracking
    our shipped defaults per agent version. Worth surfacing on any fleet view where
    instruments are compared side by side.
-4. **Known boundary case.** Against Evosep's own 200 SPD numbers, the 75% QC B
+5. **Known boundary case.** Against Evosep's own 200 SPD numbers, the 75% QC B
    condition medians at −9.5% and therefore reads `ok`, clearing the 10% warn
    threshold by half a point — the case that threshold exists to catch. Left
    at Evosep's stated value pending the multi-platform data; ~8.0 would catch
