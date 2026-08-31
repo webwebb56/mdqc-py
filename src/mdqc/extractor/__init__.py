@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import logging
 import time
@@ -260,8 +259,16 @@ class Extractor:
 
         if not csv_produced:
             result.status = ExtractionStatus.FAILED
+            # Carry Skyline's own output. Without it this failure mode says
+            # only "no report file", which is the symptom rather than the
+            # cause and leaves nothing to act on — the reason a missing vendor
+            # reader or a template built for another instrument looks
+            # identical to any other silent failure.
+            output = (run_result.stdout or run_result.stderr or "").strip()
+            detail = f": {output}" if output else " and no output"
             result.error_message = (
-                f"Skyline exited with code {run_result.returncode} but produced no report file"
+                f"Skyline exited with code {run_result.returncode} "
+                f"but produced no report file{detail}"
             )
             return result
 
@@ -316,11 +323,17 @@ class Extractor:
 
     @staticmethod
     def _cleanup(path: Path) -> None:
-        with contextlib.suppress(FileNotFoundError):
-            try:
-                path.unlink()
-            except OSError as exc:
-                logger.warning("failed to delete report csv %s: %s", path, exc)
+        # A missing CSV is expected whenever Skyline failed to produce one, and
+        # is already reported as the extraction failure. FileNotFoundError is a
+        # subclass of OSError, so the inner handler used to catch it before the
+        # suppression could and logged a warning per failed run — 435 of them
+        # on Evosep's Sciex install, burying the real signal.
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.warning("failed to delete report csv %s: %s", path, exc)
 
 
 __all__ = [

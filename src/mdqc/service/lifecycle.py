@@ -419,6 +419,20 @@ async def _build_state(cfg: Config) -> AppState:
             nonlocal finalized
             if finalized:
                 return
+            # Log it. The failure is recorded in failed_files.json, the
+            # activity log and the event stream, but none of those is where an
+            # operator looks first — and a run that fails without a log line
+            # reads as a run that never happened. Evosep lost an evening to
+            # exactly that on a Sciex 7500: 435 extractions failed in silence
+            # while the log showed nothing worse than a warning.
+            log.error(
+                "extraction_failed",
+                extra={
+                    "path": str(path),
+                    "instrument_id": instrument_id,
+                    "reason": reason,
+                },
+            )
             state.failed.add(str(path), instrument_id, reason)
             state.activity.record(
                 ActivityEntry(

@@ -195,3 +195,46 @@ async def test_extract_exitcode0_no_csv_fails(
 
     assert result.status == ExtractionStatus.FAILED
     assert "no report file" in result.error_message.lower()
+    # Evosep, Sciex 7500, 2026-08-30: this branch reported only the symptom.
+    # Skyline's own output is the only thing that distinguishes a missing
+    # vendor reader from a template built for another instrument.
+    assert "Skyline 24.1" in result.error_message
+
+
+@pytest.mark.asyncio
+async def test_extract_no_csv_says_so_when_skyline_was_silent(
+    tmp_path: Path, fake_skyline_exe: Path, template: Path, raw_file: Path
+) -> None:
+    """No CSV and no output at all still has to read as a definite failure."""
+    extractor = _make_extractor(tmp_path, fake_skyline_exe)
+
+    with patch(
+        "mdqc.extractor.run_skyline",
+        new=AsyncMock(return_value=_fake_result(0, stdout="", stderr="")),
+    ):
+        result = await extractor.extract(template=template, raw_file=raw_file)
+
+    assert result.status == ExtractionStatus.FAILED
+    assert "no output" in result.error_message
+
+
+@pytest.mark.asyncio
+async def test_missing_report_csv_is_not_warned_about(
+    tmp_path: Path, fake_skyline_exe: Path, template: Path, raw_file: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Cleanup of an absent CSV is expected, not noteworthy.
+
+    FileNotFoundError subclasses OSError, so the handler used to catch it
+    before the suppression could and logged a warning for every failed run —
+    435 of them on the Sciex install, drowning the real signal.
+    """
+    extractor = _make_extractor(tmp_path, fake_skyline_exe)
+
+    with caplog.at_level("WARNING", logger="mdqc.extractor"), patch(
+        "mdqc.extractor.run_skyline",
+        new=AsyncMock(return_value=_fake_result(1, stdout="boom")),
+    ):
+        await extractor.extract(template=template, raw_file=raw_file)
+
+    assert not [r for r in caplog.records if "failed to delete report csv" in r.getMessage()]
