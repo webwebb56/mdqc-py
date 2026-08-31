@@ -205,14 +205,22 @@ class QcThresholdsConfig(BaseModel):
     # could indicate as much as 25% decrease in Evotip load, whilst a 25%
     # decrease ... as much as 50%".
     #
-    # CAVEAT, measured against Evosep's own 200 SPD numbers: the 75% QC B
-    # condition medians at -9.5% deviation, so a 10.0 warn threshold reads it
-    # as "ok" and misses the case the threshold exists to catch — it clears
-    # the boundary by half a percentage point. The 50% condition (-27.5%)
-    # trips "fail" correctly. Left at Evosep's stated 10.0 rather than
-    # silently retuned; ~8.0 would catch the 75% condition. Revisit once the
-    # series has run on the other platforms.
-    peak_area_deviation_pct_warn: float = 10.0
+    # Raised 10.0 -> 15.0 at Evosep's instruction (SOP review, annotations
+    # 46-48): late-eluting targets under-estimate recovery loss and were
+    # producing false warnings, with mid-gradient peptides the better
+    # predictors. Stoyan wrote the figure three times, with that reasoning,
+    # so it is applied rather than queried.
+    #
+    # CAVEAT, recorded rather than silently resolved: measured against
+    # Evosep's own 200 SPD numbers, the 75% load condition medians at -9.5%
+    # deviation, so it read "ok" even at 10.0 — clearing the old threshold by
+    # half a point — and reads "ok" more comfortably at 15.0. The 50%
+    # condition (-27.5%) still trips "fail" correctly. Widening therefore
+    # trades sensitivity to a partial-load fault for fewer false alarms on
+    # peptides that were never good load reporters. Evosep is generating the
+    # multi-platform series that settles it; the intended end state is
+    # per-peptide handling, where only mid-gradient peptides score recovery.
+    peak_area_deviation_pct_warn: float = 15.0
     peak_area_deviation_pct_fail: float = 25.0
 
     @field_validator(*QC_THRESHOLD_FIELDS)

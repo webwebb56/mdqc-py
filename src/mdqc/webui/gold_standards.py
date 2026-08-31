@@ -1,4 +1,4 @@
-"""Gold Standards page: SSC0 run review and per-(instrument, SPD) baseline selection.
+"""Gold Standards page: SSC run review and per-(instrument, SPD) baseline selection.
 
 Read/write against mdqc.gold_standards (agent-local storage, separate from
 spool/completed). Does not touch QcPayload.baseline_context — see that
@@ -113,7 +113,7 @@ async def gold_standards_save(request: Request) -> HTMLResponse:
     error: str | None = None
     saved = False
     if not run_ids:
-        error = "Select at least one SSC0 run before saving a baseline."
+        error = "Select at least one SSC run before saving a baseline."
     else:
         gs.save_baseline(instrument_id, spd, run_ids, label, cfg.peptide_classes)
         saved = True

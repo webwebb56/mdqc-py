@@ -340,14 +340,39 @@ def test_comparison_rt_drift_alone_does_not_flag() -> None:
 
 @pytest.mark.parametrize(
     ("area", "expected"),
-    [(1000.0, "ok"), (895.0, "warn"), (740.0, "fail")],
+    [
+        (1000.0, "ok"),
+        # Inside the widened band. This used to warn at the old 10% threshold.
+        (895.0, "ok"),
+        (830.0, "warn"),
+        (740.0, "fail"),
+    ],
 )
 def test_comparison_peak_area_verdict_bands(area: float, expected: str) -> None:
-    """10% below SSC0 warns (~25% Evotip load loss); 25% fails (~50% loss)."""
+    """15% below SSC-gold warns (~25% Evotip load loss); 25% fails (~50% loss).
+
+    The warn band was 10% until Evosep raised it (SOP review, annotations
+    46-48): late-eluting targets under-estimate recovery loss and were
+    producing false warnings.
+    """
     m = gs.compute_comparison_metrics(
         [_target(area=area, rt=5.0)], _baseline_with(area=1000.0, rt=5.0)
     )
     assert m["peak_area_verdict"] == expected
+
+
+def test_seventy_five_percent_load_reads_ok_at_the_widened_band() -> None:
+    """Recorded consequence of the 15% warn band, not an accident.
+
+    Evosep's 75% load condition medians at about -9.5% deviation, so a quarter
+    of the material can be missing without a warning. It cleared the old 10%
+    band by half a point too. The intended fix is per-peptide handling, where
+    only mid-gradient peptides score recovery.
+    """
+    m = gs.compute_comparison_metrics(
+        [_target(area=905.0, rt=5.0)], _baseline_with(area=1000.0, rt=5.0)
+    )
+    assert m["peak_area_verdict"] == "ok"
 
 
 def test_comparison_thresholds_are_configurable_and_recorded() -> None:
@@ -579,3 +604,65 @@ def test_build_payload_comparison_matches_baseline_by_spd(tmp_data_dir: Path) ->
         _classification(spd=500), _extraction([_pep("PEPA", area=1000.0)])
     )
     assert (context, metrics) == (None, None)
+
+
+# ── Baseline candidates: SSC runs, not just SSC0-marked ones ────────────────
+# Evosep's workflow (SOP review, annotations 3 and 4): the gold standard is a
+# *selection* made on the Gold standards page from routine SSC runs, not a type
+# declared in a filename. "The file names then only need to differentiate
+# between PC (QCA) and SSC (QCB)."
+
+
+def _classified(control_type: ControlType, spd: int = 200) -> RunClassification:
+    return RunClassification(
+        control_type=control_type,
+        well_position=None,
+        instrument_id="inst-1",
+        plate_id=None,
+        confidence=Confidence.HIGH,
+        source=ClassificationSource.FILENAME,
+        spd=spd,
+    )
+
+
+def _extracted(area: float = 1000.0) -> ExtractionResult:
+    return ExtractionResult(
+        run_id=uuid4(),
+        target_metrics=[
+            TargetMetric(
+                target_id="PEPA", peptide_sequence="PEPA", protein_name="Targets",
+                peak_area=area, retention_time=5.0,
+            )
+        ],
+        run_metrics=RunMetrics(targets_found=1, targets_expected=1, target_recovery_pct=100.0),
+    )
+
+
+def test_routine_ssc_runs_are_baseline_candidates(tmp_data_dir: Path) -> None:
+    """A file named `SSC_...` classifies QC_B and must still be selectable.
+
+    Before this, only SSC0-typed runs were indexed, so a site following
+    Evosep's naming would open the Gold standards page and find it empty.
+    """
+    gs.record_ssc0_run(_classified(ControlType.QC_B), _extracted())
+    runs = gs.list_ssc0_runs("inst-1", 200)
+    assert len(runs) == 1
+
+
+def test_ssc0_marked_runs_remain_baseline_candidates(tmp_data_dir: Path) -> None:
+    """Legacy filenames declaring SSC0 must keep working."""
+    gs.record_ssc0_run(_classified(ControlType.SSC0), _extracted())
+    assert len(gs.list_ssc0_runs("inst-1", 200)) == 1
+
+
+def test_process_control_runs_are_not_baseline_candidates(tmp_data_dir: Path) -> None:
+    """PC carries digestion at ~20x the load; it can never be the reference."""
+    gs.record_ssc0_run(_classified(ControlType.QC_A), _extracted())
+    gs.record_ssc0_run(_classified(ControlType.BLANK), _extracted())
+    assert gs.list_ssc0_runs("inst-1", 200) == []
+
+
+def test_baseline_candidate_types_are_explicit() -> None:
+    assert ControlType.QC_B in gs.BASELINE_CANDIDATE_TYPES
+    assert ControlType.SSC0 in gs.BASELINE_CANDIDATE_TYPES
+    assert ControlType.QC_A not in gs.BASELINE_CANDIDATE_TYPES

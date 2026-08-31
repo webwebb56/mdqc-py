@@ -271,7 +271,7 @@ def main() -> None:
         # reads "ok". Payload 06 is the same run on tuned thresholds, where it
         # does warn. The pair is the clearest statement of why the threshold is
         # under review.
-        label = {100: "healthy", 75: "75pct_boundary", 50: "50pct_fail"}[pct]
+        label = {100: "healthy", 75: "75pct_reads_ok", 50: "50pct_fail"}[pct]
         written.append(emit(
             spool,
             classification(ControlType.QC_B, well=well, dilution=pct),
@@ -294,9 +294,11 @@ def main() -> None:
         thresholds=QcThresholdsConfig(peak_area_deviation_pct_warn=8.0,
                                       peak_area_deviation_pct_fail=20.0)))
 
-    # 07 — QC A: ~6x the SSC0 load, so the verdict is withheld
-    e = extraction("qca", "QCA_2026-08-11_ss_1ug_200spd_k562_S1-F2.d",
-                   targets(scale=5.9, nudge=9), T0 + timedelta(hours=5))
+    # 07 — PC (QC A): ~20x the SSC-gold load, so the verdict is withheld.
+    # Evosep's figure, SOP review annotation 10; an earlier ~6x estimate
+    # assumed only ~300 ng of the 1 ug reached the column.
+    e = extraction("qca", "PC_2026-08-11_ss_1ug_200spd_S00462_k562_S1-F2.d",
+                   targets(scale=19.4, nudge=9), T0 + timedelta(hours=5))
     written.append(emit(
         spool, classification(ControlType.QC_A, well="F2"), e, "payload_07_qca.json"))
 

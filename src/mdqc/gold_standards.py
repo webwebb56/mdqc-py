@@ -76,14 +76,28 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+# Control types eligible to become a gold standard.
+#
+# The gold standard is a *selection* made on the Gold standards page, not a
+# type declared in a filename. Evosep's position (SOP review, annotations 3
+# and 4): "SSC-gold will be set as such in the dashboard setting; the file
+# names then only need to differentiate between PC (QCA) and SSC (QCB)", with
+# the engineer selecting the gold standards "from respective SSC (QCB)".
+#
+# So routine SSC runs are the candidate pool. SSC0 stays eligible because
+# earlier acquisition batches declare it in the filename, and because an
+# explicit SSCGOLD marker is still accepted for sites that prefer it.
+BASELINE_CANDIDATE_TYPES = (ControlType.SSC0, ControlType.QC_B)
+
+
 def record_ssc0_run(classification: RunClassification, extraction: ExtractionResult) -> None:
-    """Append a snapshot of an SSC0 run to the durable per-(instrument, SPD) index.
+    """Append a snapshot of a baseline-candidate run to the per-(instrument, SPD) index.
 
     Best-effort: never raises. Called after the run has already been
     successfully classified, extracted, and spooled — an indexing hiccup
     here must not turn an otherwise-successful run into a failure.
     """
-    if classification.control_type is not ControlType.SSC0:
+    if classification.control_type not in BASELINE_CANDIDATE_TYPES:
         return
     try:
         _record_ssc0_run_inner(classification, extraction)
@@ -328,9 +342,11 @@ anything where the run is expected to match the SSC0 reference. SSC0 measures
 against its own baseline; QC B is the same material at the same load and
 bypasses digestion, so it too should read ~1.0.
 
-QC A is ~1 ug lysate against a 50 ng reference — roughly 6x on column, and the
-exact figure is still to be established from Evosep's data. Blanks should read
-near zero by design. Scoring either against QC B's bands would mark every run
+PC (QC A) is ~1 ug lysate against a ~50 ng reference. Evosep's current figure
+is roughly 20x (SOP review, annotation 10); an earlier estimate of ~6x assumed
+only ~300 ng of the 1 ug actually reached the column. The exact ratio is still
+to be pinned from Evosep's data, which is why the verdict is withheld rather
+than scored against a guess. Blanks should read near zero by design. Scoring either against QC B's bands would mark every run
 as failing, so the verdict is withheld rather than fabricated.
 """
 _AREA_VERDICT_CONTROL_TYPES = frozenset({ControlType.SSC0, ControlType.QC_B})

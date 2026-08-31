@@ -24,7 +24,7 @@ only what genuinely moved.
 |---|---|
 | `payload_01_ssc0_baseline_source.json` | SSC₀ — one of the runs the baseline was built from |
 | `payload_02_qcb_healthy.json` | QC B at full load → `peak_area_verdict: "ok"` |
-| `payload_03_qcb_75pct_boundary.json` | QC B at 75% → **`"ok"`**, `dilution_pct: 75` — the boundary case, see below |
+| `payload_03_qcb_75pct_reads_ok.json` | SSC at 75% load → **`"ok"`**, `dilution_pct: 75` — see below |
 | `payload_04_qcb_50pct_fail.json` | QC B at 50% → `"fail"`, `dilution_pct: 50` |
 | `payload_05_mis_extracted_target.json` | One target wrongly integrated → `target_extraction_suspect: true` on that peptide |
 | `payload_06_custom_thresholds.json` | Same run as 03 on tuned thresholds → **`"warn"`**, `thresholds_source: "custom"` |
@@ -34,15 +34,26 @@ only what genuinely moved.
 
 ### Payloads 03 and 06 are the same run, and disagree
 
-Both carry a median deviation of −9.5%. On stock thresholds that reads `ok`,
-because it clears the 10% warn band by half a percentage point. On thresholds
-tuned to warn at 8% the same run reads `warn`.
+Both carry a median deviation of −9.5%. On the shipped thresholds that reads
+`ok`, because the warn band is 15%. On thresholds tuned to warn at 8% the same
+run reads `warn`.
 
-This is the known boundary case: the 75% load condition is exactly what the
-10% figure was chosen to catch, and it does not catch it. Evosep is revising
-the thresholds from multi-platform data. The pair is included deliberately —
-it is the clearest demonstration of why a verdict cannot be interpreted
-without knowing which thresholds produced it.
+That gap is deliberate and worth understanding rather than treating as a bug.
+A 75% load — a quarter of the material missing — produces no warning at all.
+The warn band was 10% until Evosep raised it to 15% (SOP review, August 2026),
+on the grounds that late-eluting targets have a buffered response and were
+under-estimating recovery loss, so 10% generated false alarms. Widening it
+trades sensitivity to a partial-load fault for fewer false alarms on peptides
+that were never good load reporters. Even at 10% this condition read `ok`,
+clearing the band by half a point.
+
+The likely resolution is per-peptide handling: two or three mid-gradient
+peptides carry the recovery estimate, and the early and late ones report
+qualitatively on chromatography instead. Evosep's multi-platform series
+settles it.
+
+The pair is included deliberately — it is the clearest demonstration of why a
+verdict cannot be interpreted without knowing which thresholds produced it.
 
 ### Five things worth knowing before building against these
 
@@ -53,9 +64,9 @@ state — treat it as normal, not as an error.
 
 **2. `peak_area_verdict` is withheld for QC A and blanks.** The warn/fail
 bands measure deviation from a ratio of 1.0, which only holds where the run
-should match the SSC₀ reference — SSC₀ itself and QC B. QC A is ~1 µg lysate
-against a 50 ng reference, roughly 6× on column, and the exact figure is still
-to be established. Scoring it against QC B's bands marked every QC A run as
+should match the SSC-gold reference — SSC-gold itself and SSC. PC is ~1 µg
+lysate against a ~50 ng reference, roughly **20×** on column, and the exact
+figure is still to be established. Scoring it against QC B's bands marked every QC A run as
 failing. When the verdict is withheld, `peak_area_verdict` is `null` and
 `peak_area_verdict_note` says why — so a withheld verdict is distinguishable
 from missing data. `median_peak_area_ratio` is still emitted either way.

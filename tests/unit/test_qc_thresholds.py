@@ -15,13 +15,22 @@ from mdqc.config.schema import QC_THRESHOLD_FIELDS, Config, QcThresholdsConfig
 
 
 def test_defaults_match_the_evosep_decision_matrix() -> None:
-    """Values published by Evosep, 2026-07-28. Changing these changes verdicts."""
+    """Values published by Evosep. Changing these changes verdicts.
+
+    Base set 2026-07-28; ``peak_area_deviation_pct_warn`` raised 10.0 -> 15.0
+    in the August 2026 SOP review (annotations 46-48) because late-eluting
+    targets under-estimate recovery loss and were warning falsely at 10%.
+
+    These are also the values that shade the Gold standards page, so a change
+    here moves what an engineer sees on the instrument as well as the verdict
+    the platform receives.
+    """
     t = QcThresholdsConfig()
     assert t.rt_deviation_pct_max == 2.0
     assert t.dot_product_deviation_pct_max == 5.0
     assert t.dot_product_deviation_pct_suspect == 10.0
     assert t.peak_area_deviation_pct_suspect == 30.0
-    assert t.peak_area_deviation_pct_warn == 10.0
+    assert t.peak_area_deviation_pct_warn == 15.0
     assert t.peak_area_deviation_pct_fail == 25.0
 
 

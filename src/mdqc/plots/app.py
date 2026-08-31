@@ -1489,9 +1489,9 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
             st.caption(
-                "SSC0 is the reference (clean 50 ng on Evotip). QC B should track SSC0 — "
-                "divergence indicates digestion / Evotip variability. QC A is loaded ~6× and "
-                "should appear visibly taller than SSC0."
+                "SSC-gold is the reference (clean ~50 ng on Evotip). SSC should track it — "
+                "divergence indicates digestion / Evotip variability. PC is loaded ~20× and "
+                "should appear visibly taller."
             )
             st.plotly_chart(response_fig, use_container_width=True)
 

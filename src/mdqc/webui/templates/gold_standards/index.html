@@ -83,9 +83,10 @@
 {% elif not available_spds %}
 <section class="panel">
   <p class="muted">
-    No SSC0 runs recorded yet for <strong>{{ instrument_id }}</strong>. Run your system-suitability
-    control set (typically 15-20 SSC0 injections at install, or after a column change) — each one
-    is indexed here automatically as it completes.
+    No SSC runs recorded yet for <strong>{{ instrument_id }}</strong>. Run your system-suitability
+    control set (typically 15–20 SSC injections at install, or after a column change) — each one
+    is indexed here automatically as it completes, and you pick which of them define the
+    gold standard.
   </p>
 </section>
 {% else %}
@@ -112,7 +113,7 @@
 
 <section class="panel">
   <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem;">
-    <h2 style="margin:0;">SSC0 runs</h2>
+    <h2 style="margin:0;">SSC runs</h2>
     <span class="muted" style="margin-left:auto; font-size:0.85em;" id="gs-selected-summary"></span>
   </div>
   <div class="gs-basis">

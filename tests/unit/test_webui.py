@@ -767,7 +767,7 @@ def test_settings_marks_customised_thresholds(
     body = client.get("/settings").text
     assert "Customised" in body
     # The shipped value stays visible so an operator can see what they moved from.
-    assert "recommended 10.0%" in body
+    assert "recommended 15.0%" in body
 
 
 def test_settings_saves_new_thresholds(
@@ -819,7 +819,7 @@ def test_settings_restore_returns_shipped_defaults(
     )
     assert response.status_code == 200
     assert state_with_instruments.cfg.qc_thresholds.is_default() is True
-    assert state_with_instruments.cfg.qc_thresholds.peak_area_deviation_pct_warn == 10.0
+    assert state_with_instruments.cfg.qc_thresholds.peak_area_deviation_pct_warn == 15.0
 
 
 def test_settings_threshold_absent_from_form_keeps_current_value(
@@ -869,7 +869,7 @@ def test_gold_standards_empty_state(
     client = _client(app)
     response = client.get("/gold-standards")
     assert response.status_code == 200
-    assert "No SSC0 runs recorded yet" in response.text
+    assert "No SSC runs recorded yet" in response.text
     assert "qe-test" in response.text
 
 
@@ -992,11 +992,11 @@ def test_gold_standards_shows_instrument_selector_when_multiple(
     assert "Exploris01" in body
 
     # Defaults to the first instrument when none is requested.
-    assert "No SSC0 runs recorded yet for <strong>Astral_0001</strong>" in body
+    assert "No SSC runs recorded yet for <strong>Astral_0001</strong>" in body
 
     response2 = client.get("/gold-standards?instrument=Exploris01")
     assert response2.status_code == 200
-    assert "No SSC0 runs recorded yet for <strong>Exploris01</strong>" in response2.text
+    assert "No SSC runs recorded yet for <strong>Exploris01</strong>" in response2.text
 
 
 def test_nav_falls_back_to_streamlit_when_local_only(tmp_path: Path) -> None:
