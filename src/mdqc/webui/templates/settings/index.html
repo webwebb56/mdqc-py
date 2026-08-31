@@ -534,10 +534,11 @@
 
       <div class="threshold-body">
         <div class="threshold-prov">
-          These decide when a run is flagged, relative to its SSC<sub>0</sub> baseline. The current
-          values come from Evosep's timsTOF HT dilution series (July 2026) and are
-          <strong>provisional</strong> — the same series is being repeated on further platforms.
-          Treat them as guidance for investigation, not as an instrument acceptance specification.
+          These decide when a run is flagged, relative to its <strong>SSC-gold</strong> baseline,
+          and they also set the shading on the Gold standards page. The current values come from
+          stress data generated on one instrument, a timsTOF HT, with further data being generated
+          across other platforms, so they are <strong>provisional</strong>. Treat them as guidance
+          for investigation, not as an instrument acceptance specification.
         </div>
 
         {% for group in threshold_groups %}

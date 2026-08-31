@@ -100,7 +100,7 @@ THRESHOLD_GROUPS: list[dict[str, Any]] = [
     {
         "title": "Target extraction",
         "question": (
-            "Was the correct peak measured? A wrongly integrated peak and a genuine "
+            "Was the correct target precursor extracted? A wrongly extracted precursor and a genuine "
             "performance drop look identical in peak area alone."
         ),
         "fields": [

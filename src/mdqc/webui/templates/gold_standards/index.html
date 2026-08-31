@@ -37,7 +37,10 @@
   .gs-baseline-table td.num, .gs-baseline-table th.num { text-align:right; font-variant-numeric: tabular-nums; }
 
   .gs-run-row { display:flex; align-items:center; gap:0.6rem; padding:3px 0; }
-  .gs-run-label { width:220px; flex:0 0 220px; font-size:0.85em; }
+  /* Wide enough for a realistic filename: date + SPD + Evosep serial +
+     matrix + replica wraps onto two lines at 220px. */
+  .gs-run-label { width:320px; flex:0 0 320px; font-size:0.85em;
+                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .gs-track { position:relative; flex:1; height:22px; background:#f5f5f5; border:1px solid var(--border); }
   .gs-stick { position:absolute; top:3px; width:3px; height:14px; border-radius:1px; }
   .gs-stick.flag { outline:2px solid var(--bad); }
