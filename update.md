@@ -660,6 +660,56 @@ Three things worth knowing on the platform side:
    at Evosep's stated value pending the multi-platform data; ~8.0 would catch
    it. Flagged rather than silently retuned.
 
+### 6.6.1 Deviation basis on the Gold standards page (v0.5.16)
+
+Agreed with Stoyan on the 2026-08-21 call: **standard deviation is the wrong
+measure for this table**, and it has been replaced as the default.
+
+The problem is that a z-score is a statement about the *spread of the set*, not
+about whether a run is correct. Consequences run in both directions:
+
+- On a tight panel (Evosep's own SSC0 sets run under 5% CV) practically every
+  run sits more than 1 SD from something, so the table lights up amber on runs
+  that are entirely fine. Stoyan: *"what's red is not really outlier."*
+- On a noisy panel the spread is wide enough to swallow a genuinely bad run
+  inside 2 SD, so it shows clean. Stoyan: *"if you have variable data it will
+  hide potentially bad runs."*
+
+Measured on a 16-run, 6-peptide reference set at ~4% CV carrying exactly one
+genuine defect (a 22% peak-area loss on one peptide):
+
+| Shading basis | Cells shaded, of 96 |
+|---|---|
+| % from gold standard | **1** |
+| % from mean of selection | **1** |
+| standard deviations (previous behaviour) | **46** |
+
+The page now offers all three, defaulting to **% from gold standard** where a
+baseline exists and **% from mean of selection** where one does not — which is
+also the answer to "what do we score against before a QC kit has been run?".
+SD is retained as an option because it is still the right question when asking
+how consistent a set is, rather than whether a run is correct; the copy on the
+page says so.
+
+**The percentage thresholds are `[qc_thresholds]` from Settings** — the same
+`peak_area_deviation_pct_warn` / `_fail` that decide `peak_area_verdict` in the
+payload. This is deliberate: two independent sets of numbers for the same
+judgement is how a page ends up disagreeing with the verdict it sits next to.
+Changing a threshold in Settings changes the shading here immediately.
+
+Note this resolves only the *agent-side* measure. The platform's own ±2 SD
+traffic light is the same statistical objection and is Giuseppe's call — see
+the two-verdict question in §6.6.
+
+Also in v0.5.16, both from the same call:
+
+- Runs table sorts by Run / Acquired / Found, defaulting to **most recent
+  first** (it was oldest-first, which is storage order, not reading order).
+- Cell and RT-plot tooltips carry deviation, retention time, **idotp and
+  dotp**. RT deviation is shown in **both percent and seconds**, because the
+  threshold is configured as a percentage but RT tolerance is specified and
+  discussed in seconds.
+
 ### 6.7 Failed-payload shape
 
 When `extraction.status == "FAILED"`, the payload **still gets written** to the spool. It carries `run`, `extraction` (with `error_message`), and empty `target_metrics: []`, `run_metrics: {}`. The platform should ingest these too — the dashboard surfaces failed runs distinctly from successful ones so operators can debug.

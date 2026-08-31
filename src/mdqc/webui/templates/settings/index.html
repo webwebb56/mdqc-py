@@ -520,8 +520,10 @@
   </section>
 
   {# ── QC thresholds ──────────────────────────────────────────────────── #}
-  <section class="panel">
-    <details class="thresholds"{% if not thresholds_are_default %} open{% endif %}>
+  {# id is linked from the Gold standards page, which shades against these
+     same numbers — keep it if the panel moves. #}
+  <section class="panel" id="qc-thresholds">
+    <details class="thresholds"{% if not thresholds_are_default %} open{% endif %} id="qc-thresholds-details">
       <summary>
         <span class="dot {% if thresholds_are_default %}muted{% else %}ok{% endif %}">●</span>
         <strong>QC thresholds</strong>
@@ -774,6 +776,14 @@ function openTemplate(inputId) {
     .then(r => r.json())
     .then(d => { if (!d.ok) alert('Could not open template:\n' + d.error); })
     .catch(e => alert('Request failed: ' + e));
+}
+
+// The thresholds panel is collapsed unless it has been customised, so a
+// deep link from the Gold standards page would otherwise land on a closed
+// panel with nothing visible.
+if (window.location.hash === '#qc-thresholds') {
+  const d = document.getElementById('qc-thresholds-details');
+  if (d) { d.open = true; d.scrollIntoView({ block: 'start' }); }
 }
 
 function updateHeadings() {

@@ -1023,3 +1023,94 @@ def test_nav_falls_back_to_streamlit_when_local_only(tmp_path: Path) -> None:
 
 # Marker so pytest collection doesn't drop unused symbol warnings.
 _ = json
+
+
+# ── Gold standards: deviation basis ─────────────────────────────────────────
+# The heatmap used to shade at ±1/±2 SD of the selected runs. On a tight panel
+# that flags ordinary runs and on a noisy one it hides bad ones, so the page
+# now shades by percentage from the gold standard (or from the mean where no
+# baseline exists) using the same thresholds that decide the payload verdict.
+
+
+def test_gold_standards_offers_deviation_basis_choice(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    _seed_ssc0_run()
+    _seed_ssc0_run()
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/gold-standards?instrument=qe-test&spd=200").text
+
+    for value in ("gold", "mean", "sd"):
+        assert f'name="gs-basis" value="{value}"' in body
+
+
+def test_gold_standards_disables_gold_basis_without_baseline(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    _seed_ssc0_run()
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/gold-standards?instrument=qe-test&spd=200").text
+
+    # Nothing to compare against yet, so the option must not be selectable.
+    assert 'name="gs-basis" value="gold" disabled' in body
+    assert "save a baseline below to compare against a gold standard" in body
+
+
+def test_gold_standards_ships_verdict_thresholds_to_the_page(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """Shading must use the configured warn/fail, not hard-coded numbers.
+
+    Two sets of thresholds for the same judgement is how the colour on this
+    page ends up disagreeing with the verdict sent to the platform.
+    """
+    _seed_ssc0_run()
+    state_with_instruments.cfg = state_with_instruments.cfg.model_copy(
+        update={
+            "qc_thresholds": state_with_instruments.cfg.qc_thresholds.model_copy(
+                update={
+                    "peak_area_deviation_pct_warn": 15.0,
+                    "peak_area_deviation_pct_fail": 30.0,
+                    "rt_deviation_pct_max": 1.5,
+                }
+            )
+        }
+    )
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/gold-standards?instrument=qe-test&spd=200").text
+
+    assert "const DEV_WARN_PCT = 15.0;" in body
+    assert "const DEV_FAIL_PCT = 30.0;" in body
+    assert "const RT_DEVIATION_PCT_MAX = 1.5;" in body
+
+
+def test_gold_standards_exposes_saved_baseline_as_reference(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    run_id = _seed_ssc0_run(area=1000.0)
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    client.post(
+        "/gold-standards/save",
+        data={"instrument_id": "qe-test", "spd": "200", "label": "ref", "run_id": [run_id]},
+    )
+
+    body = client.get("/gold-standards?instrument=qe-test&spd=200").text
+    assert "const BASELINE_REF = " in body
+    assert "peak_area_median" in body
+    # With a baseline present the gold-standard option becomes selectable.
+    assert 'name="gs-basis" value="gold" disabled' not in body
+
+
+def test_settings_thresholds_panel_is_linkable(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """The Gold standards page deep-links here; the anchor must exist."""
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings").text
+    assert 'id="qc-thresholds"' in body
+    assert 'id="qc-thresholds-details"' in body

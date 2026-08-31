@@ -50,6 +50,16 @@
   .gs-swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
 
   .gs-save-bar { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem; }
+
+  .gs-basis { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; font-size:0.85em; margin-bottom:0.5rem; }
+  .gs-basis-label { color:var(--muted); }
+  .gs-basis label { display:inline-flex; align-items:center; gap:0.3rem; cursor:pointer; }
+  .gs-basis input[disabled] + * , .gs-basis label:has(input[disabled]) { color:var(--muted); cursor:not-allowed; }
+
+  table.gs-runs th.sortable { cursor:pointer; user-select:none; }
+  table.gs-runs th.sortable:hover { color:var(--accent); }
+  .gs-sort { color:var(--muted); margin-left:0.3rem; font-size:0.9em; }
+  .gs-sort.on { color:var(--accent); }
 </style>
 
 <div class="gs-header">
@@ -105,13 +115,17 @@
     <h2 style="margin:0;">SSC0 runs</h2>
     <span class="muted" style="margin-left:auto; font-size:0.85em;" id="gs-selected-summary"></span>
   </div>
-  <p class="muted" style="margin:0 0 0.5rem; font-size:0.85em;">
-    <strong>Peak area</strong> per peptide, one row per run. Cells are shaded where a value sits
-    outside the spread of the currently selected runs &mdash;
-    <span style="background:#fdf3e0; padding:0 0.3rem;">amber</span> beyond 1 SD,
-    <span style="background:#fdece9; outline:1px solid var(--bad); padding:0 0.3rem;">red</span>
-    beyond 2 SD. Colours below identify each peptide and are reused in the retention-time plot.
-  </p>
+  <div class="gs-basis">
+    <span class="gs-basis-label">Shade by</span>
+    <label><input type="radio" name="gs-basis" value="gold"{% if not baseline_reference %} disabled{% endif %}>
+      % from gold standard</label>
+    <label><input type="radio" name="gs-basis" value="mean"> % from mean of selection</label>
+    <label><input type="radio" name="gs-basis" value="sd"> standard deviations</label>
+    {% if not baseline_reference %}
+    <span class="muted" style="font-size:0.85em;">&mdash; save a baseline below to compare against a gold standard</span>
+    {% endif %}
+  </div>
+  <p class="muted" style="margin:0 0 0.5rem; font-size:0.85em;" id="gs-shading-note"></p>
   <div class="gs-legend" id="gs-legend"></div>
   <div class="gs-table-wrap">
     <table class="gs-runs" id="gs-runs-table"></table>
@@ -153,11 +167,38 @@
 <script>
 const SSC0_RUNS = {{ runs_data | tojson }};
 const DEFAULT_CHECKED = {{ default_checked | tojson }};
+const BASELINE_REF = {{ baseline_reference | tojson }};
+const DEV_WARN_PCT = {{ dev_warn_pct | tojson }};
+const DEV_FAIL_PCT = {{ dev_fail_pct | tojson }};
+const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
 
 (function () {
   if (!SSC0_RUNS.length) return;
-  const runs = SSC0_RUNS;
+  const runs = SSC0_RUNS.slice();
   const checked = new Set(DEFAULT_CHECKED);
+  const hasBaseline = Object.keys(BASELINE_REF || {}).length > 0;
+
+  // Deviation basis. Standard deviation was the original measure and is the
+  // wrong one for this page: on a tight panel (CV < 5%) every run sits >1 SD
+  // from something and the table lights up with runs that are entirely fine,
+  // while on a noisy panel a genuinely bad run stays inside 2 SD and shows
+  // clean. Percentage from the gold standard is the measure that means the
+  // same thing at any spread, so it is the default wherever a baseline
+  // exists. SD is kept because it is still the right question when you are
+  // asking "how consistent is this set?" rather than "is this run correct?".
+  const BASES = {
+    gold: { label: 'from gold standard', needsBaseline: true, unit: '%' },
+    mean: { label: 'from mean of selection', needsBaseline: false, unit: '%' },
+    sd:   { label: 'from selection median', needsBaseline: false, unit: ' SD' },
+  };
+  let basis = hasBaseline ? 'gold' : 'mean';
+  try {
+    const stored = window.localStorage.getItem('mdqc.gs.basis');
+    if (stored && BASES[stored] && !(BASES[stored].needsBaseline && !hasBaseline)) basis = stored;
+  } catch (e) { /* private mode / storage disabled — the default is fine */ }
+
+  let sortKey = 'acquired';
+  let sortDesc = true;
 
   const peptideOrder = [];
   const peptideMeta = {};
@@ -215,12 +256,48 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
     return out;
   }
 
-  function devClass(value, st) {
-    if (value === null || value === undefined || !st || st.areaSd === null || st.areaSd === 0 || st.n < 2) return '';
-    const z = Math.abs(value - st.areaMedian) / st.areaSd;
-    if (z >= 2) return 'dev2';
-    if (z >= 1) return 'dev1';
+  // Signed deviation of one measurement under the active basis. Returns null
+  // where the basis has no reference to compare against (no baseline for this
+  // peptide, a single selected run, a zero-spread panel).
+  function deviation(value, key, st) {
+    if (value === null || value === undefined) return null;
+    if (basis === 'gold') {
+      const ref = BASELINE_REF[key];
+      const m = ref ? ref.peak_area_median : null;
+      if (m === null || m === undefined || m === 0) return null;
+      return (value - m) / m * 100;
+    }
+    if (basis === 'mean') {
+      if (!st || !st.areaMean || st.n < 2) return null;
+      return (value - st.areaMean) / st.areaMean * 100;
+    }
+    if (!st || st.areaSd === null || st.areaSd === 0 || st.n < 2) return null;
+    return (value - st.areaMedian) / st.areaSd;
+  }
+
+  // Warn/fail come from [qc_thresholds] in Settings — the same numbers that
+  // decide the run's payload verdict, so the colour here and the verdict the
+  // platform receives cannot disagree. The SD basis keeps 1/2 SD, which are
+  // properties of the distribution rather than thresholds anyone sets.
+  function devBounds() {
+    return basis === 'sd' ? [1, 2] : [DEV_WARN_PCT, DEV_FAIL_PCT];
+  }
+
+  function devClass(value, key, st) {
+    const d = deviation(value, key, st);
+    if (d === null) return '';
+    const [warn, fail] = devBounds();
+    const mag = Math.abs(d);
+    if (fail > 0 && mag >= fail) return 'dev2';
+    if (warn > 0 && mag >= warn) return 'dev1';
     return '';
+  }
+
+  function fmtDev(d) {
+    if (d === null) return 'no reference';
+    const unit = BASES[basis].unit;
+    const sign = d > 0 ? '+' : '';
+    return sign + d.toFixed(1) + unit + ' ' + BASES[basis].label;
   }
 
   function rtRange() {
@@ -242,16 +319,60 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
     ).join('');
   }
 
+  // Runs arrive oldest-first from storage. Most-recent-first is the order you
+  // want when the question is "did the last few runs drift?", which is the
+  // usual reason for opening this page.
+  function sortedRuns() {
+    const dir = sortDesc ? -1 : 1;
+    const keyOf = r => {
+      if (sortKey === 'run') return (runLabel(r) || '').toLowerCase();
+      if (sortKey === 'found') return r.targets_found ?? -1;
+      return r.acquisition_time || '';
+    };
+    return runs.slice().sort((a, b) => {
+      const ka = keyOf(a), kb = keyOf(b);
+      if (ka < kb) return -1 * dir;
+      if (ka > kb) return 1 * dir;
+      return 0;
+    });
+  }
+
+  function sortArrow(key) {
+    if (sortKey !== key) return '<span class="gs-sort">↕</span>';
+    return '<span class="gs-sort on">' + (sortDesc ? '↓' : '↑') + '</span>';
+  }
+
+  function cellTitle(key, p, st) {
+    const parts = [pepLabel(key)];
+    const d = deviation(p ? p.peak_area : null, key, st);
+    parts.push(fmtDev(d));
+    if (p) {
+      if (p.retention_time !== null && p.retention_time !== undefined) {
+        parts.push('RT ' + p.retention_time.toFixed(2) + ' min');
+      }
+      if (p.isotope_dot_product !== null && p.isotope_dot_product !== undefined) {
+        parts.push('idotp ' + p.isotope_dot_product.toFixed(3));
+      }
+      if (p.library_dot_product !== null && p.library_dot_product !== undefined) {
+        parts.push('dotp ' + p.library_dot_product.toFixed(3));
+      }
+    }
+    return parts.join(' — ');
+  }
+
   function renderRunsTable(s) {
     const table = document.getElementById('gs-runs-table');
-    let head = '<thead><tr><th></th><th>Run</th><th>Acquired</th><th>Found</th>';
+    let head = '<thead><tr><th></th>' +
+      '<th class="sortable" data-sort="run">Run' + sortArrow('run') + '</th>' +
+      '<th class="sortable" data-sort="acquired">Acquired' + sortArrow('acquired') + '</th>' +
+      '<th class="sortable" data-sort="found">Found' + sortArrow('found') + '</th>';
     peptideOrder.forEach((key, i) => {
       head += '<th class="pep-col" style="color:' + colorFor(i) + '">' + pepLabel(key) + '</th>';
     });
     head += '</tr></thead>';
 
     let body = '<tbody>';
-    runs.forEach(r => {
+    sortedRuns().forEach(r => {
       const isChecked = checked.has(r.run_id);
       body += '<tr class="' + (isChecked ? '' : 'unchecked') + '">';
       body += '<td><input type="checkbox" data-run="' + r.run_id + '"' + (isChecked ? ' checked' : '') + '></td>';
@@ -261,8 +382,9 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
       peptideOrder.forEach(key => {
         const p = r.peptides[key];
         const val = p ? p.peak_area : null;
-        const cls = devClass(val, s[key]);
-        body += '<td class="pep-col ' + cls + '" title="' + pepLabel(key) + '">' + fmtNum(val, 0) + '</td>';
+        const cls = devClass(val, key, s[key]);
+        body += '<td class="pep-col ' + cls + '" title="' + cellTitle(key, p, s[key]) + '">' +
+          fmtNum(val, 0) + '</td>';
       });
       body += '</tr>';
     });
@@ -275,6 +397,13 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
         render();
       });
     });
+    table.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        if (sortKey === key) sortDesc = !sortDesc; else { sortKey = key; sortDesc = true; }
+        render();
+      });
+    });
   }
 
   function renderRtPlot(s) {
@@ -284,17 +413,44 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
     const pct = v => ((v - rtMin) / span * 100).toFixed(1);
 
     let html = '';
-    runs.forEach(r => {
+    sortedRuns().forEach(r => {
       const isChecked = checked.has(r.run_id);
       let sticks = '';
       peptideOrder.forEach((key, i) => {
         const p = r.peptides[key];
         if (!p || p.retention_time === null || p.retention_time === undefined) return;
         const st = s[key];
-        const flagged = st && st.rtSd !== null && Math.abs(p.retention_time - st.rtMedian) > Math.max(0.15, 2 * st.rtSd);
+        // RT is flagged against the gold standard's own retention time where
+        // one exists, as a percentage — the same basis as the table above.
+        const ref = BASELINE_REF[key];
+        const refRt = (basis === 'gold' && ref) ? ref.retention_time_median : null;
+        let flagged = false;
+        let rtNote = '';
+        if (refRt !== null && refRt !== undefined && refRt !== 0) {
+          const dpct = (p.retention_time - refRt) / refRt * 100;
+          const dsec = (p.retention_time - refRt) * 60;
+          flagged = Math.abs(dpct) >= RT_DEVIATION_PCT_MAX;
+          // Both units: the threshold is configured as a percentage, but RT
+          // tolerance is specified and discussed in seconds.
+          rtNote = (dpct > 0 ? '+' : '') + dpct.toFixed(2) + '% (' +
+            (dsec > 0 ? '+' : '') + dsec.toFixed(1) + ' s) vs gold standard';
+        } else if (st && st.rtSd !== null && st.rtMedian !== null) {
+          flagged = Math.abs(p.retention_time - st.rtMedian) > Math.max(0.15, 2 * st.rtSd);
+          const dsec = (p.retention_time - st.rtMedian) * 60;
+          rtNote = (dsec > 0 ? '+' : '') + dsec.toFixed(1) + ' s vs selection median';
+        }
+        const tip = [
+          pepLabel(key),
+          'RT ' + p.retention_time.toFixed(2) + ' min',
+          rtNote,
+          (p.isotope_dot_product !== null && p.isotope_dot_product !== undefined)
+            ? 'idotp ' + p.isotope_dot_product.toFixed(3) : '',
+          (p.library_dot_product !== null && p.library_dot_product !== undefined)
+            ? 'dotp ' + p.library_dot_product.toFixed(3) : '',
+        ].filter(Boolean).join(' — ');
         sticks += '<div class="gs-stick' + (flagged ? ' flag' : '') + (isChecked ? '' : ' dim') +
           '" style="left:' + pct(p.retention_time) + '%;background:' + colorFor(i) +
-          '" title="' + pepLabel(key) + ' ' + p.retention_time.toFixed(2) + ' min"></div>';
+          '" title="' + tip + '"></div>';
       });
       html += '<div class="gs-run-row"><div class="gs-run-label ' + (isChecked ? '' : 'muted') + '">' +
         runLabel(r) + '</div><div class="gs-track">' + sticks + '</div></div>';
@@ -348,8 +504,32 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
       Array.from(checked).map(id => '<input type="hidden" name="run_id" value="' + id + '">').join('');
   }
 
+  function renderShadingNote() {
+    const [warn, fail] = devBounds();
+    const unit = BASES[basis].unit;
+    const what = basis === 'sd'
+      ? 'the spread of the currently selected runs'
+      : (basis === 'gold' ? 'the saved gold-standard baseline' : 'the mean of the currently selected runs');
+    let html = '<strong>Peak area</strong> per peptide, one row per run. Cells are shaded by how far ' +
+      'a value sits from ' + what + ' &mdash; ' +
+      '<span style="background:#fdf3e0; padding:0 0.3rem;">amber</span> beyond ' + warn + unit + ', ' +
+      '<span style="background:#fdece9; outline:1px solid var(--bad); padding:0 0.3rem;">red</span> beyond ' +
+      fail + unit + '.';
+    if (basis !== 'sd') {
+      html += ' Thresholds come from <a href="/settings#qc-thresholds">Settings &rarr; QC thresholds</a>, ' +
+        'so the shading here matches the verdict sent to the platform.';
+    } else {
+      html += ' A tight panel puts ordinary runs beyond 1 SD and a noisy one hides bad runs inside 2 SD, ' +
+        'so use this to judge consistency rather than correctness.';
+    }
+    html += ' Hover a cell for its deviation, RT and dot products. ' +
+      'Colours identify each peptide and are reused in the retention-time plot.';
+    document.getElementById('gs-shading-note').innerHTML = html;
+  }
+
   function render() {
     const s = computeStats();
+    renderShadingNote();
     renderLegend();
     renderRunsTable(s);
     renderRtPlot(s);
@@ -358,6 +538,16 @@ const DEFAULT_CHECKED = {{ default_checked | tojson }};
     document.getElementById('gs-selected-summary').textContent =
       checked.size + ' of ' + runs.length + ' runs selected for baseline';
   }
+
+  document.querySelectorAll('input[name="gs-basis"]').forEach(el => {
+    el.checked = el.value === basis;
+    el.addEventListener('change', () => {
+      if (!el.checked) return;
+      basis = el.value;
+      try { window.localStorage.setItem('mdqc.gs.basis', basis); } catch (e) { /* storage disabled */ }
+      render();
+    });
+  });
 
   render();
 })();

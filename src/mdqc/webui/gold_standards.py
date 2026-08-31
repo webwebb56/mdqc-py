@@ -62,6 +62,10 @@ async def _page_context(
         set(active["source_run_ids"]) if active else {r["run_id"] for r in runs}
     )
 
+    # The heatmap shades against the same warn/fail percentages that decide a
+    # run's payload verdict. Two sets of numbers for the same judgement is how
+    # a page ends up disagreeing with the verdict it sits next to.
+    th = cfg.qc_thresholds
     ctx.update(
         {
             "instruments": _instrument_ids(cfg),
@@ -71,6 +75,10 @@ async def _page_context(
             "runs_data": runs,
             "default_checked": sorted(default_checked),
             "active_baseline": active,
+            "baseline_reference": (active or {}).get("per_peptide") or {},
+            "dev_warn_pct": th.peak_area_deviation_pct_warn,
+            "dev_fail_pct": th.peak_area_deviation_pct_fail,
+            "rt_dev_pct_max": th.rt_deviation_pct_max,
             "saved": saved,
             "error": error,
         }
