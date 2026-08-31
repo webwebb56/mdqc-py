@@ -177,9 +177,16 @@ def test_payload_run_acquisition_time_is_iso8601(
     assert parsed.tzinfo is not None
 
 
-def test_payload_run_method_name_and_column_info_present_as_keys(
+def test_payload_run_method_name_and_lc_column_present_as_keys(
     tmp_data_dir: Path, thermo_raw: Path, template_file: Path
 ) -> None:
+    """`column_info` was renamed to `lc_column` in the 2026-08-24 SOP review.
+
+    Evosep read "column" as a report/spreadsheet column rather than the
+    analytical LC column the field describes. Both were always null — Evosep
+    has no machine-readable column identifier yet — so the rename costs the
+    platform nothing beyond the key name.
+    """
     spool = Spool(agent_id="test-agent", agent_version="0.0.0")
     spool_path = spool.enqueue(
         _make_classification(), _make_extraction(thermo_raw, template_file)
@@ -187,9 +194,28 @@ def test_payload_run_method_name_and_column_info_present_as_keys(
     payload = json.loads(spool_path.read_text(encoding="utf-8"))
 
     assert "method_name" in payload["run"]
-    assert "column_info" in payload["run"]
+    assert "lc_column" in payload["run"]
     assert payload["run"]["method_name"] is None
-    assert payload["run"]["column_info"] is None
+    assert payload["run"]["lc_column"] is None
+    # The old key must be gone rather than emitted alongside, so the platform
+    # gets one name for one field.
+    assert "column_info" not in payload["run"]
+
+
+def test_payload_run_carries_lc_serial(
+    tmp_data_dir: Path, thermo_raw: Path, template_file: Path
+) -> None:
+    """Evosep Eno/One serial travels with the run.
+
+    A customer can swap which Evosep sits in front of a mass spectrometer
+    day to day; without this the trend silently mixes two instruments.
+    """
+    spool = Spool(agent_id="test-agent", agent_version="0.0.0")
+    spool_path = spool.enqueue(
+        _make_classification(), _make_extraction(thermo_raw, template_file)
+    )
+    payload = json.loads(spool_path.read_text(encoding="utf-8"))
+    assert "lc_serial" in payload["run"]
 
 
 def test_payload_target_metrics_is_list(

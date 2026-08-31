@@ -239,3 +239,84 @@ def test_high_confidence_requires_well_and_token() -> None:
     without_well = classify_filename("INST_QCA_run.raw")
     assert with_well.confidence is Confidence.HIGH
     assert without_well.confidence is Confidence.MEDIUM
+
+
+# ── Evosep August 2026 naming: PC / SSC / SSC-gold ──────────────────────────
+# QC A -> PC (process control), QC B -> SSC (system suitability control),
+# SSC0 -> SSC-gold. Both spellings classify; ControlType wire values are
+# deliberately unchanged because the platform already consumes them.
+
+
+@pytest.mark.parametrize(
+    ("stem", "expected"),
+    [
+        # New markers
+        ("INST_PC_200SPD", ControlType.QC_A),
+        ("INST_SSC_200SPD", ControlType.QC_B),
+        ("INST_SSCGOLD_200SPD", ControlType.SSC0),
+        ("INST_SSC_GOLD_200SPD", ControlType.SSC0),
+        ("INST_SSC-GOLD_200SPD", ControlType.SSC0),
+        # Legacy markers still classify
+        ("INST_QCA_200SPD", ControlType.QC_A),
+        ("INST_QC_A_200SPD", ControlType.QC_A),
+        ("INST_QCB_200SPD", ControlType.QC_B),
+        ("INST_QC-B_200SPD", ControlType.QC_B),
+        ("INST_SSC0_200SPD", ControlType.SSC0),
+    ],
+)
+def test_new_and_legacy_control_markers(stem: str, expected: ControlType) -> None:
+    assert classify_filename(f"{stem}.raw").control_type is expected
+
+
+def test_bare_ssc_now_means_routine_not_gold_standard() -> None:
+    """The one deliberate behaviour change in the rename.
+
+    Bare ``SSC`` used to classify as the gold standard. Under the new naming
+    SSC *is* the routine system-suitability control and the baseline is
+    SSC-gold, so leaving it pointing at the baseline would make the filename
+    mean the opposite of the SOP.
+    """
+    assert classify_filename("INST_SSC_A1.raw").control_type is ControlType.QC_B
+    # The gold standard still has unambiguous markers.
+    assert classify_filename("INST_SSC0_A1.raw").control_type is ControlType.SSC0
+    assert classify_filename("INST_SSCGOLD_A1.raw").control_type is ControlType.SSC0
+
+
+def test_ssc_gold_wins_over_the_bare_ssc_inside_it() -> None:
+    """`SSC_GOLD` contains a delimited `SSC`; gold must be tested first."""
+    result = classify_filename("TIMSTOF01_SSC_GOLD_200SPD_S00462.d")
+    assert result.control_type is ControlType.SSC0
+
+
+def test_pc_marker_does_not_match_inside_a_word() -> None:
+    """`PC` is short; it must only match as a delimited token."""
+    assert classify_filename("my_pcr_sample_200SPD.raw").control_type is ControlType.SAMPLE
+    assert classify_filename("hpc_run_200SPD.raw").control_type is ControlType.SAMPLE
+
+
+# ── Evosep Eno/One serial ───────────────────────────────────────────────────
+
+
+def test_lc_serial_parsed_from_filename() -> None:
+    result = classify_filename("20260818_SSCGOLD_200SPD_S00462_r01.d")
+    assert result.lc_serial == "S00462"
+    assert result.spd == 200
+
+
+def test_lc_serial_is_normalised_to_upper_case() -> None:
+    assert classify_filename("20260818_SSC_200SPD_s00618.d").lc_serial == "S00618"
+
+
+def test_lc_serial_absent_is_none() -> None:
+    assert classify_filename("20260818_PC_200SPD.d").lc_serial is None
+
+
+def test_lc_serial_requires_exactly_five_digits() -> None:
+    """Evosep serials are S + 5 digits; don't swallow other S-prefixed tokens."""
+    assert classify_filename("x_S1234_200SPD.d").lc_serial is None
+    assert classify_filename("x_S1234567_200SPD.d").lc_serial is None
+
+
+def test_lc_serial_reaches_classification_dict() -> None:
+    result = classify_filename("20260818_SSC_200SPD_S00462.d")
+    assert result.to_dict()["lc_serial"] == "S00462"

@@ -171,10 +171,18 @@ class Spool:
             "plate_id": classification.plate_id,
             "spd": classification.spd,
             "dilution_pct": classification.dilution_pct,
+            # Evosep Eno/One serial, so a trend can be split by which LC was in
+            # front of the mass spectrometer that day.
+            "lc_serial": classification.lc_serial,
             "classification_confidence": classification.confidence.value,
             "classification_source": classification.source.value,
             "method_name": None,
-            "column_info": None,
+            # Renamed from `column_info` at Evosep's request (2026-08-24 SOP
+            # review): "column" was reading as a report/spreadsheet column
+            # rather than the analytical LC column this describes. Still
+            # always null — Evosep has no machine-readable column identifier
+            # yet, though they are building one.
+            "lc_column": None,
             # Underscore-prefixed = Python-only debug metadata, not part of cross-language schema.
             "_raw_file_path": str(raw_file_path) if raw_file_path else None,
         }

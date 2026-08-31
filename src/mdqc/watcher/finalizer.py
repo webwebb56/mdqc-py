@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -11,6 +12,8 @@ from mdqc.config.schema import WatcherConfig
 from mdqc.types import FinalizationState, Vendor
 from mdqc.watcher.registry import ProcessedRegistry
 from mdqc.watcher.vendor import is_artifact_complete, vendor_stability_window
+
+log = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -80,6 +83,11 @@ class Finalizer:
         self._callback = processed_callback
         self._trackers: dict[Path, FileTracker] = {}
         self._lock = asyncio.Lock()
+        # Paths already reported as skipped. The watcher re-observes a path
+        # on every filesystem event it raises, so without this the log fills
+        # with one line per event for a file that is never going to be
+        # processed.
+        self._skip_logged: set[Path] = set()
 
     async def observe(self, path: Path, vendor: Vendor) -> None:
         async with self._lock:
@@ -91,6 +99,24 @@ class Finalizer:
             }:
                 return
             if self._registry.contains(path):
+                # Correct behaviour — this file has been processed before and
+                # must not be processed twice. But returning silently means a
+                # file dropped into the watch folder produces no payload and no
+                # log line, which is indistinguishable from a broken watcher.
+                # That cost Evosep an evening once already (v0.5.15, silent
+                # extraction failures); do not repeat it here.
+                if path not in self._skip_logged:
+                    self._skip_logged.add(path)
+                    log.info(
+                        "file_skipped_already_processed",
+                        extra={
+                            "path": str(path),
+                            "hint": (
+                                "clear the processed-file registry in Settings to "
+                                "reprocess this file"
+                            ),
+                        },
+                    )
                 return
             if existing is not None:
                 return

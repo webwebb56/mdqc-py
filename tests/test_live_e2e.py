@@ -50,6 +50,7 @@ import contextlib
 
 from mdqc.config.paths import (
     config_path,
+    processed_registry_path,
     spool_completed,
 )
 from mdqc.config.paths import (
@@ -86,6 +87,7 @@ pytestmark = pytest.mark.skipif(
 _REAL_COMPLETED:    Path = spool_completed()
 _REAL_RUNTIME_PATH: Path = _rt_path_fn()
 _REAL_CONFIG_PATH:  Path = config_path()
+_REAL_REGISTRY:     Path = processed_registry_path()
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +159,28 @@ def _already_in_spool(filename: str) -> bool:
     except OSError:
         pass
     return False
+
+
+def _already_processed(filename: str) -> bool:
+    """Return True if the agent's processed-file registry already holds this name.
+
+    The spool and the registry are *different* records and they disagree. A
+    file can be absent from ``completed/`` (pruned, or the run failed) while
+    still being in the registry, and the agent will then refuse to process it
+    again — correctly, but silently.
+
+    Checking only the spool is what made this test report 13 files as pipeline
+    timeouts when the agent had simply, and rightly, declined to reprocess
+    them. A replay that skips these is measuring the pipeline; one that does
+    not is measuring the 600-second deadline.
+    """
+    try:
+        entries = json.loads(_REAL_REGISTRY.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(entries, list):
+        return False
+    return any(filename == Path(str(e)).name for e in entries)
 
 
 def _metrics_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -300,14 +324,23 @@ class TestLiveContinuous:
         watch_path = _watch_path()
         assert watch_path is not None
 
-        # Skip files already in the spool so re-runs are safe
-        todo = [f for f in files if not _already_in_spool(f.name)]
+        # Skip files the agent will not reprocess, so re-runs are safe. Both
+        # records must be consulted — see _already_processed.
+        todo = [
+            f for f in files
+            if not _already_in_spool(f.name) and not _already_processed(f.name)
+        ]
         skipped_existing = len(files) - len(todo)
+        if not todo:
+            pytest.skip(
+                f"all {len(files)} files are already in the spool or the agent's "
+                "processed-file registry; clear the registry in Settings to replay them"
+            )
 
         ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
 
         print(f"\n{'='*72}")
-        print(f"  Sequential Replay  --  {len(todo)} files  (skipping {skipped_existing} already in spool)")
+        print(f"  Sequential Replay  --  {len(todo)} files  (skipping {skipped_existing} already processed)")
         print(f"  Source dir : {EVOSEP_RAW_DIR}")
         print(f"  Watch path : {watch_path}")
         print(f"  Spool      : {_REAL_COMPLETED}")

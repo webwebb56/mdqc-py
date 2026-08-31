@@ -114,6 +114,14 @@ class RunClassification:
     # platform can group a threshold-calibration run by it without having to
     # re-parse the filename.
     dilution_pct: int | None = None
+    # Evosep Eno/One serial number (e.g. ``S00462``), parsed from the
+    # filename. A customer can run more than one Evosep in front of the same
+    # mass spectrometer and swap between them day to day, so the LC identity
+    # has to travel with the run or a trend silently mixes two instruments.
+    # Auto-detection from the EVP procedure logs was considered and deferred:
+    # the log folders carry no reliable link back to the raw file (matching on
+    # timestamp breaks at fast SPD, where runs are minutes apart).
+    lc_serial: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +133,7 @@ class RunClassification:
             "classification_source": self.source.value,
             "spd": self.spd,
             "dilution_pct": self.dilution_pct,
+            "lc_serial": self.lc_serial,
         }
 
 

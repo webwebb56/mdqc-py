@@ -57,7 +57,7 @@ _KNOWN_LABELS: dict[str, str] = {col: label for col, label, _ in KNOWN_METRIC_DE
 # Charge" arrives via extra_metrics) and so are useless on Levey-Jennings.
 _META_COLS = {
     "timestamp", "acquisition_time", "instrument_id", "raw_file_name",
-    "control_type", "spd", "method_name", "column_info", "target_id",
+    "control_type", "spd", "method_name", "lc_column", "target_id",
     "target_label", "protein_name", "peptide_class", "peptide_class_purpose",
     "peptide_sequence", "precursor_mz", "precursor_charge", "detected",
     "targets_found", "targets_expected", "median_rt_shift",
@@ -183,7 +183,8 @@ def load_payloads(folder: str) -> pd.DataFrame:
         control_type = run.get("control_type", "")
         spd = run.get("spd")
         method_name = run.get("method_name")
-        column_info = run.get("column_info")
+        # `column_info` fallback: payloads spooled before v0.5.17.
+        lc_column = run.get("lc_column", run.get("column_info"))
 
         run_metrics = payload.get("run_metrics", {})
 
@@ -203,7 +204,7 @@ def load_payloads(folder: str) -> pd.DataFrame:
                 "control_type": control_type,
                 "spd": spd,
                 "method_name": method_name,
-                "column_info": column_info,
+                "lc_column": lc_column,
                 "target_id": target.get("target_id", ""),
                 "target_label": label,
                 "protein_name": target.get("protein_name", ""),

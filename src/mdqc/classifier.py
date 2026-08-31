@@ -23,9 +23,32 @@ if TYPE_CHECKING:
 _DELIM_BEFORE = r"(?:^|[_\-\s.])"
 _DELIM_AFTER = r"(?:$|[_\-\s.])"
 
-_SSC0_RE = re.compile(rf"{_DELIM_BEFORE}(SSC[_-]?0|SSC){_DELIM_AFTER}", re.IGNORECASE)
-_QCA_RE = re.compile(rf"{_DELIM_BEFORE}(QC[_-]?A|QCA){_DELIM_AFTER}", re.IGNORECASE)
-_QCB_RE = re.compile(rf"{_DELIM_BEFORE}(QC[_-]?B|QCB){_DELIM_AFTER}", re.IGNORECASE)
+# Control-type markers. Evosep renamed these in the August 2026 SOP review:
+# QC A -> PC (process control), QC B -> SSC (system suitability control),
+# SSC0 -> SSC-gold. Both spellings are accepted so existing acquisition
+# batches keep classifying, but note the one deliberate behaviour change:
+#
+#   a bare `SSC` used to mean the gold standard and now means a routine
+#   system-suitability run.
+#
+# That is forced by the rename — under the new scheme SSC *is* the routine
+# control and the baseline is SSC-gold, so leaving bare SSC pointing at the
+# baseline would make the filename mean the opposite of the SOP. Gold-standard
+# files must therefore carry `SSC0` (legacy) or `SSCGOLD` / `SSC_GOLD`.
+#
+# ControlType values are unchanged: they are payload wire values the platform
+# already consumes, so renaming them is a schema_version change rather than a
+# documentation one. The SOP carries the marker -> term -> wire mapping.
+_SSC_GOLD_RE = re.compile(
+    rf"{_DELIM_BEFORE}(SSC[_-]?GOLD|SSC[_-]?0){_DELIM_AFTER}", re.IGNORECASE
+)
+_PC_RE = re.compile(rf"{_DELIM_BEFORE}(PC|QC[_-]?A|QCA){_DELIM_AFTER}", re.IGNORECASE)
+_SSC_RE = re.compile(rf"{_DELIM_BEFORE}(SSC|QC[_-]?B|QCB){_DELIM_AFTER}", re.IGNORECASE)
+
+# Legacy aliases — kept so nothing importing these breaks.
+_SSC0_RE = _SSC_GOLD_RE
+_QCA_RE = _PC_RE
+_QCB_RE = _SSC_RE
 _BLANK_RE = re.compile(rf"{_DELIM_BEFORE}(BLANK|BLK){_DELIM_AFTER}", re.IGNORECASE)
 _WELL_RE = re.compile(
     rf"{_DELIM_BEFORE}([A-H])(1[0-2]|0?[1-9]){_DELIM_AFTER}", re.IGNORECASE
@@ -44,6 +67,10 @@ _SPD_RE = re.compile(rf"{_DELIM_BEFORE}(\d{{2,4}})[-_]?SPD{_DELIM_AFTER}", re.IG
 _DILUTION_RE = re.compile(
     rf"{_DELIM_BEFORE}(\d{{1,3}})[-_]?(?:perc|pct|percent|%){_DELIM_AFTER}", re.IGNORECASE
 )
+# Evosep Eno/One serial — `S00462`. Evosep serials are the letter S followed by
+# five digits. Anchored to that exact width so it does not swallow arbitrary
+# S-prefixed tokens in a customer's naming scheme.
+_LC_SERIAL_RE = re.compile(rf"{_DELIM_BEFORE}(S\d{{5}}){_DELIM_AFTER}", re.IGNORECASE)
 
 
 def classify_file(
@@ -69,6 +96,7 @@ def classify_filename(
                 instrument = _extract_instrument(stem)
                 spd = _extract_spd(stem)
                 dilution = _extract_dilution_pct(stem)
+                lc_serial = _extract_lc_serial(stem)
                 return RunClassification(
                     control_type=ct,
                     well_position=well,
@@ -78,6 +106,7 @@ def classify_filename(
                     source=ClassificationSource.FILENAME,
                     spd=spd,
                     dilution_pct=dilution,
+                    lc_serial=lc_serial,
                 )
 
     control_type, source = _extract_control_type(stem)
@@ -86,6 +115,7 @@ def classify_filename(
     instrument = _extract_instrument(stem)
     spd = _extract_spd(stem)
     dilution = _extract_dilution_pct(stem)
+    lc_serial = _extract_lc_serial(stem)
     confidence = _confidence(control_type, well, source)
     return RunClassification(
         control_type=control_type,
@@ -96,7 +126,14 @@ def classify_filename(
         source=source,
         spd=spd,
         dilution_pct=dilution,
+        lc_serial=lc_serial,
     )
+
+
+def _extract_lc_serial(stem: str) -> str | None:
+    """Parse the Evosep Eno/One serial from a filename (e.g. ``S00462``)."""
+    m = _LC_SERIAL_RE.search(stem)
+    return m.group(1).upper() if m else None
 
 
 def _extract_spd(stem: str) -> int | None:
@@ -137,11 +174,12 @@ def _strip_vendor_ext(name: str) -> str:
 def _extract_control_type(
     stem: str,
 ) -> tuple[ControlType, ClassificationSource]:
-    if _SSC0_RE.search(stem):
+    # Gold standard first: `SSC_GOLD` also contains a bare `SSC`.
+    if _SSC_GOLD_RE.search(stem):
         return ControlType.SSC0, ClassificationSource.FILENAME
-    if _QCA_RE.search(stem):
+    if _PC_RE.search(stem):
         return ControlType.QC_A, ClassificationSource.FILENAME
-    if _QCB_RE.search(stem):
+    if _SSC_RE.search(stem):
         return ControlType.QC_B, ClassificationSource.FILENAME
     if _BLANK_RE.search(stem):
         return ControlType.BLANK, ClassificationSource.FILENAME
@@ -169,7 +207,7 @@ def _extract_plate(stem: str) -> str | None:
 def _extract_instrument(stem: str) -> str | None:
     # Leading [A-Z0-9_]+ token before the first control/well/date marker.
     candidates: list[int] = []
-    for pat in (_SSC0_RE, _QCA_RE, _QCB_RE, _BLANK_RE, _WELL_RE, _DATE_RE):
+    for pat in (_SSC_GOLD_RE, _PC_RE, _SSC_RE, _BLANK_RE, _WELL_RE, _DATE_RE):
         m = pat.search(stem)
         if m is not None:
             candidates.append(m.start())
