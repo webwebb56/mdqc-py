@@ -183,6 +183,12 @@ class Spool:
             # always null — Evosep has no machine-readable column identifier
             # yet, though they are building one.
             "lc_column": None,
+            # Deprecated alias, emitted through the 1.2 series so a consumer
+            # written against 1.1 does not KeyError on ingest. A null value is
+            # no defence: `payload["run"]["column_info"]` fails on the missing
+            # key regardless of what the value would have been. Remove at 1.3,
+            # once the platform confirms it reads lc_column.
+            "column_info": None,
             # Underscore-prefixed = Python-only debug metadata, not part of cross-language schema.
             "_raw_file_path": str(raw_file_path) if raw_file_path else None,
         }

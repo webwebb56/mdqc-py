@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "payload_id": "fe3ff387-67d2-52ae-8fba-690157c65032",
   "correlation_id": "astral0001-md-20260811090000-0500beef",
   "agent_id": "astral0001-md",
@@ -22,6 +22,7 @@
     "classification_source": "FILENAME",
     "method_name": null,
     "lc_column": null,
+    "column_info": null,
     "_raw_file_path": "D:\\Data\\Astral\\QC\\QCB_100perc_2026-08-11_ss_50ng_200spd_k562_S1-D2.d"
   },
   "extraction": {

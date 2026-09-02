@@ -421,7 +421,7 @@ So the platform target is **Stoyan's tool +**: same depth, plus the structured p
 
 **This is the headline output of the local agent.** Every successful extraction writes one JSON file to `spool/pending/<run_id>_payload.json` and (after retention rules) moves it to `spool/completed/`. The schema is version-tagged via the `schema_version` field.
 
-Current `schema_version`: **"1.1"** (in `mdqc/config/defaults.py`).
+Current `schema_version`: **"1.2"** (in `mdqc/config/defaults.py`).
 
 ### 6.1 Top-level shape
 
@@ -469,7 +469,9 @@ Top-level invariants:
   "classification_confidence": "HIGH",                                // HIGH|MEDIUM|LOW
   "classification_source":     "FILENAME",                            // FILENAME|METADATA|POSITION|DEFAULT
   "method_name":               null,                                  // reserved for Evosep metadata file
-  "column_info":               null                                   // reserved for Evosep metadata file
+  "lc_column":                 null,                                  // analytical LC column; renamed from column_info at 1.2
+  "column_info":               null,                                  // DEPRECATED alias of lc_column, removed at 1.3
+  "lc_serial":                 "S00462"                               // Evosep Eno/One serial, parsed from the filename
 }
 ```
 
@@ -483,7 +485,7 @@ Before v0.5.6 all three dilutions were indistinguishable in the payload —
 every one classified simply as `QC_B` — so the platform had to re-parse the
 filename to tell them apart.
 
-`method_name` and `column_info` are placeholders for the Evosep automation metadata (§3.3 / §4 v0.7.0). When that schema is finalised they get populated; existing payloads have nulls there.
+`method_name` and `lc_column` are placeholders for the Evosep automation metadata (§3.3 / §4 v0.7.0). When that schema is finalised they get populated; existing payloads have nulls there. `lc_serial` **is** populated wherever the filename carries the serial.
 
 ### 6.3 `extraction` object — pipeline metadata
 
@@ -719,7 +721,28 @@ When `extraction.status == "FAILED"`, the payload **still gets written** to the 
 - Adding optional fields is non-breaking; old payloads remain ingestable
 - Removing or renaming fields requires a `schema_version` bump (string-compared, not semver-parsed)
 - The platform should accept any `schema_version ≤ <its own>` and refuse newer ones with a clear "agent version too new for this server" error
-- All current shipping payloads are `schema_version: "1.1"`
+- All current shipping payloads are `schema_version: "1.2"`
+
+**Version history**
+
+| Version | Change |
+|---|---|
+| 1.2 | `run.column_info` renamed to `run.lc_column`; `run.lc_serial` added. `column_info` is still emitted as a **deprecated alias** so a 1.1-era consumer does not break on ingest — it is removed at 1.3, once the platform confirms it reads `lc_column`. |
+| 1.1 | `baseline_context` and `comparison_metrics` added. |
+
+**How this policy was broken, and the guard added since.** v0.5.18 renamed
+`column_info` to `lc_column` and dropped the old key while leaving
+`schema_version` at "1.1" — the platform would have seen the same version
+number with a different shape and no signal that anything moved. The reasoning
+at the time was that the field is always `null` so the rename was harmless;
+that confuses *data* risk with *contract* risk, since
+`payload["run"]["column_info"]` raises on the missing key whatever the value
+would have been.
+
+The schema test then in place asserted the version string alone, so it passed
+throughout. It now pins the version **and** the full set of `run` keys
+(`EXPECTED_RUN_KEYS` in `tests/unit/test_spool_payload_schema.py`), so a shape
+change at a fixed version fails.
 
 ---
 

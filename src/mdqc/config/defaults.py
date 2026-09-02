@@ -121,4 +121,12 @@ SHUTDOWN_GRACE_S = 30
 """Hard timeout for graceful shutdown after SIGTERM."""
 
 # ─── Schema ─────────────────────────────────────────────────────────────────
-PAYLOAD_SCHEMA_VERSION = "1.1"
+PAYLOAD_SCHEMA_VERSION = "1.2"
+"""Payload schema version. Bump on any removal or rename of a field.
+
+1.2 - `run.column_info` renamed to `run.lc_column`, and `run.lc_serial` added
+      (Evosep SOP review, August 2026). `column_info` is still emitted as a
+      deprecated alias so a 1.1-era consumer keeps working; it will be removed
+      at 1.3. Renaming without bumping this is what the policy in
+      update.md 6.8 exists to prevent, and it was briefly violated in v0.5.18.
+"""

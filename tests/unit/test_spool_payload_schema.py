@@ -78,9 +78,30 @@ def template_file(tmp_path: Path) -> Path:
     return template
 
 
-def test_payload_schema_version_is_1_1(
+# The `run` block as the platform receives it. Pinned deliberately: the
+# previous version of this test asserted the schema version alone, which meant
+# `column_info` could be renamed to `lc_column` at a fixed "1.1" and the test
+# still passed — the platform would have seen the same version number with a
+# different shape. Changing this set without moving PAYLOAD_SCHEMA_VERSION is
+# the failure mode it now catches.
+EXPECTED_RUN_KEYS = {
+    "run_id", "raw_file_name", "raw_file_hash", "acquisition_time",
+    "instrument_id", "vendor", "control_type", "well_position", "plate_id",
+    "spd", "dilution_pct", "lc_serial", "classification_confidence",
+    "classification_source", "method_name", "lc_column",
+    "column_info",  # deprecated alias, remove at 1.3
+}
+
+
+def test_payload_schema_version_and_run_shape_move_together(
     tmp_data_dir: Path, thermo_raw: Path, template_file: Path
 ) -> None:
+    """Renaming or removing a field requires a version bump — update.md §6.8.
+
+    If this fails because you changed the run block, bump
+    PAYLOAD_SCHEMA_VERSION, update this set, and tell the platform team what
+    moved. Do not just update the set.
+    """
     spool = Spool(agent_id="test-agent", agent_version="0.0.0")
     classification = _make_classification()
     extraction = _make_extraction(thermo_raw, template_file)
@@ -88,7 +109,13 @@ def test_payload_schema_version_is_1_1(
     spool_path = spool.enqueue(classification, extraction)
     payload = json.loads(spool_path.read_text(encoding="utf-8"))
 
-    assert payload["schema_version"] == "1.1"
+    assert payload["schema_version"] == "1.2"
+    emitted = {k for k in payload["run"] if not k.startswith("_")}
+    assert emitted == EXPECTED_RUN_KEYS, (
+        f"run block changed shape — "
+        f"added {sorted(emitted - EXPECTED_RUN_KEYS)}, "
+        f"removed {sorted(EXPECTED_RUN_KEYS - emitted)}"
+    )
 
 
 def test_payload_run_uses_raw_file_name_not_path(
@@ -197,9 +224,30 @@ def test_payload_run_method_name_and_lc_column_present_as_keys(
     assert "lc_column" in payload["run"]
     assert payload["run"]["method_name"] is None
     assert payload["run"]["lc_column"] is None
-    # The old key must be gone rather than emitted alongside, so the platform
-    # gets one name for one field.
-    assert "column_info" not in payload["run"]
+
+
+def test_payload_still_emits_column_info_as_a_deprecated_alias(
+    tmp_data_dir: Path, thermo_raw: Path, template_file: Path
+) -> None:
+    """A 1.1-era consumer must not break on ingest.
+
+    The first cut of this rename dropped `column_info` outright and left
+    `schema_version` at 1.1, so the platform would have seen the same version
+    number with a different shape and no signal. A null value is no defence
+    either: ``payload["run"]["column_info"]`` raises on the missing key
+    regardless of what the value would have been.
+
+    Remove this alias, and this test, at schema 1.3 once the platform
+    confirms it reads `lc_column`.
+    """
+    spool = Spool(agent_id="test-agent", agent_version="0.0.0")
+    spool_path = spool.enqueue(
+        _make_classification(), _make_extraction(thermo_raw, template_file)
+    )
+    payload = json.loads(spool_path.read_text(encoding="utf-8"))
+
+    assert "column_info" in payload["run"]
+    assert payload["run"]["column_info"] == payload["run"]["lc_column"]
 
 
 def test_payload_run_carries_lc_serial(
