@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QC Payload Field Reference &middot; MD QC agent</title>
+<meta name="description" content="Every field in an mdqc QC payload: what it means, whether it was measured or derived, and the exact calculation behind each derived value. Schema 1.2.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+  :root {
+    --paper:#f6f7f9; --surface:#ffffff; --surface-sunk:#eef1f5;
+    --ink:#12181f; --ink-soft:#47525f; --ink-faint:#6f7b89;
+    --rule:#d8dee6; --rule-soft:#e7ecf1;
+    --accent:#0d6a72; --accent-soft:#e3f0f1; --accent-ink:#094d53;
+    --ok:#2c6a47;  --ok-bg:#e6f1ea;
+    --warn:#9a6100; --warn-bg:#fbf0dd;
+    --gap:#9c3a3f; --gap-bg:#f8e7e8;
+    --shadow:0 1px 2px rgba(18,24,31,.05), 0 1px 12px rgba(18,24,31,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#0e1319; --surface:#151c24; --surface-sunk:#1b242e;
+      --ink:#e6ebf1; --ink-soft:#a7b3c1; --ink-faint:#7c8794;
+      --rule:#2a3540; --rule-soft:#212a34;
+      --accent:#4fb3ba; --accent-soft:#10333a; --accent-ink:#7fcdd2;
+      --ok:#79c295;  --ok-bg:#14291d;
+      --warn:#d9a441; --warn-bg:#2c2312;
+      --gap:#e08a8f; --gap-bg:#2e1a1c;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 1px 14px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0e1319; --surface:#151c24; --surface-sunk:#1b242e;
+    --ink:#e6ebf1; --ink-soft:#a7b3c1; --ink-faint:#7c8794;
+    --rule:#2a3540; --rule-soft:#212a34;
+    --accent:#4fb3ba; --accent-soft:#10333a; --accent-ink:#7fcdd2;
+    --ok:#79c295;  --ok-bg:#14291d;
+    --warn:#d9a441; --warn-bg:#2c2312;
+    --gap:#e08a8f; --gap-bg:#2e1a1c;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 1px 14px rgba(0,0,0,.25);
+  }
+
+  *,*::before,*::after { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 clamp(1rem,4vw,3rem) 6rem; }
+
+  header.mast { padding:clamp(2.75rem,7vw,5rem) 0 2rem; }
+  .eyebrow {
+    font-family:"IBM Plex Mono",monospace; font-size:.72rem; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 1.1rem;
+    display:flex; align-items:center; gap:.75rem;
+  }
+  .eyebrow::after { content:""; flex:1; height:1px; background:var(--rule); }
+  h1 {
+    font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif; font-weight:700;
+    font-size:clamp(2rem,5vw,3.15rem); line-height:1.05; letter-spacing:-.015em;
+    margin:0 0 1rem; text-wrap:balance;
+  }
+  .standfirst { font-size:clamp(1rem,2vw,1.14rem); color:var(--ink-soft); max-width:64ch; margin:0; }
+  .standfirst strong { color:var(--ink); font-weight:600; }
+
+  .schema-badge {
+    display:inline-flex; align-items:center; gap:.6rem; margin-top:1.5rem;
+    font-family:"IBM Plex Mono",monospace; font-size:.8rem;
+    background:var(--accent-soft); color:var(--accent-ink);
+    border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    padding:.4rem .8rem;
+  }
+
+  section { margin-top:3.25rem; }
+  h2 {
+    font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif; font-weight:600;
+    font-size:clamp(1.3rem,3vw,1.65rem); letter-spacing:-.01em; margin:0 0 .3rem;
+  }
+  h2 .path {
+    font-family:"IBM Plex Mono",monospace; font-size:.72em; font-weight:400;
+    color:var(--accent); margin-left:.6rem;
+  }
+  .sec-note { color:var(--ink-soft); margin:0 0 1.4rem; max-width:70ch; }
+  code { font-family:"IBM Plex Mono",monospace; font-size:.88em; }
+
+  .tbl { overflow-x:auto; border:1px solid var(--rule); background:var(--surface); box-shadow:var(--shadow); }
+  table { border-collapse:collapse; width:100%; min-width:860px; font-size:.86rem; }
+  thead th {
+    text-align:left; font-family:"IBM Plex Sans Condensed",sans-serif; font-weight:600;
+    font-size:.75rem; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-faint);
+    background:var(--surface-sunk); padding:.65rem .85rem;
+    border-bottom:1px solid var(--rule); white-space:nowrap;
+  }
+  tbody td { padding:.75rem .85rem; border-bottom:1px solid var(--rule-soft); vertical-align:top; }
+  tbody tr:last-child td { border-bottom:0; }
+  td.f {
+    font-family:"IBM Plex Mono",monospace; font-size:.79rem; font-weight:500;
+    color:var(--accent-ink); white-space:nowrap;
+  }
+  td.t { font-family:"IBM Plex Mono",monospace; font-size:.74rem; color:var(--ink-faint); white-space:nowrap; }
+  td.eg { font-family:"IBM Plex Mono",monospace; font-size:.78rem; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .calc {
+    display:block; margin-top:.4rem; font-family:"IBM Plex Mono",monospace; font-size:.76rem;
+    color:var(--ink-soft); background:var(--surface-sunk); padding:.35rem .55rem;
+    border-left:2px solid var(--accent); overflow-x:auto;
+  }
+  .why { display:block; margin-top:.4rem; color:var(--ink-faint); font-size:.9em; font-style:italic; }
+
+  .pill {
+    display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:.66rem;
+    letter-spacing:.04em; text-transform:uppercase; padding:.14rem .45rem;
+    border-radius:2px; white-space:nowrap;
+  }
+  .pill.raw  { color:var(--ink-soft); background:var(--surface-sunk); border:1px solid var(--rule); }
+  .pill.der  { color:var(--accent-ink); background:var(--accent-soft); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); }
+  .pill.null { color:var(--warn); background:var(--warn-bg); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent); }
+
+  .callout {
+    background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--accent);
+    padding:1.2rem 1.4rem; box-shadow:var(--shadow); margin-bottom:1.4rem;
+  }
+  .callout.warnbox { border-left-color:var(--warn); }
+  .callout p { margin:0 0 .7rem; } .callout p:last-child { margin:0; }
+  .callout .lbl {
+    font-family:"IBM Plex Mono",monospace; font-size:.72rem; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--accent); display:block; margin-bottom:.5rem;
+  }
+  .callout.warnbox .lbl { color:var(--warn); }
+
+  .legend { display:flex; flex-wrap:wrap; gap:1.1rem; margin:1rem 0 0; font-size:.85rem; color:var(--ink-soft); }
+  .legend span { display:flex; align-items:center; gap:.5rem; }
+
+  footer { margin-top:4rem; padding-top:1.4rem; border-top:1px solid var(--rule); font-size:.84rem; color:var(--ink-faint); }
+  a { color:var(--accent-ink); }
+
+  /* Printed as a desk reference — the tables are the point, so keep them
+     whole and drop the interactive chrome. */
+  @media print {
+    :root {
+      --paper:#fff; --surface:#fff; --surface-sunk:#f4f6f8;
+      --ink:#000; --ink-soft:#333; --ink-faint:#555;
+      --rule:#bbb; --rule-soft:#ddd; --shadow:none;
+      --accent:#0d6a72; --accent-ink:#094d53;
+    }
+    body { background:#fff; font-size:9.5pt; line-height:1.4; }
+    .wrap { max-width:none; padding:0; }
+    header.mast { padding:0 0 1rem; }
+    h1 { font-size:22pt; }
+    h2 { font-size:13pt; page-break-after:avoid; }
+    section { margin-top:1.6rem; page-break-inside:auto; }
+    .tbl { overflow:visible; box-shadow:none; }
+    table { min-width:0; font-size:8pt; }
+    tbody tr { page-break-inside:avoid; }
+    thead { display:table-header-group; }
+    .callout { page-break-inside:avoid; box-shadow:none; }
+    a { color:#000; text-decoration:none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">MD QC agent · payload reference</p>
+  <h1>Every field in a QC payload</h1>
+  <p class="standfirst">
+    One JSON file per run. This is what each field means, whether it was
+    <strong>measured or derived</strong>, and for the derived ones, the exact calculation.
+    Example values are from <code>payload_02_qcb_healthy.json</code> in the repo &mdash; a synthetic reference payload, modelled on the Evosep panel at 200 SPD. Real values will differ; the field names and calculations will not.
+  </p>
+  <div class="schema-badge"><strong>schema_version</strong> 1.2</div>
+</header>
+
+<section>
+  <div class="callout">
+    <span class="lbl">The design principle</span>
+    <p>
+      <strong>Every raw input is emitted alongside every derived flag.</strong> Nothing is
+      reduced to a verdict you cannot reconstruct. Thresholds are provisional and being
+      recalibrated across platforms, so the platform must be able to re-derive any judgement
+      under different numbers — which is why <code>thresholds_applied</code> travels with
+      every run rather than being looked up server-side.
+    </p>
+  </div>
+  <div class="callout warnbox">
+    <span class="lbl">Timestamps — read this before writing a parser</span>
+    <p>
+      All three timestamp fields (<code>timestamp</code>, <code>run.acquisition_time</code>,
+      <code>baseline_context.created_at</code>) are ISO 8601 and <strong>always carry an explicit
+      offset</strong>, so they are never ambiguous and never naive. Two things to know:
+    </p>
+    <p>
+      <strong>The offset is written <code>+00:00</code>, not <code>Z</code>.</strong> The two mean the
+      same thing — <code>Z</code> is "Zulu", the ISO 8601 / RFC 3339 shorthand for a zero UTC offset —
+      but they are different bytes, and a strict parser or a string comparison written for one will
+      not accept the other.
+    </p>
+    <p>
+      <strong><code>acquisition_time</code> is not guaranteed to be UTC.</strong> Where the Skyline
+      report carries an AcquiredTime column, the agent attaches the <em>instrument PC's local
+      offset</em> — deliberately, so the wall clock matches what the operator saw. An instrument in
+      Copenhagen emits <code>+02:00</code>; one in Melbourne emits <code>+10:00</code>. Sorting and
+      comparison are safe because the offsets are explicit, but <strong>grouping by calendar day is
+      not</strong> until you decide whose day you mean.
+    </p>
+  </div>
+
+  <div class="legend">
+    <span><span class="pill raw">measured</span> read from the Skyline report or the filename</span>
+    <span><span class="pill der">derived</span> calculated by the agent</span>
+    <span><span class="pill null">always null</span> reserved, not yet populated</span>
+  </div>
+</section>
+
+<section>
+  <h2>Envelope<span class="path">top level</span></h2>
+  <p class="sec-note">Identity and provenance. <code>schema_version</code> is the field to branch on — it moves whenever a field is renamed or removed.</p>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:15rem">Field</th><th style="width:6rem">Type</th><th>Meaning</th><th style="width:12rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">schema_version</td><td class="t">string</td><td>Payload contract version. String-compared, not semver-parsed. Bumped on any rename or removal.<span class="why">1.2 renamed <code>column_info</code> → <code>lc_column</code> and added <code>lc_serial</code>.</span></td><td class="eg">"1.2"</td></tr>
+      <tr><td class="f">payload_id</td><td class="t">uuid</td><td>Unique per payload. Use for idempotent ingest.</td><td class="eg">uuid4</td></tr>
+      <tr><td class="f">correlation_id</td><td class="t">uuid</td><td>Ties a payload to the agent-side processing attempt.</td><td class="eg">uuid4</td></tr>
+      <tr><td class="f">agent_id</td><td class="t">string</td><td>Stable per installation. Identifies the machine, not the instrument.</td><td class="eg">"agent-…"</td></tr>
+      <tr><td class="f">agent_version</td><td class="t">string</td><td>Agent release that produced this. Needed to interpret <code>thresholds_source</code>.</td><td class="eg">"0.5.20"</td></tr>
+      <tr><td class="f">timestamp</td><td class="t">iso8601</td><td>When the payload was written — <em>not</em> when the sample was acquired. Always UTC with a <code>+00:00</code> offset and microsecond precision.</td><td class="eg">…T05:25:05.976746+00:00</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Run<span class="path">run</span></h2>
+  <p class="sec-note">
+    Everything derived from the filename and the file itself. These are the filter dimensions —
+    a trend that doesn't split on instrument, SPD and LC serial is averaging across things that
+    aren't comparable.
+  </p>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:16rem">Field</th><th style="width:7rem">Source</th><th>Meaning &amp; derivation</th><th style="width:11rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">raw_file_name</td><td><span class="pill raw">measured</span></td><td>Acquisition filename, extension included.</td><td class="eg">QCB_…_A2.d</td></tr>
+      <tr><td class="f">raw_file_hash</td><td><span class="pill der">derived</span></td><td>SHA-256 of the raw file, capped at the first 50 MB for speed. For directory formats (Bruker <code>.d</code>) it hashes the sorted name+size listing instead.<span class="calc">sha256(first 50 MB) — or sha256("relpath:size\n" per file, sorted)</span></td><td class="eg">sha256:…</td></tr>
+      <tr><td class="f">acquisition_time</td><td><span class="pill der">derived</span></td><td>When the sample was run. <strong>Use this for the x-axis</strong>, not <code>timestamp</code>. ISO 8601, always offset-aware — never naive — but <strong>the offset is not always UTC</strong>, and the format is <code>+00:00</code> rather than <code>Z</code>.<span class="calc">AcquiredTime column present → naive wall clock + <em>instrument PC's local offset</em><br>column absent → file mtime, emitted as +00:00</span><span class="why">The bundled MD_QC_Report.skyr does not currently emit AcquiredTime, so most installs take the mtime path today. Parse the offset, do not assume it.</span></td><td class="eg">2026-08-11T11:16:00+00:00</td></tr>
+      <tr><td class="f">instrument_id</td><td><span class="pill raw">measured</span></td><td>From the agent's configuration, not the filename. Baselines are held per instrument.</td><td class="eg">"Astral_0001"</td></tr>
+      <tr><td class="f">vendor</td><td><span class="pill der">derived</span></td><td>Inferred from the raw file extension.<span class="calc">.raw→thermo · .d→bruker · .wiff→sciex · .lcd→shimadzu</span></td><td class="eg">"bruker"</td></tr>
+      <tr><td class="f">control_type</td><td><span class="pill der">derived</span></td><td>Classified from filename markers. <strong>Stored values are unchanged from the old naming</strong> — see the mapping note below.<span class="calc">SSC-gold → "SSC0" · PC → "QC_A" · SSC → "QC_B" · blank → "BLANK" · else "SAMPLE"</span></td><td class="eg">"QC_B"</td></tr>
+      <tr><td class="f">spd</td><td><span class="pill der">derived</span></td><td>Evosep samples-per-day, parsed from a <code>200SPD</code>-style marker. Baselines are per instrument <em>and</em> per SPD.</td><td class="eg">200</td></tr>
+      <tr><td class="f">lc_serial</td><td><span class="pill der">derived</span></td><td>Evosep Eno/One serial from the filename. Matched as <code>S</code> + exactly five digits, so other S-prefixed tokens are left alone.<span class="why">A site can swap which Evosep feeds a mass spec day to day. Without splitting on this, a trend silently mixes two instruments.</span></td><td class="eg">"S00462"</td></tr>
+      <tr><td class="f">well_position</td><td><span class="pill der">derived</span></td><td>Plate well <code>A1</code>–<code>H12</code>. Raises classification confidence and can infer control type where the filename has no marker.</td><td class="eg">"A2"</td></tr>
+      <tr><td class="f">plate_id</td><td><span class="pill der">derived</span></td><td>Plate identifier where the filename carries one.</td><td class="eg">null</td></tr>
+      <tr><td class="f">dilution_pct</td><td><span class="pill der">derived</span></td><td>Deliberate dilution level, 1–100. <strong>Service use only</strong> — customers don't have the material, so expect null in the field.</td><td class="eg">100</td></tr>
+      <tr><td class="f">classification_confidence</td><td><span class="pill der">derived</span></td><td>HIGH where a filename marker matched; lower where inferred from well position alone.</td><td class="eg">"HIGH"</td></tr>
+      <tr><td class="f">classification_source</td><td><span class="pill der">derived</span></td><td>FILENAME, WELL or DEFAULT — how the control type was decided.</td><td class="eg">"FILENAME"</td></tr>
+      <tr><td class="f">lc_column</td><td><span class="pill null">always null</span></td><td>Analytical LC column. Renamed from <code>column_info</code> at schema 1.2. Evosep has no machine-readable column identifier yet.</td><td class="eg">null</td></tr>
+      <tr><td class="f">column_info</td><td><span class="pill null">always null</span></td><td><strong>Deprecated alias of <code>lc_column</code></strong>, emitted through the 1.2 series so a 1.1-era consumer doesn't break on ingest. Removed at 1.3.</td><td class="eg">null</td></tr>
+      <tr><td class="f">method_name</td><td><span class="pill null">always null</span></td><td>Reserved for the Evosep automation metadata file.</td><td class="eg">null</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout warnbox" style="margin-top:1.4rem;">
+    <span class="lbl">Display names differ from stored values</span>
+    <p>
+      Evosep renamed the controls in the August 2026 SOP review. The payload keeps the original
+      <code>control_type</code> values because the platform already consumes them — renaming
+      those is a schema change, not a documentation one. Apply this mapping wherever control
+      type is shown to a user:
+    </p>
+    <p style="font-family:'IBM Plex Mono',monospace; font-size:.85rem;">
+      <code>QC_A</code> → display <strong>PC</strong> (process control) &nbsp;·&nbsp;
+      <code>QC_B</code> → display <strong>SSC</strong> (system suitability control) &nbsp;·&nbsp;
+      <code>SSC0</code> → display <strong>SSC-gold</strong>
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>Extraction<span class="path">extraction</span></h2>
+  <p class="sec-note">Pipeline metadata. A failed extraction is <strong>still spooled</strong>, with this block populated and <code>target_metrics</code> empty — it must be ingested, not dropped.</p>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:16rem">Field</th><th style="width:7rem">Source</th><th>Meaning</th><th style="width:11rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">status</td><td><span class="pill der">derived</span></td><td><code>SUCCESS</code> or <code>FAILED</code>. Authoritative signal is whether Skyline produced a non-empty CSV — <strong>not</strong> its exit code, which some Skyline 26.x builds set non-zero on success.</td><td class="eg">"SUCCESS"</td></tr>
+      <tr><td class="f">error_message</td><td><span class="pill der">derived</span></td><td>Populated on failure, and carries Skyline's own stdout/stderr so a missing vendor reader can be told from a wrong template.</td><td class="eg">null</td></tr>
+      <tr><td class="f">backend / backend_version</td><td><span class="pill raw">measured</span></td><td>Extraction engine and its version. <code>backend</code> is always <code>"skyline"</code> today.</td><td class="eg">"26.1.0.259"</td></tr>
+      <tr><td class="f">template_name / template_hash</td><td><span class="pill der">derived</span></td><td>The <code>.sky</code> used, and its SHA-256. <strong>A change in hash explains a step change in values</strong> that would otherwise look like an instrument fault.</td><td class="eg">sha256:1111…</td></tr>
+      <tr><td class="f">extraction_time_ms</td><td><span class="pill der">derived</span></td><td>Wall-clock duration. A sub-second value with no CSV is the signature of a missing vendor reader.</td><td class="eg">21400</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Per-peptide measurements<span class="path">target_metrics[]</span></h2>
+  <p class="sec-note">One entry per peptide, straight from the Skyline report. These are the raw numbers everything downstream is derived from.</p>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:16rem">Field</th><th style="width:7rem">Source</th><th>Meaning &amp; derivation</th><th style="width:11rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">target_id / peptide_sequence</td><td><span class="pill raw">measured</span></td><td>Peptide identity. <code>protein_name|sequence</code> forms the key used in the comparison blocks.</td><td class="eg">PVSSAAS…</td></tr>
+      <tr><td class="f">peak_area</td><td><span class="pill raw">measured</span></td><td>Integrated area. <strong>The primary signal metric.</strong> Transition-level rows are collapsed to one row per peptide by summing.</td><td class="eg">7,483,563</td></tr>
+      <tr><td class="f">retention_time</td><td><span class="pill raw">measured</span></td><td>Elution time in <strong>minutes</strong>.</td><td class="eg">1.819</td></tr>
+      <tr><td class="f">peak_width_fwhm</td><td><span class="pill raw">measured</span></td><td>Full width at half maximum, minutes. A broadening peak often precedes a drop in area, so it leads the signal trend.</td><td class="eg">0.059</td></tr>
+      <tr><td class="f">mass_error_ppm</td><td><span class="pill raw">measured</span></td><td>Signed mass accuracy. Drift here points at calibration rather than chromatography.</td><td class="eg">−2.5</td></tr>
+      <tr><td class="f">isotope_dot_product</td><td><span class="pill raw">measured</span></td><td>idotp — agreement with the theoretical isotope pattern. <strong>Not sufficient alone</strong> to identify a wrong peak: one has been observed at 0.92.</td><td class="eg">0.97</td></tr>
+      <tr><td class="f">library_dot_product</td><td><span class="pill raw">measured</span></td><td>dotp — agreement with the spectral library.</td><td class="eg">0.94</td></tr>
+      <tr><td class="f">detected</td><td><span class="pill der">derived</span></td><td>Whether a peak was found at all. Feeds <code>targets_found</code>.</td><td class="eg">true</td></tr>
+      <tr><td class="f">peptide_class<br>peptide_class_purpose</td><td><span class="pill der">derived</span></td><td>Assigned by matching the Skyline <em>Protein</em> column against configured rules. Purpose is <code>recovery</code>, <code>digest_efficiency</code> or <code>custom</code>, and determines which aggregate the peptide belongs to.</td><td class="eg">"recovery"</td></tr>
+      <tr><td class="f">extra_metrics</td><td><span class="pill raw">measured</span></td><td>Any report column without a first-class field — e.g. <em>Points Across Peak</em>, <em>Total Ion Current Area</em>. Shape varies with the <code>.skyr</code>, so treat as opaque.</td><td class="eg">{…}</td></tr>
+      <tr><td class="f">precursor_mz, peak_height,<br>peak_symmetry, rt_expected, rt_delta</td><td><span class="pill null">always null</span></td><td>Parsed only when the Skyline report includes those columns. Evosep's current <code>.skyr</code> does not emit them.</td><td class="eg">null</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Run aggregates<span class="path">run_metrics</span></h2>
+  <p class="sec-note">Whole-run roll-ups. Computed on the run alone — <strong>no baseline involved</strong>, so these are present even on a freshly installed instrument.</p>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:16rem">Field</th><th style="width:7rem">Source</th><th>Calculation</th><th style="width:11rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">targets_found<br>targets_expected</td><td><span class="pill der">derived</span></td><td>Counted over <strong>recovery-class peptides only</strong>. Digest-efficiency pairs are excluded — the 1-miss peptide is often near the limit of quantitation and counting it would depress recovery artificially.<span class="calc">found = count(detected) over recovery peptides<br>expected = count(all) over recovery peptides</span></td><td class="eg">6 / 6</td></tr>
+      <tr><td class="f">target_recovery_pct</td><td><span class="pill der">derived</span></td><td>Detection rate, not a signal level. A drop here is a different fault from a drop in area.<span class="calc">targets_found ÷ targets_expected × 100</span></td><td class="eg">100.0</td></tr>
+      <tr><td class="f">median_rt_shift</td><td><span class="pill null">null in practice</span></td><td>Median of per-peptide <code>rt_delta</code> over <strong>all</strong> targets, unfiltered. <strong>But <code>rt_delta</code> requires an expected-RT column that Evosep's current <code>.skyr</code> does not emit</strong>, so this resolves to <code>null</code> on real runs. Use <code>comparison_metrics.per_peptide[].rt_delta_from_baseline</code> instead — that is computed against the gold standard and is populated.<span class="calc">median(rt_delta for all targets where not null)</span></td><td class="eg">null <span class="why">(0.004 in the example payload is hand-set)</span></td></tr>
+      <tr><td class="f">median_mass_error_ppm</td><td><span class="pill der">derived</span></td><td>Median across all targets.<span class="calc">median(mass_error_ppm for all targets where not null)</span></td><td class="eg">−2.4</td></tr>
+      <tr><td class="f">digest_efficiency_pct</td><td><span class="pill der">derived</span></td><td>Completeness of digestion, from the miss-cleavage pair. <strong>PC only</strong> — null wherever no digest-efficiency class is configured or neither peptide was detected. The shorter sequence is taken as the 0-miss form.<span class="calc">area(0-miss) ÷ (area(0-miss) + area(1-miss)) × 100</span></td><td class="eg">95.2</td></tr>
+      <tr><td class="f">chromatography_score</td><td><span class="pill null">always null</span></td><td>Scaffolded and never defined. Either specify it or drop it — don't build against it.</td><td class="eg">null</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>The gold standard<span class="path">baseline_context</span></h2>
+  <p class="sec-note">
+    A <strong>full copy</strong> of the reference this run was measured against, embedded in every
+    payload. That's deliberate: the platform can re-derive any comparison without asking the agent
+    for anything, and a payload stays interpretable after the baseline is replaced.
+    <strong>Null until an engineer saves a gold standard</strong> — the normal state from
+    installation onwards, not an error.
+  </p>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:17rem">Field</th><th>Meaning &amp; calculation</th><th style="width:11rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">baseline_id</td><td>UUID of the saved baseline. Use it to group runs measured against the same reference, and to detect a re-baseline as the cause of a step change.</td><td class="eg">uuid4</td></tr>
+      <tr><td class="f">label / created_at</td><td>Free-text reason the baseline was made (e.g. <em>Install 2026-08-18</em>) and when.</td><td class="eg">"Install …"</td></tr>
+      <tr><td class="f">instrument_id / spd</td><td>What the baseline is scoped to. Baselines are per instrument <em>and</em> per SPD.</td><td class="eg">200</td></tr>
+      <tr><td class="f">source_run_count</td><td>How many SSC runs the engineer selected. Typically 15–20.</td><td class="eg">15</td></tr>
+      <tr><td class="f">per_peptide[].peak_area_median</td><td>Median peak area across the selected runs. <strong>The denominator for every ratio downstream.</strong><span class="calc">median(peak_area across selected runs)</span></td><td class="eg">7,498,575</td></tr>
+      <tr><td class="f">per_peptide[].peak_area_sd</td><td>Population standard deviation.<span class="calc">pstdev(peak_area across selected runs)</span></td><td class="eg">23,862</td></tr>
+      <tr><td class="f">per_peptide[].peak_area_cv_pct</td><td>Spread as a percentage of the mean. <strong>The baseline-quality check</strong> — investigate before saving if this exceeds ~10% on recovery peptides.<span class="calc">pstdev ÷ mean × 100</span></td><td class="eg">0.318</td></tr>
+      <tr><td class="f">per_peptide[].retention_time_median</td><td>Median RT in minutes. Denominator for RT deviation.<span class="calc">median(retention_time across selected runs)</span></td><td class="eg">1.82</td></tr>
+      <tr><td class="f">per_peptide[].retention_time_sd</td><td>Population SD of RT, in <strong>minutes</strong> — the agent UI shows it in seconds. This is the figure Evosep's absolute criteria are written against (&lt;1.0 s pass at 200 SPD).<span class="calc">pstdev(retention_time across selected runs)</span></td><td class="eg">0.00115</td></tr>
+      <tr><td class="f">per_peptide[].isotope_dot_product_median<br>per_peptide[].library_dot_product_median</td><td>Reference dot products. Null for baselines saved before v0.5.8 — treat as optional.</td><td class="eg">0.97</td></tr>
+      <tr><td class="f">per_peptide[].n</td><td>Runs contributing to this peptide's statistics. Can be lower than <code>source_run_count</code> if a peptide was missing in some.</td><td class="eg">15</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Run vs gold standard<span class="path">comparison_metrics</span></h2>
+  <p class="sec-note">
+    The judgement layer. Everything here is reconstructible from <code>target_metrics</code> plus
+    <code>baseline_context</code> — nothing is hidden. Null wherever no baseline exists.
+  </p>
+
+  <h3 style="font-family:'IBM Plex Sans Condensed',sans-serif; font-size:1.02rem; margin:1.6rem 0 .6rem;">Run level</h3>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:17rem">Field</th><th>Calculation &amp; meaning</th><th style="width:11rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">targets_compared</td><td>Peptides present in <em>both</em> the run and the baseline. A peptide missing from either is skipped, not zeroed.</td><td class="eg">8</td></tr>
+      <tr><td class="f">median_peak_area_ratio</td><td><strong>The headline number.</strong> 1.0 means the run matches its gold standard.<span class="calc">median(peak_area ÷ baseline.peak_area_median) across compared peptides</span></td><td class="eg">0.9995</td></tr>
+      <tr><td class="f">median_peak_area_deviation_pct</td><td>The same figure as a percentage. Note it is derived from the <em>median ratio</em>, not the median of per-peptide deviations.<span class="calc">(median_peak_area_ratio − 1.0) × 100</span></td><td class="eg">−0.05</td></tr>
+      <tr><td class="f">median_rt_deviation_pct</td><td>Median of per-peptide RT deviation percentages.<span class="calc">median(rt_deviation_pct across compared peptides)</span></td><td class="eg">0.0</td></tr>
+      <tr><td class="f">targets_extraction_suspect</td><td>Count of peptides flagged as probably the wrong peak. A non-zero value means <strong>read the area numbers with suspicion</strong>.</td><td class="eg">0</td></tr>
+      <tr><td class="f">peak_area_verdict</td><td><code>"ok"</code> / <code>"warn"</code> / <code>"fail"</code>, or <code>null</code> when withheld. Tested fail-first, so an inverted threshold pair can't silently disable the warn band.<span class="calc">|dev| ≥ fail(25%) → "fail"<br>|dev| ≥ warn(15%) → "warn"<br>else → "ok"</span></td><td class="eg">"ok"</td></tr>
+      <tr><td class="f">peak_area_verdict_note</td><td>Populated only when the verdict is withheld, so <strong><code>null</code> verdict + note ≠ missing data</strong>. Withheld for PC (expected ratio ≈ 20, not 1.0) and blanks (expected ≈ 0).</td><td class="eg">null</td></tr>
+      <tr><td class="f">thresholds_applied</td><td>The full threshold set in force for <em>this</em> run. Travels with the payload so a verdict stays interpretable after the defaults change.</td><td class="eg">{…}</td></tr>
+      <tr><td class="f">thresholds_source</td><td><code>"default"</code> or <code>"custom"</code>. The platform can't infer this from the values without tracking shipped defaults per agent version — and a warn on a tuned instrument doesn't mean what a warn on a stock one means.</td><td class="eg">"default"</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 style="font-family:'IBM Plex Sans Condensed',sans-serif; font-size:1.02rem; margin:1.8rem 0 .6rem;">Per peptide <span style="font-family:'IBM Plex Mono',monospace; font-size:.72em; font-weight:400; color:var(--accent);">comparison_metrics.per_peptide[]</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:17rem">Field</th><th>Calculation &amp; meaning</th><th style="width:11rem">Example</th></tr></thead>
+    <tbody>
+      <tr><td class="f">peak_area_ratio_to_baseline</td><td>Per-peptide signal against its own reference.<span class="calc">peak_area ÷ baseline.peak_area_median</span></td><td class="eg">0.998</td></tr>
+      <tr><td class="f">peak_area_deviation_pct</td><td>Signed. <strong>This is what the scorecard shades.</strong><span class="calc">(peak_area − ref) ÷ |ref| × 100</span></td><td class="eg">−0.20</td></tr>
+      <tr><td class="f">rt_delta_from_baseline</td><td>Signed shift in <strong>minutes</strong>. Multiply by 60 for the seconds figure Evosep's criteria use.<span class="calc">retention_time − baseline.retention_time_median</span></td><td class="eg">−0.001</td></tr>
+      <tr><td class="f">rt_deviation_pct</td><td>The same shift as a percentage. Note this is <em>not</em> comparable between peptides eluting at different points in the gradient — prefer the seconds figure for display.<span class="calc">(rt − ref) ÷ |ref| × 100</span></td><td class="eg">−0.055</td></tr>
+      <tr><td class="f">isotope_dot_product_deviation_pct<br>library_dot_product_deviation_pct</td><td>Deviation from the baseline's median dot products. Null where the baseline predates v0.5.8.<span class="calc">(dotp − ref) ÷ |ref| × 100</span></td><td class="eg">0.0</td></tr>
+      <tr><td class="f">rt_outside_threshold</td><td>Whether RT deviation alone exceeds the limit. <strong>Not a fault on its own</strong> — a shift across every peptide is an LC change, not a mis-extraction.<span class="calc">|rt_deviation_pct| &gt; rt_deviation_pct_max (2%)</span></td><td class="eg">false</td></tr>
+      <tr><td class="f">target_extraction_suspect</td><td>Probably the wrong peak. Deliberately a <strong>conjunction</strong>: RT drift <em>and</em> a corroborating signal, because a dot product alone has been seen to look healthy at 0.92 on a wrongly extracted peak.<span class="calc">rt_outside_threshold AND ( |idotp_dev| &gt; 10% OR |dotp_dev| &gt; 10%<br>&nbsp;&nbsp;OR |area_dev| &gt; 30% )</span></td><td class="eg">false</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Thresholds<span class="path">comparison_metrics.thresholds_applied</span></h2>
+  <p class="sec-note">Editable per installation in the agent's Settings page, because Evosep asked to be able to recalibrate in the field without a release. All are percentages.</p>
+  <div class="tbl"><table>
+    <thead><tr><th style="width:20rem">Field</th><th style="width:6rem">Default</th><th>What it gates</th></tr></thead>
+    <tbody>
+      <tr><td class="f">rt_deviation_pct_max</td><td class="eg">2.0</td><td>Sets <code>rt_outside_threshold</code>. Being replaced by absolute seconds where no baseline exists.</td></tr>
+      <tr><td class="f">dot_product_deviation_pct_max</td><td class="eg">5.0</td><td>Agreement expected for a correctly identified target.</td></tr>
+      <tr><td class="f">dot_product_deviation_pct_suspect</td><td class="eg">10.0</td><td>Corroborating arm of the mis-extraction conjunction.</td></tr>
+      <tr><td class="f">peak_area_deviation_pct_suspect</td><td class="eg">30.0</td><td>Alternative corroborating arm of the same conjunction.</td></tr>
+      <tr><td class="f">peak_area_deviation_pct_warn</td><td class="eg">15.0</td><td>Warn band. Raised from 10% at Evosep's instruction — late-eluting targets under-estimate recovery loss and were warning falsely.</td></tr>
+      <tr><td class="f">peak_area_deviation_pct_fail</td><td class="eg">25.0</td><td>Fail band. Roughly a 50% reduction in material reaching the column.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout warnbox" style="margin-top:1.4rem;">
+    <span class="lbl">A consequence worth knowing</span>
+    <p>
+      At a 15% warn band, Evosep's 75%-load condition medians at −9.5% deviation and produces
+      <strong>no warning at all</strong> — a quarter of the material missing, silently. It cleared
+      the old 10% band by half a point too. The expected resolution is per-peptide scoring, where
+      two or three mid-gradient peptides carry the recovery estimate and early and late ones
+      report qualitatively on chromatography.
+    </p>
+  </div>
+</section>
+
+<footer>
+  Generated against mdqc v0.5.20, schema 1.2. Example values from
+  <code>docs/examples/payload_02_qcb_healthy.json</code>; nine reference payloads covering every
+  state are in <code>docs/examples/</code>, regenerable with
+  <code>python scripts/gen_example_payloads.py</code>. Field-level notes in <code>update.md</code> §6.
+</footer>
+
+</div>
+</body>
+</html>
