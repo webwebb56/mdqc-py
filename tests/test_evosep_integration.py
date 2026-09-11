@@ -354,8 +354,8 @@ class TestPayloadSchema:
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
 
         # Schema contract checks
-        assert payload["schema_version"] == "1.1", \
-            f"Expected schema 1.1, got {payload['schema_version']}"
+        assert payload["schema_version"] == "1.2", \
+            f"Expected schema 1.2, got {payload['schema_version']}"
         assert "payload_id" in payload
         assert "timestamp" in payload
         assert "run" in payload

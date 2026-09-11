@@ -545,14 +545,24 @@ def _color_palette(n: int) -> list[str]:
 # ---------------------------------------------------------------------------
 # Single-page helpers — RT-binned grouping, scorecard, decision summary.
 # ---------------------------------------------------------------------------
-# Refined Tailwind-inspired palette — same hue families, more designed.
+# Retention-time groups are ordinal - early to very late - so they take one
+# hue stepped light to dark, which shows the order in the colour itself. Blue,
+# deliberately: red, amber and green mean status in this app (outlier markers,
+# control limits), and the previous palette spent three of its four groups on
+# them - "Very late" was the same red as an outlier (Evosep, 4 Sep 2026).
+# Steps 250/350/500/600 of the reference blue ramp, validated as an ordinal
+# ramp against both Streamlit surfaces (#ffffff light, #0e1117 dark).
 _RT_BIN_COLORS = {
-    "Early (<2 min)":     "#3b82f6",   # blue-500
-    "Mid (2–3 min)":      "#10b981",   # emerald-500
-    "Late (3–4.5 min)":   "#f59e0b",   # amber-500
-    "Very late (≥4.5)":   "#ef4444",   # red-500
-    "Unknown":            "#94a3b8",   # slate-400
+    "Early (<2 min)":     "#86b6ef",
+    "Mid (2–3 min)":      "#5598e7",
+    "Late (3–4.5 min)":   "#256abf",
+    "Very late (≥4.5)":   "#184f95",
+    "Unknown":            "#898781",   # neutral: no retention time recorded
 }
+# Status colours are reserved for state and never used for a series.
+_STATUS_WARNING = "#fab219"
+_STATUS_CRITICAL = "#d03b3b"
+_REFERENCE_LINE = "#898781"
 
 
 def _assign_rt_bin(rt: float | None) -> str:
@@ -605,12 +615,12 @@ def build_grouped_lj(
     height: int = 380,
     value_mode: str = "z",
 ) -> go.Figure:
-    """Single LJ-style chart with peptides grouped by retention-time bin.
+    """Single LJ-style chart: one line per peptide, coloured by retention-time group.
 
     ``value_mode`` controls the y-axis transformation:
       - ``"z"`` (default) — z-score relative to per-peptide baseline; Westgard
         ±σ guide lines drawn at 0/±1/±2/±3. The classic LJ control chart.
-      - ``"raw"`` — plot the metric value as-is, median + IQR per RT bin.
+      - ``"raw"`` — plot the metric value as-is, one line per peptide.
         No guide lines, no z-conversion.
       - ``"log"`` — same as "raw" but log10-transformed Y axis. Useful for
         intensity-style metrics (peak area / height) that span decades.
@@ -670,66 +680,62 @@ def build_grouped_lj(
 
     if draw_westgard:
         # Westgard threshold lines (drawn first so traces sit on top)
+        # Reference lines are neutral; only the control limits wear status
+        # colours, so no guide line can be mistaken for a retention-time group.
         for y, dash, color in [
-            (0,  "solid", "#1f77b4"), (1,  "dash", "#2ca02c"), (-1, "dash", "#2ca02c"),
-            (2,  "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
-            (3,  "dash", "#d9534f"), (-3, "dash", "#d9534f"),
+            (0,  "solid", _REFERENCE_LINE), (1,  "dot", _REFERENCE_LINE), (-1, "dot", _REFERENCE_LINE),
+            (2,  "dash", _STATUS_WARNING), (-2, "dash", _STATUS_WARNING),
+            (3,  "dash", _STATUS_CRITICAL), (-3, "dash", _STATUS_CRITICAL),
         ]:
-            fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash}, opacity=0.4)
+            fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash}, opacity=0.5)
 
     bin_order = ["Early (<2 min)", "Mid (2–3 min)", "Late (3–4.5 min)", "Very late (≥4.5)", "Unknown"]
     seen_bins = [b for b in bin_order if b in df["_rt_bin"].unique()]
 
+    # One line per peptide, coloured by its retention-time group. Collapsing a
+    # group into a median line hid the individual peptides and, for peak area,
+    # took a median of absolute areas across peptides that ionise with very
+    # different efficiency - a band from 39M to 211M because one peptide
+    # dominated it (Evosep, 4 Sep 2026).
+    pep_rt = rt_per_peptide if rt_per_peptide is not None else pd.Series(dtype=float)
     for rt_bin in seen_bins:
         sub = df[df["_rt_bin"] == rt_bin]
         if sub.empty:
             continue
-        agg = sub.groupby(time_col)[value_col].agg(["median", "min", "max",
-                                                lambda s: s.quantile(0.25),
-                                                lambda s: s.quantile(0.75),
-                                                "count"]).reset_index()
-        agg.columns = [time_col, "median", "min", "max", "q25", "q75", "n"]
-        agg = agg.sort_values(time_col)
-        color = _RT_BIN_COLORS.get(rt_bin, "#7f7f7f")
-
-        # IQR band
-        fig.add_trace(go.Scatter(
-            x=pd.concat([agg[time_col], agg[time_col][::-1]]),
-            y=pd.concat([agg["q75"], agg["q25"][::-1]]),
-            fill="toself", fillcolor=color, opacity=0.12,
-            line={"width": 0}, showlegend=False, hoverinfo="skip",
-            name=f"{rt_bin} IQR",
-        ))
-        # Median line + markers — in z-mode, points outside ±2σ get diamond
-        # markers; in raw/log modes everything's a plain circle.
-        if violation_thresh is not None:
-            violation_mask = (agg["min"] < -violation_thresh) | (agg["max"] > violation_thresh)
-            marker_sizes = [10 if v else 6 for v in violation_mask]
-            marker_symbols = ["diamond" if v else "circle" for v in violation_mask]
-        else:
-            marker_sizes = [6] * len(agg)
-            marker_symbols = ["circle"] * len(agg)
-        fig.add_trace(go.Scatter(
-            x=agg[time_col], y=agg["median"],
-            mode="lines+markers",
-            name=f"{rt_bin} (n={int(sub['peptide_sequence'].nunique())})",
-            line={"color": color, "width": 2},
-            marker={
-                "size": marker_sizes,
-                "color": color,
-                "symbol": marker_symbols,
-                "line": {"width": 1, "color": "#333"},
-            },
-            hovertemplate=(
-                f"<b>{rt_bin}</b><br>"
-                "Time: %{x}<br>"
-                "Median: %{y}<br>"
-                "IQR: [%{customdata[0]}, %{customdata[1]}]<br>"
-                "Range: [%{customdata[2]}, %{customdata[3]}]<br>"
-                "n peptides: %{customdata[4]}<extra></extra>"
-            ),
-            customdata=agg[["q25", "q75", "min", "max", "n"]].values,
-        ))
+        color = _RT_BIN_COLORS.get(rt_bin, _REFERENCE_LINE)
+        peptides = sorted(
+            sub["peptide_sequence"].dropna().unique(),
+            key=lambda p: (pep_rt.get(p, float("inf")), p),
+        )
+        n_pep = len(peptides)
+        group_label = f"{rt_bin} · {n_pep} peptide{'' if n_pep == 1 else 's'}"
+        for i, pep in enumerate(peptides):
+            trace = sub[sub["peptide_sequence"] == pep].sort_values(time_col)
+            if violation_thresh is not None:
+                outside = (trace[value_col].abs() > violation_thresh).tolist()
+            else:
+                outside = [False] * len(trace)
+            fig.add_trace(go.Scatter(
+                x=trace[time_col], y=trace[value_col],
+                mode="lines+markers",
+                name=group_label,
+                legendgroup=rt_bin,
+                showlegend=(i == 0),
+                line={"color": color, "width": 2},
+                marker={
+                    "size": [11 if o else 8 for o in outside],
+                    "symbol": ["diamond" if o else "circle" for o in outside],
+                    "color": color,
+                    # An outlier is marked by shape and a status-red ring, so
+                    # the flag never depends on colour alone.
+                    "line": {"width": [2 if o else 0 for o in outside],
+                             "color": _STATUS_CRITICAL},
+                },
+                hovertemplate=(
+                    f"<b>{pep}</b><br>{rt_bin}<br>%{{x}}<br>"
+                    f"{y_axis_title}: %{{y:,.4~r}}<extra></extra>"
+                ),
+            ))
 
     yaxis_kwargs = {"title": y_axis_title, "type": y_type}
     if y_range is not None:
@@ -738,9 +744,16 @@ def build_grouped_lj(
         height=height,
         margin={"l": 40, "r": 10, "t": 30, "b": 30},
         yaxis=yaxis_kwargs,
-        xaxis={"title": "Acquisition Time" if time_col == "acquisition_time" else "Payload Time"},
+        xaxis={
+            "title": "Acquisition Time" if time_col == "acquisition_time" else "Payload Time",
+            # A crosshair with the tooltip for the one peptide under the cursor:
+            # a unified tooltip listing every peptide is unreadable once there
+            # are more than a handful of lines.
+            "showspikes": True, "spikemode": "across", "spikesnap": "cursor",
+            "spikethickness": 1, "spikedash": "dot", "spikecolor": _REFERENCE_LINE,
+        },
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0, "font": {"size": 10}},
-        hovermode="x unified",
+        hovermode="closest",
     )
     return fig
 
@@ -755,8 +768,8 @@ def build_all_metrics_grid(
     n_cols: int = 3,
     value_mode: str = "z",
 ) -> go.Figure:
-    """Small-multiples grid: one compact LJ panel per metric, peptides grouped
-    by RT-bin. Shows every metric on the same page."""
+    """Small-multiples grid: one compact LJ panel per metric, one line per
+    peptide coloured by retention-time group. Shows every metric on one page."""
     metric_cols_all = [(c, lbl) for c, lbl, _ in metric_defs if c in df.columns]
     if not metric_cols_all:
         return go.Figure().update_layout(height=height, title="No metrics available")
@@ -832,52 +845,37 @@ def build_all_metrics_grid(
         # Threshold lines (z-mode only — meaningless in raw / log)
         if value_mode == "z":
             for y, dash, color in [
-                (0, "solid", "#1f77b4"),
-                (2, "dash", "#f0ad4e"), (-2, "dash", "#f0ad4e"),
-                (3, "dash", "#d9534f"), (-3, "dash", "#d9534f"),
+                (0, "solid", _REFERENCE_LINE),
+                (2, "dash", _STATUS_WARNING), (-2, "dash", _STATUS_WARNING),
+                (3, "dash", _STATUS_CRITICAL), (-3, "dash", _STATUS_CRITICAL),
             ]:
                 fig.add_hline(y=y, line={"color": color, "width": 1, "dash": dash},
                               opacity=0.35, row=row, col=col_idx)
 
+        hover_value_fmt = "z: %{y:.2f}" if value_mode == "z" else "value: %{y}"
         for rt_bin in seen_bins_global:
             bin_df = sub[sub["_rt_bin"] == rt_bin]
             if bin_df.empty:
                 continue
-            agg = bin_df.groupby(time_col)[value_col].agg(
-                ["median",
-                 lambda s: s.quantile(0.25),
-                 lambda s: s.quantile(0.75),
-                 "count"]
-            ).reset_index()
-            agg.columns = [time_col, "median", "q25", "q75", "n"]
-            agg = agg.sort_values(time_col)
-            color = _RT_BIN_COLORS.get(rt_bin, "#7f7f7f")
-            show_legend = rt_bin not in legend_shown
-            legend_shown.add(rt_bin)
-
-            # IQR band (no legend)
-            fig.add_trace(go.Scatter(
-                x=pd.concat([agg[time_col], agg[time_col][::-1]]),
-                y=pd.concat([agg["q75"], agg["q25"][::-1]]),
-                fill="toself", fillcolor=color, opacity=0.10,
-                line={"width": 0}, showlegend=False, hoverinfo="skip",
-            ), row=row, col=col_idx)
-
-            # Median line
-            hover_value_fmt = "z: %{y:.2f}" if value_mode == "z" else "value: %{y}"
-            fig.add_trace(go.Scatter(
-                x=agg[time_col], y=agg["median"],
-                mode="lines+markers",
-                name=rt_bin,
-                legendgroup=rt_bin,
-                showlegend=show_legend,
-                line={"color": color, "width": 1.5},
-                marker={"size": 4, "color": color},
-                hovertemplate=(
-                    f"<b>{lbl} · {rt_bin}</b><br>"
-                    f"Time: %{{x}}<br>{hover_value_fmt}<extra></extra>"
-                ),
-            ), row=row, col=col_idx)
+            color = _RT_BIN_COLORS.get(rt_bin, _REFERENCE_LINE)
+            # Lines only: markers on every point of every peptide crowd a
+            # compact panel. The single-metric chart carries the markers.
+            for pep in sorted(bin_df["peptide_sequence"].dropna().unique()):
+                trace = bin_df[bin_df["peptide_sequence"] == pep].sort_values(time_col)
+                show_legend = rt_bin not in legend_shown
+                legend_shown.add(rt_bin)
+                fig.add_trace(go.Scatter(
+                    x=trace[time_col], y=trace[value_col],
+                    mode="lines",
+                    name=rt_bin,
+                    legendgroup=rt_bin,
+                    showlegend=show_legend,
+                    line={"color": color, "width": 1.5},
+                    hovertemplate=(
+                        f"<b>{lbl} · {pep}</b><br>{rt_bin}<br>"
+                        f"Time: %{{x}}<br>{hover_value_fmt}<extra></extra>"
+                    ),
+                ), row=row, col=col_idx)
 
         # Y-axis configuration per-mode.
         if value_mode == "z":

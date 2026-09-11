@@ -683,15 +683,35 @@ genuine defect (a 22% peak-area loss on one peptide):
 | Shading basis | Cells shaded, of 96 |
 |---|---|
 | % from gold standard | **1** |
-| % from mean of selection | **1** |
+| % from median of selection | **1** |
 | standard deviations (previous behaviour) | **46** |
 
 The page now offers all three, defaulting to **% from gold standard** where a
-baseline exists and **% from mean of selection** where one does not — which is
+baseline exists and **% from median of selection** where one does not — which is
 also the answer to "what do we score against before a QC kit has been run?".
 SD is retained as an option because it is still the right question when asking
 how consistent a set is, rather than whether a run is correct; the copy on the
 page says so.
+
+**Median, not mean (v0.5.22).** Until v0.5.22 the no-baseline basis was the
+*mean* of the selected runs. A mean is pulled towards the very outlier the
+shading exists to expose, and the pull is strongest in the small selections a
+site without the QC kit will have. Three runs, one 25% low on every peptide:
+
+| Basis | Low run | Good runs |
+|---|---|---|
+| % from mean of selection (before v0.5.22) | −18.2% — warn | +9.1% |
+| % from median of selection | **−25.0% — fail** | 0.0% |
+
+The gold standard is itself a per-peptide median, so the fallback now matches
+it in kind. On the 16-run set above the two agree — 1 cell each, re-measured on
+v0.5.22 — because one defect in sixteen barely moves a mean; they part company
+on small selections, which is where the fallback is used.
+
+This is display-only. The payload is unchanged, and without a gold standard it
+carries no comparison at all (`baseline_context` and `comparison_metrics` are
+`null`), so a platform view that wants the same fallback computes it from the
+runs in its own filter: per peptide, the median of those runs.
 
 **The percentage thresholds are `[qc_thresholds]` from Settings** — the same
 `peak_area_deviation_pct_warn` / `_fail` that decide `peak_area_verdict` in the

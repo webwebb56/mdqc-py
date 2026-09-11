@@ -30,7 +30,12 @@ from mdqc.config.schema import Config, InstrumentConfig
 from mdqc.crash import install_crash_handlers
 from mdqc.diagnostics import run_diagnostics
 from mdqc.extractor import Extractor
-from mdqc.extractor.skyline import is_clickonce_install
+from mdqc.extractor.skyline import (
+    is_clickonce_install,
+    read_skyline_version,
+    read_template_format,
+    template_newer_than_skyline,
+)
 from mdqc.failed_files import FailedFilesStore
 from mdqc.gold_standards import build_payload_comparison, record_ssc0_run
 from mdqc.ipc.runtime import RuntimeFile, RuntimeInfo, generate_token
@@ -362,6 +367,38 @@ def _resolve_template_path(instrument: InstrumentConfig | None, template_name: s
     return None
 
 
+def _log_templates_newer_than_skyline(cfg: Config, skyline_version: str | None) -> None:
+    """Log an error for each configured template Skyline won't be able to open.
+
+    Checked at start-up because that is where the failure happens: Evosep's
+    first Sciex 7500 install failed every file on a version mismatch while the
+    log said nothing about why.
+    """
+    seen: set[Path] = set()
+    for inst in cfg.instruments:
+        path = _resolve_template_path(inst, inst.template)
+        if path is None or path in seen:
+            continue
+        seen.add(path)
+        fmt, saved_by = read_template_format(path)
+        if template_newer_than_skyline(fmt, skyline_version):
+            log.error(
+                "template_newer_than_skyline",
+                extra={
+                    "instrument_id": inst.id,
+                    "template": str(path),
+                    "template_format": fmt,
+                    "saved_by": saved_by,
+                    "skyline_version": skyline_version,
+                    "remediation": (
+                        "Skyline cannot open a template saved in a newer format, so every "
+                        "extraction will fail. Update Skyline on this PC, or have the "
+                        "template saved for the installed Skyline version."
+                    ),
+                },
+            )
+
+
 async def _build_state(cfg: Config) -> AppState:
     paths.ensure_dirs()
 
@@ -397,10 +434,17 @@ async def _build_state(cfg: Config) -> AppState:
             extra={"skyline_path": str(extractor.skyline_path)},
         )
     else:
+        skyline_version = await asyncio.to_thread(
+            read_skyline_version, extractor.skyline_path
+        )
         log.info(
             "skyline_detected",
-            extra={"skyline_path": str(extractor.skyline_path)},
+            extra={
+                "skyline_path": str(extractor.skyline_path),
+                "skyline_version": skyline_version,
+            },
         )
+        _log_templates_newer_than_skyline(cfg, skyline_version)
     uploader = Uploader(cfg.cloud, agent_version=_agent_version)
     uploader_worker = UploaderWorker(spool, uploader)
 

@@ -1028,8 +1028,9 @@ _ = json
 # ── Gold standards: deviation basis ─────────────────────────────────────────
 # The heatmap used to shade at ±1/±2 SD of the selected runs. On a tight panel
 # that flags ordinary runs and on a noisy one it hides bad ones, so the page
-# now shades by percentage from the gold standard (or from the mean where no
-# baseline exists) using the same thresholds that decide the payload verdict.
+# now shades by percentage from the gold standard (or from the median of the
+# selection where no baseline exists) using the same thresholds that decide
+# the payload verdict.
 
 
 def test_gold_standards_offers_deviation_basis_choice(
@@ -1041,7 +1042,7 @@ def test_gold_standards_offers_deviation_basis_choice(
     client = _client(app)
     body = client.get("/gold-standards?instrument=qe-test&spd=200").text
 
-    for value in ("gold", "mean", "sd"):
+    for value in ("gold", "median", "sd"):
         assert f'name="gs-basis" value="{value}"' in body
 
 
@@ -1114,3 +1115,23 @@ def test_settings_thresholds_panel_is_linkable(
     body = client.get("/settings").text
     assert 'id="qc-thresholds"' in body
     assert 'id="qc-thresholds-details"' in body
+
+
+def test_gold_standards_selection_basis_is_the_median(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """The no-baseline fallback measures from the median of the selection.
+
+    Decided 11 Sep 2026 with the platform team, who mirror this page. A mean
+    is pulled toward the outlier being looked for: three runs with one 25% low
+    reads -18% against the mean (warn) but -25% against the median (fail).
+    """
+    _seed_ssc0_run()
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/gold-standards?instrument=qe-test&spd=200").text
+
+    assert 'name="gs-basis" value="median"' in body
+    assert 'value="mean"' not in body
+    assert "(value - st.areaMedian) / st.areaMedian" in body
+    assert "hasBaseline ? 'gold' : 'median'" in body

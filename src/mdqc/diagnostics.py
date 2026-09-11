@@ -19,6 +19,7 @@ from mdqc import __version__ as _agent_version
 from mdqc.config import ConfigError, load_config, paths
 from mdqc.config.defaults import HTTP_CONNECT_TIMEOUT_S, HTTP_TIMEOUT_S
 from mdqc.config.schema import Config
+from mdqc.extractor import skyline as _skyline
 from mdqc.extractor.skyline import is_clickonce_install
 
 log = logging.getLogger(__name__)
@@ -33,6 +34,12 @@ class TemplateCheck:
     path: Path
     exists: bool
     hash: str | None
+    # Skyline document format and the build that saved it, from the .sky root
+    # element. A template newer than the installed Skyline cannot be opened at
+    # all, so every extraction fails.
+    format_version: str | None = None
+    saved_by: str | None = None
+    newer_than_skyline: bool | None = None
 
 
 @dataclass
@@ -77,6 +84,9 @@ class DiagnosticsReport:
                     "path": str(t.path),
                     "exists": t.exists,
                     "hash": t.hash,
+                    "format_version": t.format_version,
+                    "saved_by": t.saved_by,
+                    "newer_than_skyline": t.newer_than_skyline,
                 }
                 for t in self.templates
             ],
@@ -204,6 +214,12 @@ async def run_diagnostics(*, check_cloud: bool = False) -> DiagnosticsReport:
     if skyline_path is not None:
         skyline_clickonce = is_clickonce_install(skyline_path)
 
+    # Off the event loop: the file-version read is instant, but the fallback
+    # starts SkylineCmd, and /api/diagnostics runs inside the service.
+    skyline_version: str | None = None
+    if skyline_path is not None and not skyline_clickonce:
+        skyline_version = await asyncio.to_thread(_skyline.read_skyline_version, skyline_path)
+
     templates: list[TemplateCheck] = []
     instruments: list[InstrumentCheck] = []
 
@@ -213,12 +229,21 @@ async def run_diagnostics(*, check_cloud: bool = False) -> DiagnosticsReport:
             template_path = _resolve_template(inst.template)
             if template_path not in seen_templates:
                 seen_templates.add(template_path)
+                exists = template_path.exists()
+                fmt, saved_by = (
+                    _skyline.read_template_format(template_path) if exists else (None, None)
+                )
                 templates.append(
                     TemplateCheck(
                         name=inst.template,
                         path=template_path,
-                        exists=template_path.exists(),
-                        hash=_hash_template(template_path) if template_path.exists() else None,
+                        exists=exists,
+                        hash=_hash_template(template_path) if exists else None,
+                        format_version=fmt,
+                        saved_by=saved_by,
+                        newer_than_skyline=_skyline.template_newer_than_skyline(
+                            fmt, skyline_version
+                        ),
                     )
                 )
             watch_path = inst.watch_path
@@ -254,6 +279,7 @@ async def run_diagnostics(*, check_cloud: bool = False) -> DiagnosticsReport:
         and not skyline_clickonce
         and not cert_unsupported
         and any(i.accessible for i in instruments)
+        and not any(t.newer_than_skyline for t in templates)
     )
 
     return DiagnosticsReport(
@@ -262,7 +288,7 @@ async def run_diagnostics(*, check_cloud: bool = False) -> DiagnosticsReport:
         config_ok=config_ok,
         config_error=config_error,
         skyline_path=skyline_path,
-        skyline_version=None,
+        skyline_version=skyline_version,
         skyline_clickonce=skyline_clickonce,
         templates=templates,
         instruments=instruments,
@@ -291,6 +317,29 @@ def _fail(label: str, value: str = "") -> str:
 
 def _muted(label: str, value: str = "") -> str:
     return f"[--] {label}{f': {value}' if value else ''}"
+
+
+def _template_format_lines(t: TemplateCheck, skyline_version: str | None) -> list[str]:
+    label = f"{t.name} format"
+    if t.format_version is None:
+        return [_muted(label, "not readable - not a plain Skyline document?")]
+    # The saving Skyline gets its own line, like the hash above it: inline, the
+    # full version string pushed the template line to ~130 characters.
+    saved = [f"    Saved by: {t.saved_by}"] if t.saved_by else []
+    if t.newer_than_skyline:
+        target = ".".join((skyline_version or "").split(".")[:2]) or "the installed version"
+        return [
+            _fail(label, f"{t.format_version} is newer than installed Skyline {skyline_version}"),
+            *saved,
+            "    Skyline will refuse to open it, so every extraction will fail.",
+            f"    Fix: update Skyline on this PC, or have the template saved for Skyline {target}"
+            " by whoever supplied it.",
+        ]
+    if t.newer_than_skyline is None:
+        head = _muted(label, f"{t.format_version} - not checked, Skyline version unknown")
+    else:
+        head = _ok(label, f"{t.format_version} - readable by installed Skyline {skyline_version}")
+    return [head, *saved]
 
 
 def render_text_report(report: DiagnosticsReport) -> str:
@@ -329,6 +378,7 @@ def render_text_report(report: DiagnosticsReport) -> str:
             lines.append(_ok(t.name, str(t.path)))
             if t.hash:
                 lines.append(f"    Hash: sha256:{t.hash[:16]}...")
+            lines.extend(_template_format_lines(t, report.skyline_version))
         else:
             lines.append(_fail(t.name, str(t.path)))
     lines.append("")

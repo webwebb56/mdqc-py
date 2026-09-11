@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -191,6 +192,85 @@ def _parse_version(stdout: str, stderr: str) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+_TEMPLATE_HEAD_BYTES = 8192
+_FORMAT_VERSION_RE = re.compile(r'<srm_settings\b[^>]*?\bformat_version="([^"]+)"')
+_SOFTWARE_VERSION_RE = re.compile(r'<srm_settings\b[^>]*?\bsoftware_version="([^"]+)"')
+_MAJOR_MINOR_RE = re.compile(r"\s*(\d+)\.(\d+)")
+
+
+def read_skyline_version(exe: Path, *, timeout_s: float = 30.0) -> str | None:
+    """Installed Skyline version, e.g. ``"26.1.0.57"``, or None if unreadable.
+
+    Tries the executable's Windows file version first - instant, no process -
+    then ``SkylineCmd --version``, which prints e.g.
+    ``Skyline (64-bit) 26.1.0.057 (c07debd50)``.
+    """
+    if sys.platform == "win32":
+        try:
+            import win32api
+
+            info = win32api.GetFileVersionInfo(str(exe), "\\")
+            ms, ls = info["FileVersionMS"], info["FileVersionLS"]
+            return f"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}"
+        except Exception:  # pywin32 absent, or no version resource on the file
+            pass
+    try:
+        result = subprocess.run(
+            [str(exe), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return _parse_version(result.stdout, result.stderr)
+
+
+def read_template_format(path: Path) -> tuple[str | None, str | None]:
+    """``(format_version, software_version)`` from a ``.sky`` document's root element.
+
+    Only the head of the file is read - templates can be large. Returns
+    ``(None, None)`` for anything that isn't a readable Skyline document.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(_TEMPLATE_HEAD_BYTES).decode("utf-8", "replace")
+    except OSError:
+        return None, None
+    fmt = _FORMAT_VERSION_RE.search(head)
+    saved_by = _SOFTWARE_VERSION_RE.search(head)
+    return (fmt.group(1) if fmt else None, saved_by.group(1) if saved_by else None)
+
+
+def _major_minor(version: str | None) -> tuple[int, int] | None:
+    if not version:
+        return None
+    m = _MAJOR_MINOR_RE.match(version)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def template_newer_than_skyline(
+    format_version: str | None, skyline_version: str | None
+) -> bool | None:
+    """True when a template's document format is newer than the installed Skyline.
+
+    Skyline refuses such a document outright - "The document format version
+    26.11 is newer than the version 26.1 supported by Skyline (64-bit)
+    26.1.0.057" - so every extraction fails. That is what stopped Evosep's
+    first Sciex 7500 installation (September 2026). Skyline's own message ties
+    the newest format it reads to its major.minor (26.1.0.057 reads up to
+    26.1), so compare those, as integers: 26.11 is newer than 26.1.
+
+    None when either version can't be read - unknown, not compatible.
+    """
+    fmt = _major_minor(format_version)
+    installed = _major_minor(skyline_version)
+    if fmt is None or installed is None:
+        return None
+    return fmt > installed
 
 
 def has_error_marker(stdout: str, stderr: str) -> bool:

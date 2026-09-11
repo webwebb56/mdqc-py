@@ -123,7 +123,7 @@
     <span class="gs-basis-label">Shade by</span>
     <label><input type="radio" name="gs-basis" value="gold"{% if not baseline_reference %} disabled{% endif %}>
       % from gold standard</label>
-    <label><input type="radio" name="gs-basis" value="mean"> % from mean of selection</label>
+    <label><input type="radio" name="gs-basis" value="median"> % from median of selection</label>
     <label><input type="radio" name="gs-basis" value="sd"> standard deviations</label>
     {% if not baseline_reference %}
     <span class="muted" style="font-size:0.85em;">&mdash; save a baseline below to compare against a gold standard</span>
@@ -192,10 +192,10 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
   // asking "how consistent is this set?" rather than "is this run correct?".
   const BASES = {
     gold: { label: 'from gold standard', needsBaseline: true, unit: '%' },
-    mean: { label: 'from mean of selection', needsBaseline: false, unit: '%' },
+    median: { label: 'from median of selection', needsBaseline: false, unit: '%' },
     sd:   { label: 'from selection median', needsBaseline: false, unit: ' SD' },
   };
-  let basis = hasBaseline ? 'gold' : 'mean';
+  let basis = hasBaseline ? 'gold' : 'median';
   try {
     const stored = window.localStorage.getItem('mdqc.gs.basis');
     if (stored && BASES[stored] && !(BASES[stored].needsBaseline && !hasBaseline)) basis = stored;
@@ -271,9 +271,14 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
       if (m === null || m === undefined || m === 0) return null;
       return (value - m) / m * 100;
     }
-    if (basis === 'mean') {
-      if (!st || !st.areaMean || st.n < 2) return null;
-      return (value - st.areaMean) / st.areaMean * 100;
+    if (basis === 'median') {
+      // Median, not mean. The gold standard is itself a median, and a mean
+      // is pulled toward the very outlier being looked for - worst in the
+      // small selections a site without a gold standard has. Three runs,
+      // one 25% low: the mean puts it at -18% (warn, not fail) and the good
+      // runs at +9%; the median gives -25% and 0%.
+      if (!st || !st.areaMedian || st.n < 2) return null;
+      return (value - st.areaMedian) / st.areaMedian * 100;
     }
     if (!st || st.areaSd === null || st.areaSd === 0 || st.n < 2) return null;
     return (value - st.areaMedian) / st.areaSd;
@@ -515,7 +520,7 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
     const unit = BASES[basis].unit;
     const what = basis === 'sd'
       ? 'the spread of the currently selected runs'
-      : (basis === 'gold' ? 'the saved gold-standard baseline' : 'the mean of the currently selected runs');
+      : (basis === 'gold' ? 'the saved gold-standard baseline' : 'the median of the currently selected runs');
     let html = '<strong>Peak area</strong> per peptide, one row per run. Cells are shaded by how far ' +
       'a value sits from ' + what + ' &mdash; ' +
       '<span style="background:#fdf3e0; padding:0 0.3rem;">amber</span> beyond ' + warn + unit + ', ' +
