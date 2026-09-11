@@ -656,7 +656,7 @@ def test_ssc0_marked_runs_remain_baseline_candidates(tmp_data_dir: Path) -> None
 
 
 def test_process_control_runs_are_not_baseline_candidates(tmp_data_dir: Path) -> None:
-    """PC carries digestion at ~20x the load; it can never be the reference."""
+    """PC carries digestion at up to ~6x the load; it can never be the reference."""
     gs.record_ssc0_run(_classified(ControlType.QC_A), _extracted())
     gs.record_ssc0_run(_classified(ControlType.BLANK), _extracted())
     assert gs.list_ssc0_runs("inst-1", 200) == []

@@ -342,11 +342,12 @@ anything where the run is expected to match the SSC0 reference. SSC0 measures
 against its own baseline; QC B is the same material at the same load and
 bypasses digestion, so it too should read ~1.0.
 
-PC (QC A) is ~1 ug lysate against a ~50 ng reference. Evosep's current figure
-is roughly 20x (SOP review, annotation 10); an earlier estimate of ~6x assumed
-only ~300 ng of the 1 ug actually reached the column. The exact ratio is still
-to be pinned from Evosep's data, which is why the verdict is withheld rather
-than scored against a guess. Blanks should read near zero by design. Scoring either against QC B's bands would mark every run
+PC (QC A) is a 1 ug lysate input with a 30% Evotip load, so roughly 300 ng on
+Evotip against a ~50 ng reference: up to ~6x, and probably nearer 4x after
+digest losses (Evosep, 2 Sep 2026). A 20x figure was briefly used after the
+August SOP review; Evosep withdrew it because it ignored the 30% load step.
+The exact ratio is still to be pinned from Evosep's data, which is why the
+verdict is withheld rather than scored against a guess. Blanks should read near zero by design. Scoring either against QC B's bands would mark every run
 as failing, so the verdict is withheld rather than fabricated.
 """
 _AREA_VERDICT_CONTROL_TYPES = frozenset({ControlType.SSC0, ControlType.QC_B})

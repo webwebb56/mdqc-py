@@ -225,7 +225,7 @@
       <tr><td class="f">payload_id</td><td class="t">uuid</td><td>Unique per payload. Use for idempotent ingest.</td><td class="eg">uuid4</td></tr>
       <tr><td class="f">correlation_id</td><td class="t">uuid</td><td>Ties a payload to the agent-side processing attempt.</td><td class="eg">uuid4</td></tr>
       <tr><td class="f">agent_id</td><td class="t">string</td><td>Stable per installation. Identifies the machine, not the instrument.</td><td class="eg">"agent-…"</td></tr>
-      <tr><td class="f">agent_version</td><td class="t">string</td><td>Agent release that produced this. Needed to interpret <code>thresholds_source</code>.</td><td class="eg">"0.5.20"</td></tr>
+      <tr><td class="f">agent_version</td><td class="t">string</td><td>Agent release that produced this. Needed to interpret <code>thresholds_source</code>.</td><td class="eg">"0.5.21"</td></tr>
       <tr><td class="f">timestamp</td><td class="t">iso8601</td><td>When the payload was written — <em>not</em> when the sample was acquired. Always UTC with a <code>+00:00</code> offset and microsecond precision.</td><td class="eg">…T05:25:05.976746+00:00</td></tr>
     </tbody>
   </table></div>
@@ -372,7 +372,7 @@
       <tr><td class="f">median_rt_deviation_pct</td><td>Median of per-peptide RT deviation percentages.<span class="calc">median(rt_deviation_pct across compared peptides)</span></td><td class="eg">0.0</td></tr>
       <tr><td class="f">targets_extraction_suspect</td><td>Count of peptides flagged as probably the wrong peak. A non-zero value means <strong>read the area numbers with suspicion</strong>.</td><td class="eg">0</td></tr>
       <tr><td class="f">peak_area_verdict</td><td><code>"ok"</code> / <code>"warn"</code> / <code>"fail"</code>, or <code>null</code> when withheld. Tested fail-first, so an inverted threshold pair can't silently disable the warn band.<span class="calc">|dev| ≥ fail(25%) → "fail"<br>|dev| ≥ warn(15%) → "warn"<br>else → "ok"</span></td><td class="eg">"ok"</td></tr>
-      <tr><td class="f">peak_area_verdict_note</td><td>Populated only when the verdict is withheld, so <strong><code>null</code> verdict + note ≠ missing data</strong>. Withheld for PC (expected ratio ≈ 20, not 1.0) and blanks (expected ≈ 0).</td><td class="eg">null</td></tr>
+      <tr><td class="f">peak_area_verdict_note</td><td>Populated only when the verdict is withheld, so <strong><code>null</code> verdict + note ≠ missing data</strong>. Withheld for PC (expected ratio up to ~6, not 1.0) and blanks (expected ≈ 0).</td><td class="eg">null</td></tr>
       <tr><td class="f">thresholds_applied</td><td>The full threshold set in force for <em>this</em> run. Travels with the payload so a verdict stays interpretable after the defaults change.</td><td class="eg">{…}</td></tr>
       <tr><td class="f">thresholds_source</td><td><code>"default"</code> or <code>"custom"</code>. The platform can't infer this from the values without tracking shipped defaults per agent version — and a warn on a tuned instrument doesn't mean what a warn on a stock one means.</td><td class="eg">"default"</td></tr>
     </tbody>
@@ -420,7 +420,7 @@
 </section>
 
 <footer>
-  Generated against mdqc v0.5.20, schema 1.2. Example values from
+  Generated against mdqc v0.5.21, schema 1.2. Example values from
   <code>docs/examples/payload_02_qcb_healthy.json</code>; nine reference payloads covering every
   state are in <code>docs/examples/</code>, regenerable with
   <code>python scripts/gen_example_payloads.py</code>. Field-level notes in <code>update.md</code> §6.

@@ -34,7 +34,15 @@ _TMP = Path(tempfile.mkdtemp(prefix="mdqc_examples_"))
 os.environ["MDQC_DATA_DIR"] = str(_TMP)
 sys.path.insert(0, str(REPO / "src"))
 
-from mdqc import __version__  # noqa: E402
+# Stamp the version of the tree being generated, not whatever happens to be
+# pip-installed. The two drift whenever the repo is ahead of the install, and
+# these examples must carry the version whose shipped defaults produced them:
+# `thresholds_source` is only interpretable against that version.
+import tomllib  # noqa: E402
+
+__version__ = tomllib.loads(
+    (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+)["project"]["version"]
 from mdqc import gold_standards as gs  # noqa: E402
 from mdqc.config.schema import (  # noqa: E402
     PeptideClassRule,
@@ -294,11 +302,12 @@ def main() -> None:
         thresholds=QcThresholdsConfig(peak_area_deviation_pct_warn=8.0,
                                       peak_area_deviation_pct_fail=20.0)))
 
-    # 07 — PC (QC A): ~20x the SSC-gold load, so the verdict is withheld.
-    # Evosep's figure, SOP review annotation 10; an earlier ~6x estimate
-    # assumed only ~300 ng of the 1 ug reached the column.
+    # 07 — PC (QC A): up to ~6x the SSC-gold load (1 ug input, 30% Evotip
+    # load, ~300 ng on Evotip against ~50 ng), so the verdict is withheld.
+    # 20x was briefly used after the August SOP review; Evosep withdrew it on
+    # 2 Sep 2026 because it ignored the 30% load step.
     e = extraction("qca", "PC_2026-08-11_ss_1ug_200spd_S00462_k562_S1-F2.d",
-                   targets(scale=19.4, nudge=9), T0 + timedelta(hours=5))
+                   targets(scale=5.9, nudge=9), T0 + timedelta(hours=5))
     written.append(emit(
         spool, classification(ControlType.QC_A, well="F2"), e, "payload_07_qca.json"))
 

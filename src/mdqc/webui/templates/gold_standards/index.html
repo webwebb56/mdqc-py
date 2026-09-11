@@ -433,7 +433,9 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
         if (refRt !== null && refRt !== undefined && refRt !== 0) {
           const dpct = (p.retention_time - refRt) / refRt * 100;
           const dsec = (p.retention_time - refRt) * 60;
-          flagged = Math.abs(dpct) >= RT_DEVIATION_PCT_MAX;
+          // Strict '>', matching rt_outside_threshold in the payload. A run at
+          // exactly the limit must not flag here and pass in the platform.
+          flagged = Math.abs(dpct) > RT_DEVIATION_PCT_MAX;
           // Both units: the threshold is configured as a percentage, but RT
           // tolerance is specified and discussed in seconds.
           rtNote = (dpct > 0 ? '+' : '') + dpct.toFixed(2) + '% (' +

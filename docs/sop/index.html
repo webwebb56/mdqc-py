@@ -286,7 +286,7 @@ hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0}
 <table>
   <thead><tr><th style="width:12rem">Term</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><strong>PC</strong><br><span class="small">(was QC A)</span></td><td><strong>Process control.</strong> A <strong>lysate</strong> carried through the full digestion and Evotip workflow, at roughly 1 µg — about <strong>twenty times</strong> the SSC load on column. Because it carries digestion, it is the only control that reports on <strong>sample preparation</strong>.</td></tr>
+    <tr><td><strong>PC</strong><br><span class="small">(was QC A)</span></td><td><strong>Process control.</strong> A <strong>lysate</strong> carried through the full digestion and Evotip workflow. A 1&nbsp;µg lysate input with a 30% Evotip load gives approximately 300&nbsp;ng on Evotip &mdash; <strong>up to about six times</strong> the SSC load of approximately 50&nbsp;ng. Allowing for losses in the digest protocol the real figure is probably nearer 200&nbsp;ng; Evosep is confirming it with stress data that includes PC. Because it carries digestion, it is the only control that reports on <strong>sample preparation</strong>.</td></tr>
     <tr><td><strong>SSC</strong><br><span class="small">(was QC B)</span></td><td><strong>System suitability control.</strong> K562 digest at approximately <strong>50 ng on Evotip, loaded by the Evosep Lupo</strong>. Bypasses digestion, so it reports on <strong>Evotip loading and LC-MS performance</strong> rather than on sample preparation. This is the routine control you run day to day.</td></tr>
     <tr><td><strong>SSC-gold</strong><br><span class="small">(was SSC₀)</span></td><td><strong>The reference baseline.</strong> A set of LC-MS processed SSC runs, selected on the agent, whose per-peptide medians become the values every later PC and SSC run is compared against. Materially the same sample as an SSC — the difference is role, not composition. <strong>Reset it</strong> after instrument cleaning, repair, or any other major LC-MS change (<a href="#b7">§B7</a>).</td></tr>
     <tr><td><strong>EB / PB</strong></td><td>Evotip blank / plate blank. Injections used to detect carryover from the sample-preparation workflow or from the LC-MS.</td></tr>
@@ -324,10 +324,10 @@ hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0}
   <tbody>
     <tr><td>Operating system</td><td>Windows 10 or 11, 64-bit. The instrument's own acquisition PC is the normal host.</td></tr>
     <tr><td>Disk space</td><td>2 GB free on the system drive. Results are small (~25 KB per run) but Skyline needs working space during extraction.</td></tr>
-    <tr><td>Skyline</td><td>Skyline or Skyline-daily installed, including <code>SkylineCmd.exe</code>. The agent locates it automatically; confirm with <code>mdqc doctor</code>.</td></tr>
+    <tr><td>Skyline</td><td>Skyline or Skyline-daily installed, including <code>SkylineCmd.exe</code>. The agent locates it automatically; confirm with <code>mdqc doctor</code>. <strong>It must be at least as new as the Skyline version the QC template was saved in</strong> &mdash; an older Skyline refuses to open a newer template, and every extraction fails. This is what stopped the first Sciex 7500 installation. Check <em>Help &rarr; About</em> on the instrument PC against the version the template was saved in; if in doubt, update Skyline before installing.</td></tr>
     <tr><td>Vendor readers</td><td>The vendor libraries Skyline needs to read this instrument's raw format must already be present — normally satisfied on an acquisition PC. <strong>Verify this explicitly for Sciex and Waters instruments</strong>: where the reader is missing, Skyline exits in under a second and produces no report, which looks like a silent failure rather than a missing dependency.</td></tr>
-    <tr><td>Python <span class="small">(Route 2 only)</span></td><td>Python 3.11 or newer, on <code>PATH</code>. Not needed for the Windows installer route.</td></tr>
-    <tr><td>Git <span class="small">(Route 2 only)</span></td><td>Required to install or upgrade directly from the repository. Confirm with <code>git --version</code>.</td></tr>
+    <tr><td>Python</td><td>Python 3.11 or newer, on <code>PATH</code>. Confirm with <code>python --version</code>.</td></tr>
+    <tr><td>Git</td><td>Required to install or upgrade directly from the repository. Confirm with <code>git --version</code>.</td></tr>
     <tr><td>Permissions</td><td>Read access to the acquisition folder; write access to <code>C:\ProgramData\MassDynamics\QC\</code>. Local administrator rights are required for installation only.</td></tr>
     <tr><td>Network <span class="small">(cloud only)</span></td><td>Outbound HTTPS (443) to the Mass Dynamics endpoint. No inbound connection is ever required. See <a href="#c5">§C5</a> for the IT summary.</td></tr>
     <tr><td>Account <span class="small">(cloud only)</span></td><td>A Mass Dynamics account for the customer's organisation, with an API token available.</td></tr>
@@ -341,19 +341,30 @@ hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0}
 </div>
 
 <h3 id="a2">A2. Install the agent</h3>
-<p>Two routes. Use the installer unless the site has a working Python environment and a preference for it.</p>
+<p>Install from the command line, in PowerShell on the instrument PC.</p>
 
-<h4>Route 1 — Windows installer (recommended)</h4>
+<div class="warn">
+  <span class="lbl">The Windows installer is not currently maintained</span>
+  <p>Earlier drafts recommended an <code>.exe</code> installer. It has not been kept up to date since the
+  agent moved to Python, and it failed during Evosep's support training. Use the command-line route below
+  until a maintained installer is available.</p>
+</div>
+
 <ol class="steps">
-  <li>Obtain the current installer (<code>mdqc-setup-v0.5.13.exe</code> or later) from Mass Dynamics.</li>
-  <li>Run it as administrator and accept the defaults. The installer registers the agent as a Windows service so it starts automatically with the PC.</li>
-  <li>Confirm the service <code>MassDynamicsQC</code> appears in Services and is set to start automatically.</li>
+  <li>Confirm Python 3.11 or newer and Git are installed (<a href="#a1">&sect;A1</a>).</li>
+  <li>Install or upgrade the agent:
+<pre><code>pip install --user --upgrade "git+https://github.com/webwebb56/mdqc-py.git"</code></pre></li>
+  <li>Confirm the version:
+<pre><code>python -m mdqc version</code></pre></li>
 </ol>
 
-<h4>Route 2 — Python environment</h4>
-<pre><code>pip install --user --upgrade "git+https://github.com/webwebb56/mdqc-py.git"</code></pre>
-<p>Then confirm:</p>
-<pre><code>python -m mdqc version</code></pre>
+<div class="note">
+  <span class="lbl">Carry the commands, don't type them</span>
+  <p>Mistyped commands are the most common point of failure. Keep the commands above in a text file on
+  the USB stick alongside the site's Skyline template, and paste them. Installation needs internet access
+  to fetch the agent; a fully offline install is planned but not yet available, so a site with no network
+  on the day needs a return visit or a remote session once it has.</p>
+</div>
 
 <div class="note">
   <span class="lbl">Verify before continuing</span>
@@ -460,6 +471,19 @@ Overall: HEALTHY</code></pre>
   <a href="#a7">§A7</a> will fail with zero targets found.</p>
 </div>
 
+<div class="note">
+  <span class="lbl">Use the template Evosep supplies for this instrument</span>
+  <p>Evosep provides a Skyline template per instrument platform &mdash; Astral, Orbitrap and so on &mdash;
+  with the target peptides and extraction settings already configured. Install it as supplied and do
+  not edit it. Most sites do not work in Skyline day to day, and a changed extraction setting silently
+  changes every result that follows.</p>
+  <p>Templates are moving to <strong>MS1-only</strong> extraction, which does not depend on the DIA
+  isolation-window scheme and so is easier to install and less fragile. It does not remove the need
+  for fixed QC methods (<a href="#a9">&sect;A9</a>): a changed acquisition method can still shift MS1
+  areas. And if a site moves from an MS1-and-MS2 template to an MS1-only one, record a new gold
+  standard (<a href="#b7">&sect;B7</a>) &mdash; peak areas from the two are not comparable.</p>
+</div>
+
 <div class="crit">
   <span class="lbl">Common failure</span>
   <p>If the Skyline template is opened in the Skyline GUI and saved with results attached, those embedded replicates travel with the file. The agent strips them automatically at extraction time, but a template distributed with results embedded is much larger and slower to copy. Distribute templates saved without results.</p>
@@ -545,8 +569,20 @@ Source: FILENAME</code></pre>
 <h3 id="a9">A9. Record the gold-standard baseline</h3>
 <p>This step establishes the reference every later run is judged against. It is the core of commissioning.</p>
 
+<div class="crit">
+  <span class="lbl">Lock the QC methods before you record a gold standard</span>
+  <p>A gold standard is only valid for the exact methods it was acquired and extracted with. Set up
+  <strong>dedicated, fixed methods for SSC and PC</strong> &mdash; separate from the methods used for
+  samples &mdash; and load those same methods for every QC injection. Sample methods can then change
+  freely without touching QC.</p>
+  <p>Any change to a QC method &mdash; the chromatography, or mass-spectrometer settings such as DIA
+  windows, AGC target or dwell time &mdash; or to the Skyline template that extracts it, means the gold
+  standard no longer describes the system: record a new one (<a href="#b7">&sect;B7</a>). Even a subtle
+  setting change can shift peak areas enough to read as a performance fault.</p>
+</div>
+
 <ol class="steps">
-  <li><strong>Acquire the SSC-gold series.</strong> Run 15–20 SSC-gold injections at <strong>200 SPD</strong> with the Ev1182 analytical column — Evosep's recommended QC method, and the only one covered by this procedure for now. The software supports a baseline per instrument <em>and</em> per SPD, so other methods can be added later; establishing 200 SPD first is what is being validated across platforms.</li>
+  <li><strong>Acquire the SSC series.</strong> Run 15–20 SSC injections at <strong>200 SPD</strong> with the Ev1182 analytical column — Evosep's recommended QC method, and the only one covered by this procedure for now. The software supports a baseline per instrument <em>and</em> per SPD, so other methods can be added later; establishing 200 SPD first is what is being validated across platforms. <span class="small">15&ndash;20 assumes a kit that supplies enough SSC material for a full series. Without one, record the gold standard from the first set of SSC runs available; the minimum acceptable number is being confirmed with Evosep.</span></li>
   <li><strong>Let the agent process them.</strong> Each is indexed automatically as it completes.</li>
   <li><strong>Open the Gold standards page</strong> in the agent interface and select the SPD tab.</li>
   <li><strong>Review the runs.</strong> Each row is one SSC-gold run; columns are the target peptides. Cells are shaded by how far each value sits from the reference, so an outlier stands out. Sort by <em>Acquired</em> to see the most recent runs first, and hover a cell for its deviation, retention time and dot products.</li>
@@ -583,6 +619,9 @@ Source: FILENAME</code></pre>
   consistent is this set &mdash; rather than whether a run is correct. On a tight panel almost every
   run sits beyond 1 SD, and on a scattered one a genuinely bad run hides inside 2 SD, so it is not a
   sound basis for a pass/fail judgement.</p>
+  <p><em>% from gold standard</em> stays unavailable until a gold standard is saved <strong>for this
+  instrument and this SPD tab</strong>. A site without enough SSC material for a gold standard &mdash;
+  commonly one without the QC kit &mdash; works on % from mean in the meantime, which is the default.</p>
 </div>
 
 <div class="note">
@@ -816,7 +855,7 @@ early and late ones report qualitatively on chromatographic performance.</p>
     <tr>
       <td>Runs appear on the <strong>Failed</strong> tab, or Skyline finishes in under a second with no report</td>
       <td>Installation</td>
-      <td>Almost always a missing vendor reader or a Skyline template built for a different instrument. Open the failure reason on the Failed tab, then confirm independently by opening the template in the Skyline GUI on the same machine and loading one raw file by hand.</td>
+      <td>Almost always a missing vendor reader, a Skyline template built for a different instrument, or a template saved in a newer Skyline than the one installed. Open the failure reason on the Failed tab, then confirm independently by opening the template in the Skyline GUI on the same machine and loading one raw file by hand.</td>
     </tr>
   </tbody>
 </table>
@@ -824,11 +863,11 @@ early and late ones report qualitatively on chromatographic performance.</p>
 
 <h3 id="b7">B7. Re-baselining</h3>
 <p>The baseline describes the instrument as it was when recorded. After a deliberate change, it no longer does, and comparisons become misleading.</p>
-<p><strong>Re-baseline after:</strong> a column change; a major service or clean; a change of chromatographic method; any intentional configuration change expected to alter performance.</p>
+<p><strong>Re-baseline after:</strong> a column change; a major service or clean; a change of chromatographic method; <strong>any change to the mass-spectrometer method used for QC</strong> &mdash; DIA windows, AGC target, dwell or injection time; <strong>any change to the Skyline template or its extraction settings</strong>, including a move from MS1-and-MS2 to MS1-only extraction; any intentional configuration change expected to alter performance. Keeping QC on fixed methods (<a href="#a9">&sect;A9</a>) is what makes this rare.</p>
 <p><strong>Do not re-baseline</strong> to make a warning disappear. If performance has degraded unintentionally, a new baseline conceals the problem — the instrument is then measured against its own degraded state.</p>
 <ol class="steps">
   <li>Complete the change and allow the system to stabilise.</li>
-  <li>Run a fresh SSC-gold series — 15–20 injections at the relevant SPD.</li>
+  <li>Run a fresh SSC series at the relevant SPD &mdash; 15&ndash;20 injections where the available material allows (<a href="#a9">&sect;A9</a>).</li>
   <li>Open <strong>Gold standards</strong>, select the new runs, and save with a label recording the reason, for example <code>After column change 2026-09-12</code>.</li>
 </ol>
 <p>Previous baselines are retained. Runs record which baseline they were measured against, so history remains interpretable across a re-baseline.</p>
@@ -914,6 +953,16 @@ early and late ones report qualitatively on chromatographic performance.</p>
       <td>Confirm the SPD marker is present (<a href="#annex-2">Annex 2</a>), then record a baseline (<a href="#a9">§A9</a>).</td>
     </tr>
     <tr>
+      <td>Every run fails; the reason says the document format version is newer than the version Skyline supports</td>
+      <td>The template was saved in a newer Skyline than the one installed on the instrument PC</td>
+      <td>Update Skyline on the instrument PC, or obtain the template saved in the installed version (<a href="#a1">&sect;A1</a>). This stopped the first Sciex 7500 installation.</td>
+    </tr>
+    <tr>
+      <td><em>% from gold standard</em> cannot be selected on the Gold standards page</td>
+      <td>No gold standard saved yet for this instrument and SPD. Before v0.5.18 only runs classified as SSC0 could be selected, so a site naming its QC runs <code>QCB</code> could never save one</td>
+      <td>Upgrade to v0.5.18 or later, then select and save a gold standard on that SPD's tab (<a href="#a9">&sect;A9</a>). Until then the page shades by % from mean.</td>
+    </tr>
+    <tr>
       <td>A peptide is persistently flagged as an extraction problem</td>
       <td>The wrong peak is being integrated, commonly for a low-intensity target</td>
       <td>Not an instrument fault. Send a support bundle (<a href="#c3">§C3</a>) — the method may need adjustment.</td>
@@ -956,7 +1005,7 @@ early and late ones report qualitatively on chromatographic performance.</p>
 <h3 id="c4">C4. Upgrading</h3>
 <p>Configuration, baselines and stored results are preserved across upgrades.</p>
 <pre><code>pip install --user --upgrade "git+https://github.com/webwebb56/mdqc-py.git"</code></pre>
-<p>Or run the newer installer over the existing installation. Restart the agent afterwards and confirm the version on the Dashboard. After any upgrade, verify that a run completes end to end before leaving the system unattended.</p>
+<p>Restart the agent afterwards and confirm the version on the Dashboard. After any upgrade, verify that a run completes end to end before leaving the system unattended.</p>
 
 <h3 id="c5">C5. Data handling and IT review</h3>
 <p>Summary for an IT or information-security reviewer.</p>
@@ -1194,7 +1243,7 @@ early and late ones report qualitatively on chromatographic performance.</p>
     <tr><td>A7</td><td>Test file processed; full target recovery; result written</td><td></td><td></td></tr>
     <tr><td>A8</td><td>Retention limit raised <em>before</em> token entered</td><td></td><td></td></tr>
     <tr><td>A8</td><td>Cloud connected; a result confirmed on the platform</td><td></td><td></td></tr>
-    <tr><td>A9</td><td>SSC-gold series acquired (count: ___ ) at ___ SPD</td><td></td><td></td></tr>
+    <tr><td>A9</td><td>SSC series acquired (count: ___ ) at ___ SPD</td><td></td><td></td></tr>
     <tr><td>A9</td><td>Baseline saved and active; CV% reviewed and acceptable</td><td></td><td></td></tr>
     <tr><td>B3</td><td>Instrument added to the platform module filters</td><td></td><td></td></tr>
     <tr><td>B</td><td>Customer walked through routine operation and re-baselining</td><td></td><td></td></tr>
@@ -1257,6 +1306,7 @@ and halve in size.</p>
     <tr><td>A</td><td><em>draft</em></td><td>Mass Dynamics</td><td>First issue. Covers MD QC agent v0.5.8.</td></tr>
     <tr><td>B</td><td>2026-08-20</td><td>Mass Dynamics</td><td>First Evosep review incorporated. Covers v0.5.13.</td></tr>
     <tr><td>C</td><td>2026-08-31</td><td>Mass Dynamics</td><td>Second Evosep review incorporated (83 annotations). Covers v0.5.17. Terminology moved to <strong>PC / SSC / SSC-gold</strong>; SSC-gold restated as a selection made on the Gold standards page rather than a filename type; Evosep Eno/One serial added as a filename field; retention-time criteria split into percentage-from-baseline and absolute-seconds modes; peak-area warn band widened to 15%; dilution marked service-only; oxidation and alkylation classes removed; <code>column_info</code> renamed <code>lc_column</code>; process-control load corrected to ~20&times; and the analytical column to Ev1182.</td></tr>
+    <tr><td>D</td><td>2026-09-11</td><td>Mass Dynamics</td><td>Evosep follow-up and the 7 September call. Covers v0.5.21. Process-control load reverted to <strong>up to ~6&times;</strong> the SSC load &mdash; Evosep withdrew the 20&times; figure, since 1&nbsp;&micro;g at a 30% Evotip load is ~300&nbsp;ng on Evotip. QC method lock, and re-baselining after any acquisition-method or template change. Skyline version prerequisite. Command-line install documented as the supported route. Supplied instrument templates and the move to MS1-only extraction. Gold-standard size depends on available SSC material. Two new failure modes.</td></tr>
   </tbody>
 </table>
 </div>

@@ -1490,7 +1490,7 @@ def main() -> None:
             )
             st.caption(
                 "SSC-gold is the reference (clean ~50 ng on Evotip). SSC should track it — "
-                "divergence indicates digestion / Evotip variability. PC is loaded ~20× and "
+                "divergence indicates digestion / Evotip variability. PC is loaded up to ~6× and "
                 "should appear visibly taller."
             )
             st.plotly_chart(response_fig, use_container_width=True)

@@ -64,9 +64,10 @@ state — treat it as normal, not as an error.
 
 **2. `peak_area_verdict` is withheld for QC A and blanks.** The warn/fail
 bands measure deviation from a ratio of 1.0, which only holds where the run
-should match the SSC-gold reference — SSC-gold itself and SSC. PC is ~1 µg
-lysate against a ~50 ng reference, roughly **20×** on column, and the exact
-figure is still to be established. Scoring it against QC B's bands marked every QC A run as
+should match the SSC-gold reference — SSC-gold itself and SSC. PC is a 1 µg
+lysate input with a 30% Evotip load — about 300 ng on Evotip, **up to ~6×** the
+~50 ng SSC load, and probably nearer 4× after digest losses. The exact figure is
+still to be established. Scoring it against QC B's bands marked every QC A run as
 failing. When the verdict is withheld, `peak_area_verdict` is `null` and
 `peak_area_verdict_note` says why — so a withheld verdict is distinguishable
 from missing data. `median_peak_area_ratio` is still emitted either way.
