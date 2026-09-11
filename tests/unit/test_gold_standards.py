@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
+from typing import Self
 from uuid import uuid4
 
 import pytest
@@ -245,6 +247,33 @@ def test_save_baseline_versions_history(tmp_data_dir: Path) -> None:
     history = gs.list_baselines("Astral_0001", 200)
     assert {r["baseline_id"] for r in history} == {first["baseline_id"], second["baseline_id"]}
     assert history[0]["baseline_id"] == second["baseline_id"]  # newest first
+
+
+def test_list_baselines_newest_first_when_timestamps_tie(
+    tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Saves that share a timestamp still list newest first.
+
+    Windows' clock is coarse enough for two quick saves to get the same
+    created_at, and the stable sort then kept the older baseline first - the
+    test above failed that way on Windows CI (31 Aug, 2 Sep, 11 Sep 2026).
+    Freezing the clock makes every platform see the tie.
+    """
+    run_ids = _seed_runs(2, area=1000.0)
+
+    class _FrozenClock(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> Self:
+            return cls(2026, 9, 11, 5, 25, 7, tzinfo=UTC)
+
+    monkeypatch.setattr(gs, "datetime", _FrozenClock)
+    first = gs.save_baseline("Astral_0001", 200, run_ids[:1], label="First")
+    second = gs.save_baseline("Astral_0001", 200, run_ids, label="Second")
+    third = gs.save_baseline("Astral_0001", 200, run_ids[1:], label="Third")
+
+    assert first["created_at"] == second["created_at"] == third["created_at"]
+    history = gs.list_baselines("Astral_0001", 200)
+    assert [r["label"] for r in history] == ["Third", "Second", "First"]
 
 
 def test_get_active_baseline_none_when_unset(tmp_data_dir: Path) -> None:

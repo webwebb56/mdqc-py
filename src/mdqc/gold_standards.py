@@ -524,6 +524,10 @@ def list_baselines(instrument_id: str | None, spd: int | None) -> list[dict[str,
     if not entry:
         return []
     records: list[dict[str, Any]] = list(entry.get("baselines", {}).values())
+    # Stored in save order. Reverse before the (stable) sort so that a
+    # created_at tie still lists the newest save first: Windows' clock is
+    # coarse enough for two quick saves to share a timestamp.
+    records.reverse()
     records.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return records
 
