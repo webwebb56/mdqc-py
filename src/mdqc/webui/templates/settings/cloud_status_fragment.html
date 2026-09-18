@@ -1,3 +1,7 @@
-<span class="dot {{ status_cloud.state }}">●</span>
+<span class="dot {{ cloud_probe.worst }}">&#9679;</span>
 <h2>Cloud</h2>
-<span class="status-msg {{ status_cloud.state }}">{{ status_cloud.message }}</span>
+<span class="status-msg">
+  <span class="{{ cloud_probe.endpoint.state }}">Endpoint: {{ cloud_probe.endpoint.message }}</span>
+  <span class="muted">&nbsp;&middot;&nbsp;</span>
+  <span class="{{ cloud_probe.token.state }}">Token: {{ cloud_probe.token.message }}</span>
+</span>

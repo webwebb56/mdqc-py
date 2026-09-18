@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import os
 import time
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +29,7 @@ from mdqc.config.schema import (
     Config,
     InstrumentConfig,
     QcThresholdsConfig,
+    normalise_endpoint,
 )
 from mdqc.extractor.skyline import find_skyline
 from mdqc.types import Vendor
@@ -33,7 +37,7 @@ from mdqc.webui._deps import common_context, get_state, get_templates
 
 log = logging.getLogger(__name__)
 
-_cloud_status_cache: tuple[float, str, bool, SectionStatus] | None = None
+_cloud_status_cache: tuple[float, str, bool, CloudProbe] | None = None
 
 router = APIRouter()
 
@@ -88,30 +92,54 @@ def _status_skyline(cfg: Config) -> SectionStatus:
     return SectionStatus("ok", str(found))
 
 
-def _status_cloud(cfg: Config) -> SectionStatus:
-    """First paint only. The panel then polls /settings/cloud/status, which
-    probes the platform for real — a token string being present says nothing
-    about whether the endpoint answers or the key is accepted."""
+@dataclass
+class CloudProbe:
+    """The two facts the Cloud panel needs, kept apart.
+
+    One dot could not say which half was broken: a reachable platform refusing
+    the key looked exactly like an endpoint that does not resolve."""
+
+    endpoint: SectionStatus
+    token: SectionStatus
+
+    @property
+    def worst(self) -> str:
+        rank = {"ok": 0, "muted": 1, "warn": 2, "bad": 3}
+        return max((self.endpoint, self.token), key=lambda st: rank.get(st.state, 0)).state
+
+
+def _endpoint_host(cfg: Config) -> str:
+    endpoint = cfg.cloud.endpoint or ""
+    return urlsplit(endpoint).netloc or endpoint
+
+
+def _initial_cloud_probe(cfg: Config) -> CloudProbe:
+    """First paint. The panel then polls /settings/cloud/status for the truth."""
     if cfg.cloud.certificate_thumbprint and not cfg.cloud.api_token:
-        return SectionStatus("bad", "Certificate thumbprint set but mTLS not supported in v1 — add an API token")
+        return CloudProbe(
+            SectionStatus("muted", _endpoint_host(cfg)),
+            SectionStatus("bad", "mTLS unsupported in v1 \u2014 add an API token"),
+        )
     if cfg.cloud.api_token:
-        return SectionStatus("muted", "Checking…")
-    return SectionStatus("muted", "Local-only (no upload)")
+        return CloudProbe(
+            SectionStatus("muted", f"{_endpoint_host(cfg)} \u2014 checking\u2026"),
+            SectionStatus("muted", "checking\u2026"),
+        )
+    return CloudProbe(
+        SectionStatus("muted", f"{_endpoint_host(cfg)} \u2014 checking\u2026"),
+        SectionStatus("muted", "no token \u2014 payloads stay local"),
+    )
 
 
-def normalise_endpoint(raw: str) -> str:
-    """Tidy a pasted endpoint: trim, add https:// when absent, drop a trailing /.
-
-    A schemeless URL is the easy mistake to make in this form and it fails
-    twice: platform_app_url() cannot parse it, so the nav loses the platform
-    link, and httpx rejects the POST as a request error — which the uploader
-    classifies as transient and retries forever."""
-    value = raw.strip().rstrip("/")
-    if not value:
-        return ""
-    if "://" not in value:
-        value = f"https://{value}"
-    return value
+def _endpoint_migrated(cfg: Config) -> str | None:
+    """The retired endpoint still on disk, when the model healed it in memory."""
+    try:
+        with paths.config_path().open("rb") as fh:
+            raw = tomllib.load(fh)
+    except (OSError, ValueError):
+        return None
+    saved = str((raw.get("cloud") or {}).get("endpoint") or "").strip()
+    return saved if saved and saved != cfg.cloud.endpoint else None
 
 
 def _cloud_state_from_status(status: int) -> SectionStatus | None:
@@ -140,29 +168,35 @@ def _cloud_state_from_error(exc: Exception, host: str) -> SectionStatus:
     return SectionStatus("bad", f"Cannot reach {host}")
 
 
-async def probe_cloud_status(cfg: Config) -> SectionStatus:
-    """Ask the platform whether this agent could upload right now.
+async def probe_cloud_status(cfg: Config) -> CloudProbe:
+    """Ask the platform two questions: does it answer, and is the key good?
 
-    GET only — a status check must never post a payload. The token is sent as
-    a bearer header and never logged."""
+    GET only \u2014 a status check must never post a payload. The token is sent as a
+    bearer header and never logged."""
+    endpoint = cfg.cloud.endpoint or ""
+    host = _endpoint_host(cfg)
     if cfg.cloud.certificate_thumbprint and not cfg.cloud.api_token:
-        return SectionStatus("bad", "Certificate thumbprint set but mTLS not supported in v1 — add an API token")
-    endpoint = normalise_endpoint(cfg.cloud.endpoint or "")
+        return CloudProbe(
+            SectionStatus("muted", host),
+            SectionStatus("bad", "mTLS unsupported in v1 \u2014 add an API token"),
+        )
     if not endpoint:
-        return SectionStatus("bad", "No endpoint configured")
-    parts = urlsplit(endpoint)
-    host = parts.netloc or endpoint
-    token = cfg.cloud.api_token
-    if not token:
-        return SectionStatus("muted", f"Local-only — no token ({host})")
+        return CloudProbe(
+            SectionStatus("bad", "no endpoint configured"),
+            SectionStatus("muted", "not checked"),
+        )
 
     from mdqc import __version__ as agent_version
 
+    token = cfg.cloud.api_token
     headers = {
-        "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.md-v2+json",
         "User-Agent": f"mdqc-py/{agent_version}",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    reachable = SectionStatus("ok", f"{host} \u2014 reachable")
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(
@@ -171,27 +205,40 @@ async def probe_cloud_status(cfg: Config) -> SectionStatus:
             trust_env=True,
         ) as client:
             response = await client.get(endpoint, headers=headers)
+            if not token:
+                return CloudProbe(
+                    reachable,
+                    SectionStatus("muted", "no token \u2014 payloads stay local"),
+                )
             state = _cloud_state_from_status(response.status_code)
             if state is not None:
                 if state.state == "ok":
-                    return SectionStatus("ok", f"Connected — {host}")
-                return state
-            # Inconclusive: ask a route that does answer GET before deciding
-            # the key is bad.
+                    return CloudProbe(reachable, SectionStatus("ok", "accepted"))
+                # The platform answered, but not about the key.
+                return CloudProbe(
+                    SectionStatus(state.state, f"{host} \u2014 {state.message}"),
+                    SectionStatus("muted", "not checked"),
+                )
+            # 401/403 on the ingest route is inconclusive: the contract is
+            # POST-only, so ask a route that does answer GET before calling a
+            # key bad.
+            parts = urlsplit(endpoint)
             doc = f"{parts.scheme}://{parts.netloc}/api/swagger_doc"
             doc_response = await client.get(doc, headers=headers)
             if 200 <= doc_response.status_code < 300:
-                return SectionStatus("ok", f"Connected — {host}")
-            return SectionStatus("bad", f"Token rejected by {host}")
+                return CloudProbe(reachable, SectionStatus("ok", "accepted"))
+            return CloudProbe(reachable, SectionStatus("bad", "rejected"))
     except httpx.RequestError as exc:
         log.info(
             "cloud_status_transport_error",
             extra={"host": host, "error": exc.__class__.__name__},
         )
-        return _cloud_state_from_error(exc, host)
+        return CloudProbe(
+            _cloud_state_from_error(exc, host), SectionStatus("muted", "not checked")
+        )
 
 
-async def cloud_status(cfg: Config) -> SectionStatus:
+async def cloud_status(cfg: Config) -> CloudProbe:
     """probe_cloud_status with a short TTL, keyed on what would change it."""
     global _cloud_status_cache
     endpoint = normalise_endpoint(cfg.cloud.endpoint or "")
@@ -208,6 +255,46 @@ async def cloud_status(cfg: Config) -> SectionStatus:
     status = await probe_cloud_status(cfg)
     _cloud_status_cache = (now, endpoint, has_token, status)
     return status
+
+
+def _close_uploader_later(old: Any, delay_s: float = 5.0) -> None:
+    """Retire the old HTTP client once any upload in flight has finished."""
+
+    async def _close() -> None:
+        await asyncio.sleep(delay_s)
+        with contextlib.suppress(Exception):
+            await old.aclose()
+
+    with contextlib.suppress(RuntimeError):
+        asyncio.get_running_loop().create_task(_close())
+
+
+def _apply_cloud_live(state: Any, cfg: Config) -> bool:
+    """Swap the running uploader so a saved token works without a restart.
+
+    UploaderWorker reads self.uploader on every poll, so the next iteration -
+    within a second - uses the new one. Returns False where there is no worker
+    to swap (tests, a web UI served outside the agent); the panel then falls
+    back to telling the operator to restart."""
+    worker = getattr(state, "uploader_worker", None)
+    if worker is None:
+        return False
+    try:
+        from mdqc import __version__ as agent_version
+        from mdqc.uploader import Uploader
+
+        new = Uploader(cfg.cloud, agent_version=agent_version)
+    except Exception as exc:
+        log.warning("cloud_live_reload_failed", extra={"error": str(exc)})
+        return False
+    old = getattr(worker, "uploader", None)
+    worker.uploader = new
+    worker._logged_local_only = False
+    state.uploader = new
+    log.info("cloud_settings_applied_live", extra={"local_only": new.is_local_only})
+    if old is not None:
+        _close_uploader_later(old)
+    return True
 
 
 def _clear_cloud_status_cache() -> None:
@@ -341,7 +428,10 @@ def _settings_context(
         "priorities": PRIORITIES,
         "control_types": CONTROL_TYPES,
         "status_skyline": _status_skyline(cfg),
-        "status_cloud": _status_cloud(cfg),
+        "cloud_probe": _initial_cloud_probe(cfg),
+        "endpoint_migrated": _endpoint_migrated(cfg),
+        "cloud_saved": False,
+        "cloud_applied": False,
         "cloud_environment": _cloud_environment(cfg.cloud.endpoint),
         "endpoint_dev": defaults.ENDPOINT_DEV,
         "endpoint_prod": defaults.ENDPOINT_PROD,
@@ -420,10 +510,58 @@ async def settings_cloud_status(request: Request) -> HTMLResponse:
     """Fragment polled by the Cloud panel: the live green/red state."""
     state = get_state(request)
     ctx = common_context(request)
-    ctx["status_cloud"] = await cloud_status(state.cfg)
+    ctx["cloud_probe"] = await cloud_status(state.cfg)
     return get_templates(request).TemplateResponse(
         request, "settings/cloud_status_fragment.html", ctx
     )
+
+
+@router.post("/settings/cloud", response_class=HTMLResponse)
+async def settings_cloud_post(request: Request) -> HTMLResponse:
+    """Save just the cloud block, apply it to the running uploader, re-probe."""
+    state = get_state(request)
+    form: dict[str, Any] = dict(await request.form())
+    api_token = str(form.get("api_token", "")).strip() or None
+    environment = str(form.get("cloud_environment", "prod"))
+    if environment == "dev":
+        endpoint = defaults.ENDPOINT_DEV
+    elif environment == "custom":
+        endpoint = normalise_endpoint(str(form.get("cloud_endpoint_custom", "")))
+    else:
+        endpoint = defaults.ENDPOINT_PROD
+
+    prev = state.cfg
+    cfg = prev.model_copy(
+        update={
+            "cloud": CloudConfig(
+                endpoint=endpoint,
+                api_token=api_token,
+                certificate_thumbprint=prev.cloud.certificate_thumbprint,
+                proxy=prev.cloud.proxy,
+            )
+        }
+    )
+    _write_config(cfg)
+    state.cfg = cfg
+    _clear_cloud_status_cache()
+    applied = _apply_cloud_live(state, cfg)
+    log.info(
+        "cloud_settings_saved",
+        extra={"endpoint": cfg.cloud.endpoint, "applied": applied},
+    )
+
+    ctx = common_context(request)
+    ctx.update(
+        {
+            "cfg": cfg,
+            "cloud_probe": await cloud_status(cfg),
+            "cloud_environment": _cloud_environment(cfg.cloud.endpoint),
+            "endpoint_migrated": _endpoint_migrated(cfg),
+            "cloud_saved": True,
+            "cloud_applied": applied,
+        }
+    )
+    return get_templates(request).TemplateResponse(request, "settings/cloud_panel.html", ctx)
 
 
 @router.post("/settings", response_class=HTMLResponse)
@@ -445,17 +583,6 @@ async def settings_post(request: Request) -> HTMLResponse:
 
         skyline_path = str(form.get("skyline_path", "auto")).strip() or "auto"
         skyline_timeout = int(form.get("skyline_timeout", 900) or 900)
-        api_token = str(form.get("api_token", "")).strip() or None
-        cloud_environment = str(form.get("cloud_environment", "prod"))
-        if cloud_environment == "dev":
-            cloud_endpoint = defaults.ENDPOINT_DEV
-        elif cloud_environment == "custom":
-            cloud_endpoint = (
-                normalise_endpoint(str(form.get("cloud_endpoint_custom", "")))
-                or defaults.DEFAULT_ENDPOINT
-            )
-        else:
-            cloud_endpoint = defaults.ENDPOINT_PROD
         enable_toasts = "enable_toasts" in form
 
         instruments = _parse_instruments(form)
@@ -494,7 +621,11 @@ async def settings_post(request: Request) -> HTMLResponse:
         prev = state.cfg
         cfg = Config(
             agent=AgentConfig(log_level=log_level, enable_toast_notifications=enable_toasts),
-            cloud=CloudConfig(endpoint=cloud_endpoint, api_token=api_token),
+            # Cloud has its own form and its own Save. The page-wide save has
+            # to carry it forward: reading absent form fields would blank the
+            # token, and with it every upload, the first time anyone edited a
+            # threshold.
+            cloud=prev.cloud,
             skyline=prev.skyline.model_copy(
                 update={
                     "path": skyline_path,
@@ -520,11 +651,6 @@ async def settings_post(request: Request) -> HTMLResponse:
         # the change so the UI can tell the operator a restart is needed,
         # rather than silently leaving payloads un-pushed after they've
         # entered a token and been told "saved successfully".
-        cloud_changed = (
-            state.cfg.cloud.endpoint != cfg.cloud.endpoint
-            or state.cfg.cloud.api_token != cfg.cloud.api_token
-        )
-
         _write_config(cfg)
         state.cfg = cfg
         _clear_cloud_status_cache()

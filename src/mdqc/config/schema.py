@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -22,6 +23,34 @@ class AgentConfig(BaseModel):
     enable_toast_notifications: bool = True
 
 
+def normalise_endpoint(raw: str) -> str:
+    """Tidy an endpoint and retire hosts that no longer answer.
+
+    Trim, add https:// when absent, drop a trailing slash. A schemeless URL
+    fails twice over: platform_app_url() cannot parse it, so the nav loses the
+    platform link, and httpx rejects the POST as a request error, which the
+    uploader classifies as transient and retries forever. A retired host is
+    replaced with the shipped default rather than left to fail at DNS.
+
+    On the model, so a hand-edited config.toml, the wizard, the Settings form
+    and the tests all heal identically."""
+    value = (raw or "").strip()
+    if not value:
+        return defaults.DEFAULT_ENDPOINT
+    if "://" not in value:
+        value = f"https://{value}"
+    if urlsplit(value).netloc.lower() in defaults.LEGACY_ENDPOINT_HOSTS:
+        return defaults.DEFAULT_ENDPOINT
+    # A trailing slash is the server's business - /v1 and /v1/ are different
+    # resources - so it is left alone, except where trimming it lands exactly
+    # on one of our own endpoints. That keeps the picker on Production for a
+    # URL pasted with one, without rewriting anybody else's URL.
+    trimmed = value.rstrip("/")
+    if trimmed in (defaults.ENDPOINT_DEV, defaults.ENDPOINT_PROD):
+        return trimmed
+    return value
+
+
 class CloudConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -29,6 +58,11 @@ class CloudConfig(BaseModel):
     api_token: str | None = None
     certificate_thumbprint: str | None = None
     proxy: str | None = None
+
+    @field_validator("endpoint")
+    @classmethod
+    def _clean_endpoint(cls, v: str) -> str:
+        return normalise_endpoint(v)
 
     @field_validator("certificate_thumbprint")
     @classmethod

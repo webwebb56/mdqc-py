@@ -409,10 +409,8 @@ def test_settings_post_custom_environment_uses_custom_field(
     app = _build_app(state_without_instruments)
     client = _client(app)
     response = client.post(
-        "/settings",
-        data={"log_level": "info", "skyline_priority": "below_normal",
-              "skyline_path": "auto", "skyline_timeout": "900",
-              "api_token": "tok", "cloud_environment": "custom",
+        "/settings/cloud",
+        data={"api_token": "tok", "cloud_environment": "custom",
               "cloud_endpoint_custom": "https://staging.example.com/api/evosep_qcs"},
     )
     assert response.status_code == 200
@@ -429,12 +427,7 @@ def test_settings_post_token_only_uses_default_endpoint(
     monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
     app = _build_app(state_without_instruments)
     client = _client(app)
-    response = client.post(
-        "/settings",
-        data={"log_level": "info", "skyline_priority": "below_normal",
-              "skyline_path": "auto", "skyline_timeout": "900",
-              "api_token": "my-real-token", "cloud_endpoint": ""},
-    )
+    response = client.post("/settings/cloud", data={"api_token": "my-real-token"})
     assert response.status_code == 200
     config_path = tmp_path / "config.toml"
     contents = config_path.read_text(encoding="utf-8")
@@ -445,18 +438,13 @@ def test_settings_post_token_only_uses_default_endpoint(
 def test_settings_post_cloud_change_shows_restart_hint(
     state_without_instruments: _FakeAppState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The running Uploader is built once at startup from a config snapshot;
-    # saving a new token in Settings does not reach it. The operator must be
-    # told to restart, or their token silently does nothing.
+    # With no uploader to swap - a web UI served outside the agent, as here -
+    # the panel falls back to telling the operator to restart, because their
+    # token would otherwise silently do nothing.
     monkeypatch.setenv("MDQC_DATA_DIR", str(tmp_path))
     app = _build_app(state_without_instruments)
     client = _client(app)
-    response = client.post(
-        "/settings",
-        data={"log_level": "info", "skyline_priority": "below_normal",
-              "skyline_path": "auto", "skyline_timeout": "900",
-              "api_token": "new-token"},
-    )
+    response = client.post("/settings/cloud", data={"api_token": "new-token"})
     assert response.status_code == 200
     assert "restart" in response.text.lower()
 
@@ -678,6 +666,19 @@ def test_settings_page_shows_retention_panel(
     assert "max_age_days" in body
 
 
+def _form_spans(markup: str) -> list[tuple[int, int]]:
+    """(start, end) of every form on the page. Forms cannot nest, so a scan does."""
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while True:
+        start = markup.find("<form ", pos)
+        if start < 0:
+            return spans
+        end = markup.index("</form>", start)
+        spans.append((start, end))
+        pos = end + 1
+
+
 def test_every_settings_field_is_inside_the_form(
     state_with_instruments: _FakeAppState, tmp_data_dir: Path
 ) -> None:
@@ -688,7 +689,9 @@ def test_every_settings_field_is_inside_the_form(
     back to the stored values. Every other test posts to /settings directly
     with a hand-built dict, which bypasses the form entirely and so cannot
     see this class of fault at all.
-    """
+
+    The page carries two forms since v0.5.24 — Cloud saves on its own — so
+    the rule is that every field sits inside *one* of them."""
     import re
 
     app = _build_app(state_with_instruments)
@@ -698,16 +701,17 @@ def test_every_settings_field_is_inside_the_form(
     # Rows added by JS land inside containers that are themselves in the form,
     # so the markup to check is everything outside <script>.
     markup = re.sub(r"<script\b.*?</script>", "", body, flags=re.S | re.I)
-    start, end = markup.index("<form "), markup.index("</form>")
+    spans = _form_spans(markup)
+    assert len(spans) >= 2, "expected the page-wide form and the Cloud form"
 
     stray = [
         m.group(1)
         for m in re.finditer(
             r'<(?:input|select|textarea)[^>]*\bname="([^"]+)"', markup
         )
-        if not start < m.start() < end
+        if not any(a < m.start() < b for a, b in spans)
     ]
-    assert not stray, f"fields outside the form will never submit: {stray}"
+    assert not stray, f"fields outside every form will never submit: {stray}"
 
 
 def test_settings_submit_button_is_inside_the_form(
@@ -721,13 +725,13 @@ def test_settings_submit_button_is_inside_the_form(
     markup = re.sub(
         r"<script\b.*?</script>", "", client.get("/settings").text, flags=re.S | re.I
     )
-    start, end = markup.index("<form "), markup.index("</form>")
+    spans = _form_spans(markup)
     stray = [
         m.start()
         for m in re.finditer(r'<button[^>]*type="submit"', markup)
-        if not start < m.start() < end
+        if not any(a < m.start() < b for a, b in spans)
     ]
-    assert not stray, "a submit button sits outside the form"
+    assert not stray, "a submit button sits outside every form"
 
 
 # ─── QC thresholds panel ───────────────────────────────────────────────────
@@ -1051,7 +1055,8 @@ def test_dashboard_has_no_streamlit_panel(
 
 def test_normalise_endpoint_adds_scheme_and_trims() -> None:
     """A schemeless URL broke the nav link and made every upload a retry loop."""
-    from mdqc.webui.settings import normalise_endpoint
+    from mdqc.config import defaults
+    from mdqc.config.schema import normalise_endpoint
 
     assert normalise_endpoint("app.massdynamics.com/api/evosep_qcs") == (
         "https://app.massdynamics.com/api/evosep_qcs"
@@ -1060,7 +1065,16 @@ def test_normalise_endpoint_adds_scheme_and_trims() -> None:
         "https://app.massdynamics.com/api/evosep_qcs"
     )
     assert normalise_endpoint("http://localhost:8000/api") == "http://localhost:8000/api"
-    assert normalise_endpoint("   ") == ""
+    # Someone else's trailing slash is significant and stays put.
+    assert normalise_endpoint("https://staging.example.com/v1/") == (
+        "https://staging.example.com/v1/"
+    )
+    # Nothing configured, and the host that stopped resolving, both fall back
+    # to the shipped default rather than failing at DNS on every upload.
+    assert normalise_endpoint("   ") == defaults.DEFAULT_ENDPOINT
+    assert normalise_endpoint("https://qc-ingest.massdynamics.com/v1/") == (
+        defaults.ENDPOINT_PROD
+    )
 
 
 def test_cloud_state_from_status_mapping() -> None:
@@ -1123,7 +1137,7 @@ def test_settings_page_polls_the_cloud_status(
     client = _client(app)
     body = client.get("/settings").text
     assert 'hx-get="/settings/cloud/status"' in body
-    assert "Checking…" in body
+    assert "checking" in body.lower()
 
 
 def test_cloud_status_fragment_reports_connected(
@@ -1132,8 +1146,11 @@ def test_cloud_status_fragment_reports_connected(
 ) -> None:
     from mdqc.webui import settings as settings_mod
 
-    async def _stub(_cfg: Any) -> settings_mod.SectionStatus:
-        return settings_mod.SectionStatus("ok", "Connected — app.massdynamics.com")
+    async def _stub(_cfg: Any) -> settings_mod.CloudProbe:
+        return settings_mod.CloudProbe(
+            settings_mod.SectionStatus("ok", "app.massdynamics.com — reachable"),
+            settings_mod.SectionStatus("ok", "accepted"),
+        )
 
     settings_mod._clear_cloud_status_cache()
     monkeypatch.setattr(settings_mod, "probe_cloud_status", _stub)
@@ -1141,7 +1158,8 @@ def test_cloud_status_fragment_reports_connected(
     client = _client(app)
     body = client.get("/settings/cloud/status").text
     assert 'class="dot ok"' in body
-    assert "Connected — app.massdynamics.com" in body
+    assert "Endpoint: app.massdynamics.com — reachable" in body
+    assert "Token: accepted" in body
 
 
 def test_cloud_status_fragment_reports_a_rejected_token(
@@ -1150,16 +1168,22 @@ def test_cloud_status_fragment_reports_a_rejected_token(
 ) -> None:
     from mdqc.webui import settings as settings_mod
 
-    async def _stub(_cfg: Any) -> settings_mod.SectionStatus:
-        return settings_mod.SectionStatus("bad", "Token rejected by app.massdynamics.com")
+    async def _stub(_cfg: Any) -> settings_mod.CloudProbe:
+        return settings_mod.CloudProbe(
+            settings_mod.SectionStatus("ok", "app.massdynamics.com — reachable"),
+            settings_mod.SectionStatus("bad", "rejected"),
+        )
 
     settings_mod._clear_cloud_status_cache()
     monkeypatch.setattr(settings_mod, "probe_cloud_status", _stub)
     app = _build_app(state_with_instruments)
     client = _client(app)
     body = client.get("/settings/cloud/status").text
+    # The endpoint is fine; only the key is not - and the heading takes the
+    # worse of the two.
     assert 'class="dot bad"' in body
-    assert "Token rejected" in body
+    assert "Endpoint: app.massdynamics.com — reachable" in body
+    assert "Token: rejected" in body
 
 
 def test_cloud_status_is_cached_between_polls(
@@ -1171,10 +1195,13 @@ def test_cloud_status_is_cached_between_polls(
 
     calls = 0
 
-    async def _stub(_cfg: Any) -> settings_mod.SectionStatus:
+    async def _stub(_cfg: Any) -> settings_mod.CloudProbe:
         nonlocal calls
         calls += 1
-        return settings_mod.SectionStatus("ok", "Connected — app.massdynamics.com")
+        return settings_mod.CloudProbe(
+            settings_mod.SectionStatus("ok", "app.massdynamics.com — reachable"),
+            settings_mod.SectionStatus("ok", "accepted"),
+        )
 
     settings_mod._clear_cloud_status_cache()
     monkeypatch.setattr(settings_mod, "probe_cloud_status", _stub)
@@ -1191,7 +1218,8 @@ def test_cloud_status_is_cached_between_polls(
 
 
 def test_cloud_status_without_a_token_is_local_only(tmp_path: Path, tmp_data_dir: Path) -> None:
-    from mdqc.webui import settings as settings_mod
+    """No token: the panel says so without asking the platform anything."""
+    from mdqc.webui.settings import _initial_cloud_probe
 
     cfg = Config(
         agent=AgentConfig(),
@@ -1201,15 +1229,70 @@ def test_cloud_status_without_a_token_is_local_only(tmp_path: Path, tmp_data_dir
         spool=SpoolConfig(),
         instruments=[],
     )
-    spool = Spool(agent_id="agent-test", agent_version="0.1.0", root=tmp_path / "spool")
-    failed = FailedFilesStore(path=tmp_path / "failed.json")
-    state = _FakeAppState(cfg=cfg, spool=spool, failed=failed, activity=_FakeActivityLog())
-    settings_mod._clear_cloud_status_cache()
-    app = _build_app(state)
+    probe = _initial_cloud_probe(cfg)
+    assert probe.token.state == "muted"
+    assert "no token" in probe.token.message
+    assert "app.massdynamics.com" in probe.endpoint.message
+
+
+def test_cloud_probe_heading_takes_the_worse_state() -> None:
+    from mdqc.webui.settings import CloudProbe, SectionStatus
+
+    ok = SectionStatus("ok", "reachable")
+    assert CloudProbe(ok, SectionStatus("ok", "accepted")).worst == "ok"
+    assert CloudProbe(ok, SectionStatus("muted", "not checked")).worst == "muted"
+    assert CloudProbe(ok, SectionStatus("bad", "rejected")).worst == "bad"
+    assert CloudProbe(SectionStatus("warn", "timed out"), ok).worst == "warn"
+
+
+def test_page_wide_save_preserves_the_cloud_token(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """Cloud has its own form; the page-wide save must not blank the token.
+
+    Same failure mode as the unrendered-config regression: an operator edits a
+    threshold and uploads silently stop."""
+    state_with_instruments.cfg.cloud.api_token = "keep-me"
+    app = _build_app(state_with_instruments)
     client = _client(app)
-    body = client.get("/settings/cloud/status").text
-    assert "Local-only" in body
-    assert 'class="dot muted"' in body
+    response = client.post("/settings", data=_base_settings_form(api_token="ignored-here"))
+    assert response.status_code == 200
+    assert state_with_instruments.cfg.cloud.api_token == "keep-me"
+
+
+def test_saving_cloud_swaps_the_running_uploader(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """A saved token applies to the running agent - no restart."""
+
+    class _StubUploader:
+        def __init__(self, local_only: bool) -> None:
+            self.is_local_only = local_only
+
+        async def aclose(self) -> None:
+            return None
+
+    class _StubWorker:
+        def __init__(self) -> None:
+            self.uploader = _StubUploader(True)
+            self._logged_local_only = True
+
+    worker = _StubWorker()
+    state_with_instruments.uploader_worker = worker  # type: ignore[attr-defined]
+    state_with_instruments.uploader = worker.uploader  # type: ignore[attr-defined]
+    before = worker.uploader
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post("/settings/cloud", data={"api_token": "a-real-looking-token"})
+
+    assert response.status_code == 200
+    assert worker.uploader is not before, "the worker kept its old uploader"
+    assert worker.uploader.is_local_only is False, "a token should end local-only mode"
+    assert worker._logged_local_only is False
+    body = response.text.lower()
+    assert "no restart needed" in body
+    assert "restart the agent" not in body
 
 
 # Marker so pytest collection doesn't drop unused symbol warnings.

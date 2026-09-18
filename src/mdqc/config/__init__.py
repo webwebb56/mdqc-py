@@ -6,6 +6,7 @@ so callers can do `from mdqc.config import paths, defaults`.
 
 from __future__ import annotations
 
+import logging
 import sys
 import tomllib
 from pathlib import Path
@@ -25,6 +26,8 @@ from mdqc.config.schema import (
 class ConfigError(RuntimeError):
     """Raised when config.toml is missing, malformed, or invalid."""
 
+
+log = logging.getLogger(__name__)
 
 CONFIG_EXIT_CODE = 78  # POSIX EX_CONFIG; matches AGENT_NOTES.
 
@@ -52,6 +55,14 @@ def load_config(path: Path | None = None, *, strict_cert_guard: bool = True) -> 
         cfg = Config.model_validate(raw)
     except Exception as e:  # pydantic ValidationError + others
         raise ConfigError(f"Config validation failed: {e}") from e
+
+    saved_endpoint = str((raw.get("cloud") or {}).get("endpoint") or "").strip()
+    if saved_endpoint and saved_endpoint != cfg.cloud.endpoint:
+        # Loud, because the file on disk still says the old thing.
+        log.warning(
+            "cloud_endpoint_migrated",
+            extra={"saved": saved_endpoint, "using": cfg.cloud.endpoint},
+        )
 
     if strict_cert_guard:
         msg = cfg.cert_thumbprint_unsupported()

@@ -87,6 +87,11 @@ ENDPOINT_DEV = "https://dev.massdynamics.com/api/evosep_qcs"
 ENDPOINT_PROD = "https://app.massdynamics.com/api/evosep_qcs"
 DEFAULT_ENDPOINT = ENDPOINT_PROD
 
+# Hosts that no longer exist. An endpoint pointing at one of these is healed
+# to DEFAULT_ENDPOINT when the config is loaded: qc-ingest.massdynamics.com
+# stopped resolving, so every upload from a config naming it fails at DNS.
+LEGACY_ENDPOINT_HOSTS = ("qc-ingest.massdynamics.com",)
+
 # ─── Failure tracking ───────────────────────────────────────────────────────
 FAILED_FILES_MAX = 100
 ACTIVITY_LOG_MAX = 50
