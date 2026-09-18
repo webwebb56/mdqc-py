@@ -29,10 +29,10 @@ view.*
   no proxies, the same numbers an analyst would get manually
 - **Spools** results to disk as structured JSON payloads, with optional
   upload to the Mass Dynamics cloud
-- **Visualises** the longitudinal trend in a [Streamlit](https://streamlit.io)
-  dashboard — Levey-Jennings with Westgard rules, peptide grouping by
-  retention-time bin, scorecard heatmaps, and method-vs-file mismatch
-  diagnostics
+- **Reports** locally in the agent's web UI (dashboard, gold standards,
+  diagnostics) and in the Mass Dynamics platform once upload is configured.
+  The local [Streamlit](https://streamlit.io) trend dashboard is legacy: as
+  of v0.5.23 the agent neither launches nor links to it
 
 The whole thing runs **locally** — no cloud connection is required for the
 core monitoring loop.
@@ -46,7 +46,7 @@ core monitoring loop.
 **From the latest release** (always current — pip resolves the version from `main`):
 
 ```bash
-pip install --upgrade "mdqc[plots] @ git+https://github.com/webwebb56/mdqc-py.git@main"
+pip install --upgrade "mdqc @ git+https://github.com/webwebb56/mdqc-py.git@main"
 ```
 
 **Or from a local clone** (for development):
@@ -57,13 +57,11 @@ cd mdqc-py
 python -m venv .venv
 .venv\Scripts\activate              # Windows PowerShell
 # source .venv/bin/activate         # macOS/Linux
-pip install -e ".[plots]"
+pip install -e .
 ```
 
 **Or grab the bundled Windows `.exe`** (no Python required) from the
-[latest release page](https://github.com/webwebb56/mdqc-py/releases/latest) —
-note the `.exe` doesn't include the optional plots dashboard; for that, use one
-of the `pip install` paths above.
+[latest release page](https://github.com/webwebb56/mdqc-py/releases/latest).
 
 ### Run the agent
 ```bash
@@ -71,8 +69,12 @@ python -m mdqc run --foreground
 ```
 Watches the folders configured in `config.toml` and processes every new file.
 
-### Run the dashboard
+### Legacy local plots (optional)
+The Streamlit trend prototype is no longer started or linked by the agent —
+the Mass Dynamics platform replaced it. Sites still using it install the extra
+and run it by hand:
 ```bash
+pip install -e ".[plots]"
 streamlit run src/mdqc/plots/app.py
 ```
 Opens at <http://localhost:8501>.
@@ -89,7 +91,7 @@ Two cooperating processes:
 | Process | Role |
 |---|---|
 | **Agent** (`python -m mdqc run`) | Headless service. Filesystem watcher → finalizer → classifier → Skyline extractor → payload spool. Optional uploader and FastAPI control endpoint. |
-| **Dashboard** (`streamlit run …/plots/app.py`) | Reads payloads from `spool/completed/`. No coupling to the agent — works on a snapshot, copy, or the live folder. |
+| **Legacy plots** (`streamlit run …/plots/app.py`) | Optional, started by hand; superseded by the Mass Dynamics platform. Reads payloads from `spool/completed/`. No coupling to the agent — works on a snapshot, copy, or the live folder. |
 
 Each Skyline extraction runs in its own temp directory with hardlinked
 spectral libraries, so concurrent extractions don't fight over the shared
@@ -176,7 +178,7 @@ src/mdqc/
 ├── spool/               # durable on-disk queue (atomic state transitions)
 ├── service/             # asyncio lifecycle, signal handling, FastAPI
 ├── webui/               # in-agent control web UI (FastAPI + HTMX)
-├── plots/               # Streamlit QC dashboard
+├── plots/               # Streamlit QC dashboard (legacy, run by hand)
 ├── ipc/                 # runtime.json + loopback HTTP for cross-process control
 ├── cli/                 # typer subcommands (run, classify, selfcheck …)
 ├── uploader.py          # tenacity-driven cloud upload

@@ -333,8 +333,8 @@ def test_wizard_save_writes_config(
     contents = config_path.read_text(encoding="utf-8")
     assert "qe-99" in contents
     assert "thermo" in contents
-    # No cloud_environment posted -> defaults to "dev".
-    assert "https://dev.massdynamics.com/api/evosep_qcs" in contents
+    # No cloud_environment posted -> defaults to "prod" from v0.5.23.
+    assert "https://app.massdynamics.com/api/evosep_qcs" in contents
 
 
 def test_wizard_save_prod_environment(
@@ -362,15 +362,16 @@ def test_wizard_save_prod_environment(
 def test_settings_get_prefills_default_cloud_endpoint(
     state_without_instruments: _FakeAppState,
 ) -> None:
-    # A fresh Config() has no endpoint override, so Settings should show
-    # "Development" pre-selected out of the box — an operator only needs to
-    # paste a token, not also learn/guess the endpoint.
+    # A fresh Config() has no endpoint override, so Settings shows
+    # "Production" pre-selected out of the box — an operator only needs to
+    # paste a token, not also learn/guess the endpoint. Production is the
+    # default from v0.5.23; an install that should push to dev names it.
     app = _build_app(state_without_instruments)
     client = _client(app)
     response = client.get("/settings")
     assert response.status_code == 200
-    assert "dev.massdynamics.com" in response.text
-    assert 'value="dev" selected' in response.text.replace("\n", " ")
+    assert "app.massdynamics.com" in response.text
+    assert 'value="prod" selected' in response.text.replace("\n", " ")
 
 
 def test_settings_get_prod_endpoint_preselects_prod(
@@ -437,7 +438,7 @@ def test_settings_post_token_only_uses_default_endpoint(
     assert response.status_code == 200
     config_path = tmp_path / "config.toml"
     contents = config_path.read_text(encoding="utf-8")
-    assert "https://dev.massdynamics.com/api/evosep_qcs" in contents
+    assert "https://app.massdynamics.com/api/evosep_qcs" in contents
     assert "my-real-token" in contents
 
 
@@ -943,7 +944,7 @@ def test_nav_platform_link_when_cloud_configured(
     state_with_instruments: _FakeAppState, tmp_data_dir: Path
 ) -> None:
     # state_with_instruments' cloud config carries an api_token (see _build_config),
-    # so it is not local-only and the platform link should replace the plots link.
+    # so it is not local-only and the nav points at the platform.
     app = _build_app(state_with_instruments)
     client = _client(app)
     response = client.get("/dashboard")
@@ -952,6 +953,7 @@ def test_nav_platform_link_when_cloud_configured(
     assert "Mass Dynamics ↗" in body
     assert state_with_instruments.cfg.cloud.endpoint.split("/api/")[0] in body
     assert "Local QC plots" not in body
+    assert "8501" not in body
 
 
 def test_gold_standards_shows_instrument_selector_when_multiple(
@@ -999,7 +1001,13 @@ def test_gold_standards_shows_instrument_selector_when_multiple(
     assert "No SSC runs recorded yet for <strong>Exploris01</strong>" in response2.text
 
 
-def test_nav_falls_back_to_streamlit_when_local_only(tmp_path: Path) -> None:
+def test_nav_never_offers_the_local_plots_app(tmp_path: Path) -> None:
+    """The Streamlit prototype was retired in v0.5.23.
+
+    The nav used to fall back to a localhost:8501 link whenever cloud upload
+    was unconfigured, and the dashboard could start the app as a subprocess.
+    The platform replaced it; with no cloud configured the nav simply carries
+    no external link, and the Cloud panel says why."""
     cfg = Config(
         agent=AgentConfig(),
         cloud=CloudConfig(),  # no api_token -> local-only
@@ -1017,8 +1025,191 @@ def test_nav_falls_back_to_streamlit_when_local_only(tmp_path: Path) -> None:
     response = client.get("/dashboard")
     assert response.status_code == 200
     body = response.text
-    assert "Local QC plots" in body
+    assert "Local QC plots" not in body
+    assert "8501" not in body
     assert "Mass Dynamics ↗" not in body
+
+
+# ── Retired Streamlit surface (v0.5.23) ─────────────────────────────────────
+
+
+def test_dashboard_has_no_streamlit_panel(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """The dashboard no longer renders - or can launch - the plots prototype."""
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/dashboard").text
+    assert "Local QC Plots" not in body
+    assert "/dashboard/streamlit" not in body
+    assert client.get("/dashboard/streamlit").status_code == 404
+    assert client.post("/dashboard/streamlit/start").status_code == 404
+
+
+# ── Cloud endpoint + live status (v0.5.23) ──────────────────────────────────
+
+
+def test_normalise_endpoint_adds_scheme_and_trims() -> None:
+    """A schemeless URL broke the nav link and made every upload a retry loop."""
+    from mdqc.webui.settings import normalise_endpoint
+
+    assert normalise_endpoint("app.massdynamics.com/api/evosep_qcs") == (
+        "https://app.massdynamics.com/api/evosep_qcs"
+    )
+    assert normalise_endpoint("  https://app.massdynamics.com/api/evosep_qcs/  ") == (
+        "https://app.massdynamics.com/api/evosep_qcs"
+    )
+    assert normalise_endpoint("http://localhost:8000/api") == "http://localhost:8000/api"
+    assert normalise_endpoint("   ") == ""
+
+
+def test_cloud_state_from_status_mapping() -> None:
+    """The contract is POST-only, so GET answering 404/405 still means reachable."""
+    from mdqc.webui.settings import _cloud_state_from_status
+
+    for ok in (200, 201, 204, 404, 405, 415):
+        state = _cloud_state_from_status(ok)
+        assert state is not None and state.state == "ok", ok
+    for inconclusive in (401, 403):
+        assert _cloud_state_from_status(inconclusive) is None, inconclusive
+    for warn in (429, 500, 503):
+        state = _cloud_state_from_status(warn)
+        assert state is not None and state.state == "warn", warn
+
+
+def test_cloud_state_from_error_separates_timeout_from_refusal() -> None:
+    """A slow handshake is amber; a host that will not resolve is red."""
+    import httpx
+
+    from mdqc.webui.settings import _cloud_state_from_error
+
+    timed_out = _cloud_state_from_error(httpx.ConnectTimeout("slow"), "app.example.com")
+    assert timed_out.state == "warn"
+    assert "Timed out" in timed_out.message
+
+    refused = _cloud_state_from_error(httpx.ConnectError("no such host"), "gone.example.com")
+    assert refused.state == "bad"
+    assert refused.message == "Cannot reach gone.example.com"
+
+
+def test_settings_save_normalises_a_pasted_endpoint(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """Pasting the prod URL without a scheme still saves as Production."""
+    from mdqc.config import defaults
+    from mdqc.webui.settings import _cloud_environment
+
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    response = client.post(
+        "/settings",
+        data=_base_settings_form(
+            cloud_environment="custom",
+            cloud_endpoint_custom="app.massdynamics.com/api/evosep_qcs",
+        ),
+    )
+    assert response.status_code == 200
+    saved = state_with_instruments.cfg
+    assert saved.cloud.endpoint == defaults.ENDPOINT_PROD
+    assert _cloud_environment(saved.cloud.endpoint) == "prod"
+    # And the nav can now parse it, which it could not before normalisation.
+    assert "https://app.massdynamics.com" in client.get("/dashboard").text
+
+
+def test_settings_page_polls_the_cloud_status(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings").text
+    assert 'hx-get="/settings/cloud/status"' in body
+    assert "Checking…" in body
+
+
+def test_cloud_status_fragment_reports_connected(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mdqc.webui import settings as settings_mod
+
+    async def _stub(_cfg: Any) -> settings_mod.SectionStatus:
+        return settings_mod.SectionStatus("ok", "Connected — app.massdynamics.com")
+
+    settings_mod._clear_cloud_status_cache()
+    monkeypatch.setattr(settings_mod, "probe_cloud_status", _stub)
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings/cloud/status").text
+    assert 'class="dot ok"' in body
+    assert "Connected — app.massdynamics.com" in body
+
+
+def test_cloud_status_fragment_reports_a_rejected_token(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mdqc.webui import settings as settings_mod
+
+    async def _stub(_cfg: Any) -> settings_mod.SectionStatus:
+        return settings_mod.SectionStatus("bad", "Token rejected by app.massdynamics.com")
+
+    settings_mod._clear_cloud_status_cache()
+    monkeypatch.setattr(settings_mod, "probe_cloud_status", _stub)
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    body = client.get("/settings/cloud/status").text
+    assert 'class="dot bad"' in body
+    assert "Token rejected" in body
+
+
+def test_cloud_status_is_cached_between_polls(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The panel polls every 30s; the platform should not see every poll."""
+    from mdqc.webui import settings as settings_mod
+
+    calls = 0
+
+    async def _stub(_cfg: Any) -> settings_mod.SectionStatus:
+        nonlocal calls
+        calls += 1
+        return settings_mod.SectionStatus("ok", "Connected — app.massdynamics.com")
+
+    settings_mod._clear_cloud_status_cache()
+    monkeypatch.setattr(settings_mod, "probe_cloud_status", _stub)
+    app = _build_app(state_with_instruments)
+    client = _client(app)
+    client.get("/settings/cloud/status")
+    client.get("/settings/cloud/status")
+    assert calls == 1
+
+    # Saving settings invalidates it, so a changed token is picked up at once.
+    settings_mod._clear_cloud_status_cache()
+    client.get("/settings/cloud/status")
+    assert calls == 2
+
+
+def test_cloud_status_without_a_token_is_local_only(tmp_path: Path, tmp_data_dir: Path) -> None:
+    from mdqc.webui import settings as settings_mod
+
+    cfg = Config(
+        agent=AgentConfig(),
+        cloud=CloudConfig(),  # no token
+        skyline=SkylineConfig(),
+        watcher=WatcherConfig(),
+        spool=SpoolConfig(),
+        instruments=[],
+    )
+    spool = Spool(agent_id="agent-test", agent_version="0.1.0", root=tmp_path / "spool")
+    failed = FailedFilesStore(path=tmp_path / "failed.json")
+    state = _FakeAppState(cfg=cfg, spool=spool, failed=failed, activity=_FakeActivityLog())
+    settings_mod._clear_cloud_status_cache()
+    app = _build_app(state)
+    client = _client(app)
+    body = client.get("/settings/cloud/status").text
+    assert "Local-only" in body
+    assert 'class="dot muted"' in body
 
 
 # Marker so pytest collection doesn't drop unused symbol warnings.

@@ -218,7 +218,11 @@ window (default 60 s of no size change) before Skyline runs.
 
 ---
 
-## 6. Run the dashboard
+## 6. Run the dashboard (legacy)
+
+> From v0.5.23 the agent no longer starts or links to this dashboard. The
+> Mass Dynamics platform is the supported trend view; start the local one by
+> hand only if you still need it.
 
 In a **second** PowerShell window:
 ```powershell

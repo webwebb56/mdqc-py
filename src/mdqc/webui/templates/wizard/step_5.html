@@ -6,12 +6,12 @@
   </label>
   <div style="margin-left:1.5rem;">
     <label>
-      <input type="radio" name="cloud_environment" value="dev" {% if data.cloud_environment != "prod" %}checked{% endif %}>
-      Development — dev.massdynamics.com
+      <input type="radio" name="cloud_environment" value="prod" {% if data.cloud_environment != "dev" %}checked{% endif %}>
+      Production — app.massdynamics.com
     </label>
     <label>
-      <input type="radio" name="cloud_environment" value="prod" {% if data.cloud_environment == "prod" %}checked{% endif %}>
-      Production — app.massdynamics.com
+      <input type="radio" name="cloud_environment" value="dev" {% if data.cloud_environment == "dev" %}checked{% endif %}>
+      Development — dev.massdynamics.com
     </label>
     <label>API token
       <input type="text" name="api_token" value="{{ data.api_token or "" }}" placeholder="paste token from MD console">

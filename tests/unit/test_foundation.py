@@ -250,8 +250,9 @@ def test_load_config_bad_toml_raises(tmp_data_dir: Path) -> None:
 
 
 def test_default_endpoint() -> None:
+    """Production by default: the platform's QC modules are in use there."""
     cfg = Config()
-    assert cfg.cloud.endpoint == "https://dev.massdynamics.com/api/evosep_qcs"
+    assert cfg.cloud.endpoint == "https://app.massdynamics.com/api/evosep_qcs"
 
 
 def test_dev_and_prod_endpoint_constants_distinct() -> None:
@@ -260,4 +261,4 @@ def test_dev_and_prod_endpoint_constants_distinct() -> None:
     assert defaults.ENDPOINT_DEV == "https://dev.massdynamics.com/api/evosep_qcs"
     assert defaults.ENDPOINT_PROD == "https://app.massdynamics.com/api/evosep_qcs"
     assert defaults.ENDPOINT_DEV != defaults.ENDPOINT_PROD
-    assert defaults.DEFAULT_ENDPOINT == defaults.ENDPOINT_DEV
+    assert defaults.DEFAULT_ENDPOINT == defaults.ENDPOINT_PROD

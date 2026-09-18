@@ -77,15 +77,15 @@ UPLOAD_RETRY_SLEEPS: list[tuple[int, int]] = [
 HTTP_TIMEOUT_S = 30
 HTTP_CONNECT_TIMEOUT_S = 10
 
-# Named MD platform environments for POST /api/evosep_qcs. "dev" is
-# live-verified (returned 201 in testing, 2026-07-24). "prod" follows the
-# same host-swap pattern Giuseppe's platform uses elsewhere (app.massdynamics.com
-# is the customer-facing app — see the Evosep QC screenshots) but has NOT been
-# independently confirmed with a live request — verify before routing real
-# customer data through it.
+# Named MD platform environments for POST /api/evosep_qcs. Both routes are
+# live: each answers 401 to an unauthenticated request while a bogus path on
+# the same host answers 404 (probed 2026-09-18). dev additionally returned 201
+# for a real payload on 2026-07-24. prod — app.massdynamics.com, the
+# customer-facing app — is the default now that the platform's QC modules are
+# in use there; an install that should push to dev names it explicitly.
 ENDPOINT_DEV = "https://dev.massdynamics.com/api/evosep_qcs"
 ENDPOINT_PROD = "https://app.massdynamics.com/api/evosep_qcs"
-DEFAULT_ENDPOINT = ENDPOINT_DEV
+DEFAULT_ENDPOINT = ENDPOINT_PROD
 
 # ─── Failure tracking ───────────────────────────────────────────────────────
 FAILED_FILES_MAX = 100

@@ -384,10 +384,11 @@
 
   {# ── Cloud ──────────────────────────────────────────────────────────── #}
   <section class="panel">
-    <div class="section-heading">
-      <span class="dot {{ status_cloud.state }}">●</span>
-      <h2>Cloud</h2>
-      <span class="status-msg {{ status_cloud.state }}">{{ status_cloud.message }}</span>
+    <div class="section-heading" id="cloud-status"
+         hx-get="/settings/cloud/status"
+         hx-trigger="load, every 30s"
+         hx-swap="innerHTML">
+      {% include "settings/cloud_status_fragment.html" %}
     </div>
 
     <div class="field-row">

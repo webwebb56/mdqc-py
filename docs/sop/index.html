@@ -693,9 +693,12 @@ themselves. Two options exist for looking at results on the instrument PC:</p>
   <li><strong>The Gold standards page</strong> — shows every recorded SSC-gold run with its
   per-peptide values, and the resulting baseline. Useful for a quick check even when you are not
   re-baselining.</li>
-  <li><strong>The local plots dashboard</strong> — an optional component providing longitudinal
-  trend views on the instrument PC. It is installed with
-  <code>pip install --user "mdqc[plots] @ git+https://github.com/webwebb56/mdqc-py.git@main"</code> and started from the Dashboard, or with
+  <li><strong>The local plots dashboard</strong> &mdash; a legacy component providing
+  longitudinal trend views on the instrument PC. From v0.5.23 the agent neither starts nor
+  links to it; the Mass Dynamics platform is where trends are read. Sites still using it
+  install it with
+  <code>pip install --user "mdqc[plots] @ git+https://github.com/webwebb56/mdqc-py.git@main"</code>
+  and start it by hand with
   <code>streamlit run &lt;install path&gt;/mdqc/plots/app.py</code>. It reads the stored result
   files directly and needs no network connection.</li>
 </ul>
@@ -1327,6 +1330,7 @@ and halve in size.</p>
     <tr><td>C</td><td>2026-08-31</td><td>Mass Dynamics</td><td>Second Evosep review incorporated (83 annotations). Covers v0.5.17. Terminology moved to <strong>PC / SSC / SSC-gold</strong>; SSC-gold restated as a selection made on the Gold standards page rather than a filename type; Evosep Eno/One serial added as a filename field; retention-time criteria split into percentage-from-baseline and absolute-seconds modes; peak-area warn band widened to 15%; dilution marked service-only; oxidation and alkylation classes removed; <code>column_info</code> renamed <code>lc_column</code>; process-control load corrected to ~20&times; and the analytical column to Ev1182.</td></tr>
     <tr><td>D</td><td>2026-09-11</td><td>Mass Dynamics</td><td>Evosep follow-up and the 7 September call. Covers v0.5.21. Process-control load reverted to <strong>up to ~6&times;</strong> the SSC load &mdash; Evosep withdrew the 20&times; figure, since 1&nbsp;&micro;g at a 30% Evotip load is ~300&nbsp;ng on Evotip. QC method lock, and re-baselining after any acquisition-method or template change. Skyline version prerequisite. Command-line install documented as the supported route. Supplied instrument templates and the move to MS1-only extraction. Gold-standard size depends on available SSC material. Two new failure modes.</td></tr>
     <tr><td>E</td><td>2026-09-11</td><td>Mass Dynamics</td><td>Covers v0.5.22. Until a gold standard is saved, the Gold standards page shades by percentage from the <strong>median</strong> of the selected runs rather than the mean. <code>mdqc doctor</code> now reads the installed Skyline version and the format each template was saved in, and fails the check if a template is newer; Figures 1 and 10 recaptured. Corrected what <code>mdqc doctor</code> is said to check &mdash; it does not check vendor readers.</td></tr>
+    <tr><td>F</td><td>2026-09-18</td><td>Mass Dynamics</td><td>Covers v0.5.23. The local plots dashboard is no longer started from, or linked in, the agent interface &mdash; the Mass Dynamics platform is the trend view, and sites still using the local dashboard start it by hand. <strong>Settings &rarr; Cloud</strong> defaults to the production endpoint, tidies a pasted URL, and shows a live connection state instead of merely reporting that a token has been entered.</td></tr>
   </tbody>
 </table>
 </div>

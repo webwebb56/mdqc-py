@@ -162,12 +162,12 @@ async def wizard_step_4(
 async def wizard_step_5(
     request: Request,
     output_mode: str = Form("cloud"),
-    cloud_environment: str = Form("dev"),
+    cloud_environment: str = Form("prod"),
     api_token: str = Form(""),
 ) -> HTMLResponse:
     sess = _session(request)
     sess["output_mode"] = output_mode
-    sess["cloud_environment"] = cloud_environment if cloud_environment in ("dev", "prod") else "dev"
+    sess["cloud_environment"] = cloud_environment if cloud_environment in ("dev", "prod") else "prod"
     sess["api_token"] = api_token.strip()
     return await wizard_save(request)
 
@@ -180,7 +180,7 @@ def _build_config(data: dict[str, Any]) -> Config:
     template = data.get("template_path") or "QC_Method.sky"
     skyline_path = data.get("skyline_path") or "auto"
     output_mode = data.get("output_mode", "cloud")
-    cloud_environment = data.get("cloud_environment", "dev")
+    cloud_environment = data.get("cloud_environment", "prod")
     api_token = data.get("api_token") or None
 
     instrument = InstrumentConfig(
