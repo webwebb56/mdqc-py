@@ -305,3 +305,42 @@ async def test_processing_timeout_does_not_pollute_registry(
 
     assert fin.state_of(raw) is None
     assert not registry.contains(raw)
+
+
+# ── an explicit reprocess must reprocess (v0.5.25) ──────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_observe_skips_a_file_already_in_the_registry(
+    tmp_path: Path, tmp_data_dir: Path
+) -> None:
+    raw = tmp_path / "QC_run.raw"
+    raw.write_bytes(b"x" * 16)
+    registry = ProcessedRegistry()
+    registry.add(raw)
+    async def _never_called(_path: Path, _vendor: Vendor) -> None:
+        raise AssertionError("observe() must not process the file itself")
+
+    finalizer = Finalizer(_cfg(), registry=registry, processed_callback=_never_called)
+
+    assert await finalizer.observe(raw, Vendor.THERMO) is False
+    assert finalizer.state_of(raw) is None
+
+
+@pytest.mark.asyncio
+async def test_observe_force_overrides_the_registry(
+    tmp_path: Path, tmp_data_dir: Path
+) -> None:
+    """`mdqc reprocess` returned ok while doing nothing, because the registry
+    silently won. An explicit request has to win instead."""
+    raw = tmp_path / "QC_run.raw"
+    raw.write_bytes(b"x" * 16)
+    registry = ProcessedRegistry()
+    registry.add(raw)
+    async def _never_called(_path: Path, _vendor: Vendor) -> None:
+        raise AssertionError("observe() must not process the file itself")
+
+    finalizer = Finalizer(_cfg(), registry=registry, processed_callback=_never_called)
+
+    assert await finalizer.observe(raw, Vendor.THERMO, force=True) is True
+    assert finalizer.state_of(raw) is not None

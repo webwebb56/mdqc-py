@@ -182,6 +182,9 @@ class UploaderWorker:
             self.spool.mark_failed(path, str(e))
             return True
 
+        # The only record of a successful upload used to be httpx's own
+        # request line, which is now quiet at INFO.
+        log.info("payload_uploaded", extra={"payload": path.name})
         self.spool.mark_completed(path)
         return True
 

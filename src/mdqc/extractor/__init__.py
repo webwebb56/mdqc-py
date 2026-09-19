@@ -6,6 +6,7 @@ import hashlib
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mdqc.config.paths import methods_dir
@@ -123,6 +124,16 @@ def _median(values: list[float]) -> float | None:
     if n % 2 == 0:
         return (values[mid - 1] + values[mid]) / 2.0
     return values[mid]
+
+
+def _file_mtime_iso(path: Path | None) -> str | None:
+    """The file's modification time as offset-aware ISO-8601, or None."""
+    if path is None:
+        return None
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, UTC).astimezone().isoformat()
+    except OSError:
+        return None
 
 
 class Extractor:
@@ -295,6 +306,17 @@ class Extractor:
         finally:
             self._cleanup(output_csv)
 
+        if acquired_time is None:
+            # No AcquiredTime column (a template older than v0.5.25). The
+            # file's mtime is the only clue left - it is usually close, but
+            # any copy or transfer that does not preserve it rewrites the QC
+            # timeline silently, so say so in the log.
+            acquired_time = _file_mtime_iso(raw_file)
+            if acquired_time is not None:
+                logger.info(
+                    "acquisition_time_from_file_mtime",
+                    extra={"raw_file": raw_file.name, "acquired_time": acquired_time},
+                )
         result.acquired_time = acquired_time
         result.modified_time = modified_time
 

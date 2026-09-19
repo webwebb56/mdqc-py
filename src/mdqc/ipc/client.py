@@ -203,9 +203,14 @@ class IpcClient:
         response = self._request("POST", "/api/resume")
         response.raise_for_status()
 
-    def reprocess(self, path: Path) -> None:
+    def reprocess(self, path: Path) -> bool:
+        """Ask the service to process this file again. True if it was queued."""
         response = self._request("POST", "/api/reprocess", json_body={"path": path.as_posix()})
         response.raise_for_status()
+        try:
+            return bool(response.json().get("queued", True))
+        except ValueError:
+            return True
 
     def retry_failed(self, path: str) -> int:
         response = self._request(

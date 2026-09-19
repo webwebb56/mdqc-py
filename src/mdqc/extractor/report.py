@@ -12,6 +12,7 @@ import logging
 import math
 import re
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 from mdqc.types import TargetMetric
@@ -46,13 +47,20 @@ def read_skyr_report_name(path: Path) -> str | None:
     except UnicodeDecodeError:
         return None
 
-# Skyline writes AcquiredTime / ModifiedTime in the instrument PC's locale.
-# The pilot Astral emits US 12-hour ("7/22/2026 2:44:30 AM"); other locales
-# vary. Try the common shapes, ISO first.
-_SKYLINE_TIME_FORMATS = (
+# Skyline writes AcquiredTime / ModifiedTime in the instrument PC's locale,
+# and 3/02/2026 means different months in Chicago and Melbourne. Guessing
+# month-first (the old behaviour, taken from a US pilot machine) put every
+# run with a day <= 12 in the wrong month on an en-AU or en-GB PC. Ask the
+# OS for the user's date order instead.
+_MONTH_FIRST_FORMATS = (
     "%m/%d/%Y %I:%M:%S %p",   # 7/22/2026 2:44:30 AM  (US 12h — Skyline default)
     "%m/%d/%Y %H:%M:%S",       # US 24h
+)
+_DAY_FIRST_FORMATS = (
+    "%d/%m/%Y %I:%M:%S %p",   # 3/02/2026 12:40:31 AM  (en-AU/en-GB 12h)
     "%d/%m/%Y %H:%M:%S",       # EU 24h
+)
+_COMMON_TIME_FORMATS = (
     "%Y-%m-%d %H:%M:%S",       # ISO-ish, space-separated
 )
 
@@ -157,6 +165,17 @@ _ALIASES: dict[str, list[str]] = {
 
 def _normalise(s: str) -> str:
     return s.strip().lower().replace(" ", "").replace("_", "")
+
+
+def _column_index(headers: list[str], leaf: str) -> int | None:
+    """Index of the column whose name is, or ends with, ``leaf``."""
+    for i, header in enumerate(headers):
+        if not header:
+            continue
+        normalised = _normalise(header)
+        if normalised == leaf or normalised.rsplit(".", 1)[-1] == leaf:
+            return i
+    return None
 
 
 def _build_alias_index() -> dict[str, str]:
@@ -286,7 +305,41 @@ def _get_str(row: list[str], idx: int | None) -> str | None:
     return raw or None
 
 
-def _parse_skyline_time(raw: str) -> str | None:
+def _windows_short_date_pattern() -> str | None:
+    """The user's short-date pattern from Windows, e.g. "d/MM/yyyy"."""
+    try:
+        import ctypes
+
+        buf = ctypes.create_unicode_buffer(80)
+        # LOCALE_NAME_USER_DEFAULT = None, LOCALE_SSHORTDATE = 0x1F
+        written = ctypes.windll.kernel32.GetLocaleInfoEx(None, 0x1F, buf, len(buf))
+        return buf.value if written else None
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=1)
+def locale_prefers_day_first() -> bool:
+    """True where the machine writes 3/02/2026 meaning the 3rd of February."""
+    pattern = _windows_short_date_pattern()
+    if not pattern:
+        return False
+    for ch in pattern.lstrip("'\" "):
+        if ch in "dD":
+            return True
+        if ch in "mMyY":
+            return False
+    return False
+
+
+def _skyline_time_formats(day_first: bool) -> tuple[str, ...]:
+    ordered = _DAY_FIRST_FORMATS + _MONTH_FIRST_FORMATS if day_first else (
+        _MONTH_FIRST_FORMATS + _DAY_FIRST_FORMATS
+    )
+    return ordered + _COMMON_TIME_FORMATS
+
+
+def _parse_skyline_time(raw: str, *, day_first: bool | None = None) -> str | None:
     """Parse a Skyline AcquiredTime/ModifiedTime cell to offset-aware ISO-8601.
 
     Skyline's value is a naive wall-clock in the instrument PC's local
@@ -302,7 +355,9 @@ def _parse_skyline_time(raw: str) -> str | None:
         return datetime.fromisoformat(raw).astimezone().isoformat()
     except ValueError:
         pass
-    for fmt in _SKYLINE_TIME_FORMATS:
+    if day_first is None:
+        day_first = locale_prefers_day_first()
+    for fmt in _skyline_time_formats(day_first):
         try:
             naive = datetime.strptime(raw, fmt)
         except ValueError:
@@ -462,9 +517,12 @@ def parse_skyline_run_metadata(path: Path) -> tuple[str | None, str | None]:
             headers = next(reader)
         except StopIteration:
             return None, None
-        norm = {_normalise(h): i for i, h in enumerate(headers) if h}
-        acq_idx = norm.get("acquiredtime")
-        mod_idx = norm.get("modifiedtime")
+        # Skyline captions simple columns ("Protein Name") but exports the
+        # full property path for nested ones:
+        #   Results!*.Value.PrecursorResult.ResultFile.AcquiredTime
+        # Match the final segment so both styles resolve.
+        acq_idx = _column_index(headers, "acquiredtime")
+        mod_idx = _column_index(headers, "modifiedtime")
         if acq_idx is None and mod_idx is None:
             return None, None
         for row in reader:

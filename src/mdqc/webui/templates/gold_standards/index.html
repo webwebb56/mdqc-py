@@ -2,6 +2,8 @@
 {% block title %}Gold standards — MD QC Agent{% endblock %}
 {% block content %}
 <style>
+  .gs-del { background:none; border:none; color:var(--muted); cursor:pointer; padding:0 .3rem; }
+  .gs-del:hover { color:var(--bad); }
   .gs-header { display:flex; align-items:baseline; gap:1rem; margin-bottom:1rem; flex-wrap:wrap; }
   .gs-header h1 { margin:0; }
   .gs-instrument-select { max-width:260px; display:inline-block; width:auto; }
@@ -100,6 +102,41 @@
      href="/gold-standards?instrument={{ instrument_id }}&amp;spd={{ s }}">{{ s }} SPD</a>
   {% endfor %}
 </div>
+
+<form method="post" action="/gold-standards/runs/delete" id="gs-delete-run-form" style="display:none;">
+  <input type="hidden" name="instrument_id" value="{{ instrument_id }}">
+  <input type="hidden" name="spd" value="{{ spd }}">
+  <input type="hidden" name="run_id" id="gs-delete-run-id">
+</form>
+
+{% if baselines %}
+<details class="panel" style="margin-bottom:1rem;">
+  <summary style="cursor:pointer;">Saved baselines ({{ baselines | length }})</summary>
+  <table style="margin-top:.6rem;">
+    <thead><tr><th>Saved</th><th>Label</th><th>Runs</th><th></th><th></th></tr></thead>
+    <tbody>
+      {% for b in baselines %}
+      <tr>
+        <td>{{ b.created_at[:16] | replace("T", " ") }}</td>
+        <td>{{ b.label }}</td>
+        <td>{{ b.source_run_ids | length }}</td>
+        <td>{% if active_baseline and b.baseline_id == active_baseline.baseline_id %}
+            <strong>active</strong>{% endif %}</td>
+        <td>
+          <form method="post" action="/gold-standards/baselines/delete"
+                onsubmit="return confirm('Delete this baseline? Runs already scored against it keep their verdicts.');">
+            <input type="hidden" name="instrument_id" value="{{ instrument_id }}">
+            <input type="hidden" name="spd" value="{{ spd }}">
+            <input type="hidden" name="baseline_id" value="{{ b.baseline_id }}">
+            <button type="submit" class="gs-del">&#10005;</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
 
 {% if active_baseline %}
 <div class="baseline-chip">
@@ -224,6 +261,13 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
     return Number(v).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: 0 });
   }
   function runLabel(r) { return r.raw_file_name || r.run_id.slice(0, 8); }
+
+  function mdqcDeleteRun(runId, label) {
+    if (!confirm('Forget this run?\n\n' + label + '\n\nIt disappears from this page. Payloads already sent are unaffected.')) return;
+    document.getElementById('gs-delete-run-id').value = runId;
+    document.getElementById('gs-delete-run-form').submit();
+  }
+  window.mdqcDeleteRun = mdqcDeleteRun;
   function median(vals) {
     if (!vals.length) return null;
     const s = vals.slice().sort((a, b) => a - b);
@@ -371,7 +415,7 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
 
   function renderRunsTable(s) {
     const table = document.getElementById('gs-runs-table');
-    let head = '<thead><tr><th></th>' +
+    let head = '<thead><tr><th></th><th></th>' +
       '<th class="sortable" data-sort="run">Run' + sortArrow('run') + '</th>' +
       '<th class="sortable" data-sort="acquired">Acquired' + sortArrow('acquired') + '</th>' +
       '<th class="sortable" data-sort="found">Found' + sortArrow('found') + '</th>';
@@ -385,6 +429,8 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
       const isChecked = checked.has(r.run_id);
       body += '<tr class="' + (isChecked ? '' : 'unchecked') + '">';
       body += '<td><input type="checkbox" data-run="' + r.run_id + '"' + (isChecked ? ' checked' : '') + '></td>';
+      body += '<td><button type="button" class="gs-del" title="Forget this run" '
+        + 'onclick="mdqcDeleteRun(\'' + r.run_id + '\', \'' + runLabel(r).replace(/'/g, "") + '\')">&#10005;</button></td>';
       body += '<td>' + runLabel(r) + '</td>';
       body += '<td>' + (r.acquisition_time ? r.acquisition_time.slice(0, 16).replace('T', ' ') : '—') + '</td>';
       body += '<td>' + (r.targets_found ?? '—') + '/' + (r.targets_expected ?? '—') + '</td>';
@@ -475,7 +521,7 @@ const RT_DEVIATION_PCT_MAX = {{ rt_dev_pct_max | tojson }};
         '" title="median ' + st.rtMedian.toFixed(2) + ' min"></div>';
     });
     html += '<div class="gs-run-row" style="border-top:1px solid var(--border); margin-top:4px; padding-top:6px;">' +
-      '<div class="gs-run-label"><strong>Baseline median</strong></div><div class="gs-track">' + baseSticks + '</div></div>';
+      '<div class="gs-run-label"><strong>Selection median</strong><span class="muted" style="font-size:.8em;"> (ticked runs)</span></div><div class="gs-track">' + baseSticks + '</div></div>';
 
     const ticks = [0, 1, 2, 3, 4].map(i => rtMin + (rtMax - rtMin) * i / 4);
     html += '<div class="gs-run-row"><div class="gs-run-label muted">RT (min)</div><div class="gs-axis">' +

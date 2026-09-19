@@ -89,16 +89,25 @@ class Finalizer:
         # processed.
         self._skip_logged: set[Path] = set()
 
-    async def observe(self, path: Path, vendor: Vendor) -> None:
+    async def observe(self, path: Path, vendor: Vendor, *, force: bool = False) -> bool:
+        """Track a file. Returns True when it was accepted for processing.
+
+        ``force`` is an operator asking for this file explicitly (the Failed
+        tab, ``mdqc reprocess``): the registry no longer wins, because a
+        command named reprocess that silently does nothing is a trap."""
         async with self._lock:
             existing = self._trackers.get(path)
-            if existing is not None and existing.state in {
+            if force:
+                self._trackers.pop(path, None)
+                self._skip_logged.discard(path)
+                existing = None
+            elif existing is not None and existing.state in {
                 FinalizationState.DONE,
                 FinalizationState.FAILED,
                 FinalizationState.PROCESSING,
             }:
-                return
-            if self._registry.contains(path):
+                return False
+            if not force and self._registry.contains(path):
                 # Correct behaviour — this file has been processed before and
                 # must not be processed twice. But returning silently means a
                 # file dropped into the watch folder produces no payload and no
@@ -117,9 +126,9 @@ class Finalizer:
                             ),
                         },
                     )
-                return
+                return False
             if existing is not None:
-                return
+                return False
             size, mtime = _measure(path, vendor)
             self._trackers[path] = FileTracker(
                 path=path,
@@ -130,6 +139,7 @@ class Finalizer:
                 last_mtime=mtime,
                 last_change_at=_now(),
             )
+            return True
 
     def trackers_snapshot(self) -> dict[Path, FileTracker]:
         return dict(self._trackers)

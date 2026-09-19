@@ -387,3 +387,21 @@ async def test_idempotency_body_byte_equal_across_retries() -> None:
     assert route.call_count == 3
     bodies = [bytes(call.request.content) for call in route.calls]
     assert bodies[0] == bodies[1] == bodies[2]
+
+
+def test_configure_logging_quiets_transport_chatter(tmp_path: Path) -> None:
+    """An open Settings page probes every 30s; that must not fill the log.
+
+    httpx logs a line per request at INFO, so the probe drowned out extraction
+    and upload events."""
+    import logging as _logging
+
+    from mdqc.log import configure_logging
+
+    configure_logging(level="info", log_to_file=False, log_to_console=False)
+    assert _logging.getLogger("httpx").level == _logging.WARNING
+    assert _logging.getLogger("httpcore").level == _logging.WARNING
+
+    # Debug is for support bundles, where the request detail earns its place.
+    configure_logging(level="debug", log_to_file=False, log_to_console=False)
+    assert _logging.getLogger("httpx").level != _logging.WARNING

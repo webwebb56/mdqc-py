@@ -26,6 +26,11 @@
     <column name="Results!*.Value.LibraryDotProduct" />
     <column name="Results!*.Value.AverageMassErrorPPM" />
     <!-- Acquisition -->
-    <column name="Results!*.Value.PrecursorResult.ResultFile.FileName" />
+    <column name="Results!*.Value.PeptideResult.ResultFile.FileName" />
+    <!-- Acquisition timestamps from the raw-file header. Without these the
+         payload falls back to the file's mtime, which any copy or transfer
+         silently rewrites. report.py has parsed them since 2026-07. -->
+    <column name="Results!*.Value.PeptideResult.ResultFile.AcquiredTime" />
+    <column name="Results!*.Value.PeptideResult.ResultFile.ModifiedTime" />
   </view>
 </views>

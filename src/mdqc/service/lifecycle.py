@@ -234,8 +234,12 @@ def build_api(state: AppState) -> FastAPI:
             raise HTTPException(
                 status_code=400, detail=f"no instrument matches path {target}"
             )
-        await state.finalizer.observe(target, vendor)
-        return {"ok": True}
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"file not found: {target}")
+        # force: an explicit reprocess must not be silently swallowed by the
+        # processed-file registry. Callers were told ok:true while nothing ran.
+        queued = await state.finalizer.observe(target, vendor, force=True)
+        return {"ok": True, "queued": queued}
 
     @app.post("/api/failed/retry")
     async def failed_retry_endpoint(body: dict[str, Any]) -> dict[str, int]:

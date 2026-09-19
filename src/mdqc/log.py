@@ -62,6 +62,18 @@ def configure_logging(
         root.addHandler(h)
     root.setLevel(py_level)
 
+    # httpx and httpcore log one INFO line per HTTP request. With the
+    # Settings page open that is the cloud status probe writing to the log
+    # every 30s, which buries extraction and upload events. Our own events
+    # carry what matters; keep the transports verbose only under debug,
+    # where a support bundle wants the detail.
+    # Set both ways: configure_logging is idempotent, so a later debug run
+    # has to be able to turn the detail back on.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(
+            logging.WARNING if py_level > logging.DEBUG else logging.NOTSET
+        )
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

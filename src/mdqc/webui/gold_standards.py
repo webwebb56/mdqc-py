@@ -75,6 +75,7 @@ async def _page_context(
             "runs_data": runs,
             "default_checked": sorted(default_checked),
             "active_baseline": active,
+            "baselines": gs.list_baselines(instrument_id, spd) if instrument_id else [],
             "baseline_reference": (active or {}).get("per_peptide") or {},
             "dev_warn_pct": th.peak_area_deviation_pct_warn,
             "dev_fail_pct": th.peak_area_deviation_pct_fail,
@@ -97,6 +98,41 @@ async def gold_standards_index(request: Request) -> HTMLResponse:
     templates = get_templates(request)
     ctx = await _page_context(request, instrument_id, spd)
     return templates.TemplateResponse(request, "gold_standards/index.html", ctx)
+
+
+@router.post("/runs/delete", response_class=HTMLResponse)
+async def gold_standards_delete_run(request: Request) -> HTMLResponse:
+    """Forget one recorded run - a test injection, or one recorded against the
+    wrong instrument. Leaving it unticked keeps it out of a baseline but not
+    out of the page."""
+    form = await request.form()
+    instrument_id = str(form.get("instrument_id") or "") or None
+    spd = _parse_spd(form.get("spd"))
+    run_id = str(form.get("run_id") or "")
+    removed = gs.delete_ssc0_run(instrument_id, spd, run_id)
+    ctx = await _page_context(
+        request, instrument_id, spd,
+        saved=removed,
+        error=None if removed else "That run was not found.",
+    )
+    return get_templates(request).TemplateResponse(request, "gold_standards/index.html", ctx)
+
+
+@router.post("/baselines/delete", response_class=HTMLResponse)
+async def gold_standards_delete_baseline(request: Request) -> HTMLResponse:
+    """Remove a saved baseline. Deleting the active one promotes the newest
+    remaining, so a gold standard saved by mistake is no longer permanent."""
+    form = await request.form()
+    instrument_id = str(form.get("instrument_id") or "") or None
+    spd = _parse_spd(form.get("spd"))
+    baseline_id = str(form.get("baseline_id") or "")
+    removed = gs.delete_baseline(instrument_id, spd, baseline_id)
+    ctx = await _page_context(
+        request, instrument_id, spd,
+        saved=removed,
+        error=None if removed else "That baseline was not found.",
+    )
+    return get_templates(request).TemplateResponse(request, "gold_standards/index.html", ctx)
 
 
 @router.post("/save", response_class=HTMLResponse)

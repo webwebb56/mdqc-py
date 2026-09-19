@@ -17,5 +17,7 @@ def reprocess_file(
     from mdqc.ipc.client import IpcClient
 
     client = IpcClient.from_runtime_file()
-    client.reprocess(path)
-    typer.echo(f"Enqueued: {path}")
+    if client.reprocess(path):
+        typer.echo(f"Enqueued: {path}")
+    else:
+        typer.echo(f"Not queued (already being processed): {path}")

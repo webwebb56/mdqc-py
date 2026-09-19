@@ -532,6 +532,62 @@ def list_baselines(instrument_id: str | None, spd: int | None) -> list[dict[str,
     return records
 
 
+def delete_ssc0_run(instrument_id: str | None, spd: int | None, run_id: str) -> bool:
+    """Forget a recorded run. Returns False when it was not there.
+
+    The store was append-only, so a run recorded against the wrong instrument -
+    or a test run nobody wants in the history - could never be removed. Leaving
+    it unticked keeps it out of a baseline but not out of the page."""
+    path = paths.ssc0_runs_path()
+    data = _read_json(path)
+    key = _bucket_key(instrument_id, spd)
+    bucket: list[dict[str, Any]] = data.get(key) or []
+    remaining = [r for r in bucket if r.get("run_id") != run_id]
+    if len(remaining) == len(bucket):
+        return False
+    data[key] = remaining
+    _write_json(path, data)
+    log.info(
+        "gold_standard_run_deleted",
+        extra={"instrument_id": instrument_id, "spd": spd, "run_id": run_id},
+    )
+    return True
+
+
+def delete_baseline(instrument_id: str | None, spd: int | None, baseline_id: str) -> bool:
+    """Remove a saved baseline. Deleting the active one promotes the newest left.
+
+    Superseding was the only way to move on from a bad baseline, so a mistake -
+    a gold standard saved over a single run, say - stayed in the history for
+    good."""
+    path = paths.baselines_path()
+    data = _read_json(path)
+    key = _bucket_key(instrument_id, spd)
+    entry = data.get(key)
+    if not entry or baseline_id not in (entry.get("baselines") or {}):
+        return False
+    entry["baselines"].pop(baseline_id)
+    if entry.get("active_baseline_id") == baseline_id:
+        remaining = sorted(
+            entry["baselines"].values(),
+            key=lambda r: str(r.get("created_at", "")),
+            reverse=True,
+        )
+        entry["active_baseline_id"] = remaining[0]["baseline_id"] if remaining else None
+    data[key] = entry
+    _write_json(path, data)
+    log.info(
+        "gold_standard_baseline_deleted",
+        extra={
+            "instrument_id": instrument_id,
+            "spd": spd,
+            "baseline_id": baseline_id,
+            "now_active": entry.get("active_baseline_id"),
+        },
+    )
+    return True
+
+
 def get_active_baseline(instrument_id: str | None, spd: int | None) -> dict[str, Any] | None:
     data = _read_json(paths.baselines_path())
     entry = data.get(_bucket_key(instrument_id, spd))

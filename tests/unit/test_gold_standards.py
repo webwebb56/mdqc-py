@@ -695,3 +695,55 @@ def test_baseline_candidate_types_are_explicit() -> None:
     assert ControlType.QC_B in gs.BASELINE_CANDIDATE_TYPES
     assert ControlType.SSC0 in gs.BASELINE_CANDIDATE_TYPES
     assert ControlType.QC_A not in gs.BASELINE_CANDIDATE_TYPES
+
+
+# ── deleting runs and baselines (v0.5.25) ───────────────────────────────────
+# The store was append-only and baselines could only be superseded, so a run
+# recorded against the wrong instrument, or a gold standard saved over a single
+# run by mistake, stayed in the history for good.
+
+
+def test_delete_ssc0_run_removes_it(tmp_data_dir: Path) -> None:
+    run_ids = _seed_runs(3)
+    assert len(gs.list_ssc0_runs("Astral_0001", 200)) == 3
+
+    assert gs.delete_ssc0_run("Astral_0001", 200, run_ids[1]) is True
+
+    remaining = [r["run_id"] for r in gs.list_ssc0_runs("Astral_0001", 200)]
+    assert run_ids[1] not in remaining
+    assert len(remaining) == 2
+
+
+def test_delete_ssc0_run_unknown_id_reports_false(tmp_data_dir: Path) -> None:
+    _seed_runs(1)
+    assert gs.delete_ssc0_run("Astral_0001", 200, "not-a-run") is False
+    assert len(gs.list_ssc0_runs("Astral_0001", 200)) == 1
+
+
+def test_delete_active_baseline_promotes_the_newest_remaining(tmp_data_dir: Path) -> None:
+    run_ids = _seed_runs(3)
+    first = gs.save_baseline("Astral_0001", 200, run_ids[:1], label="First")
+    second = gs.save_baseline("Astral_0001", 200, run_ids, label="Second")
+    assert gs.get_active_baseline("Astral_0001", 200)["baseline_id"] == second["baseline_id"]
+
+    assert gs.delete_baseline("Astral_0001", 200, second["baseline_id"]) is True
+
+    active = gs.get_active_baseline("Astral_0001", 200)
+    assert active is not None
+    assert active["baseline_id"] == first["baseline_id"], "the older baseline should take over"
+
+
+def test_delete_the_only_baseline_leaves_none(tmp_data_dir: Path) -> None:
+    run_ids = _seed_runs(2)
+    only = gs.save_baseline("Astral_0001", 200, run_ids, label="Only")
+
+    assert gs.delete_baseline("Astral_0001", 200, only["baseline_id"]) is True
+    assert gs.get_active_baseline("Astral_0001", 200) is None
+    assert gs.list_baselines("Astral_0001", 200) == []
+
+
+def test_delete_baseline_unknown_id_reports_false(tmp_data_dir: Path) -> None:
+    run_ids = _seed_runs(2)
+    gs.save_baseline("Astral_0001", 200, run_ids, label="Only")
+    assert gs.delete_baseline("Astral_0001", 200, "not-a-baseline") is False
+    assert len(gs.list_baselines("Astral_0001", 200)) == 1

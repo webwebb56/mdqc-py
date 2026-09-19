@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mdqc.extractor.report import parse_skyline_csv
+from mdqc.extractor.report import parse_skyline_csv, parse_skyline_run_metadata
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 REPORT = FIXTURES / "skyline_report.csv"
@@ -250,3 +250,71 @@ def test_undetected_when_zero_area(tmp_path: Path) -> None:
     assert rows[0].detected is False
     assert rows[1].detected is False
     assert rows[1].peak_area is None
+
+
+def test_run_metadata_matches_skylines_full_column_path(tmp_path: Path) -> None:
+    """Skyline exports nested columns by path, not caption.
+
+    The parser looked for a header equal to "AcquiredTime" and so never matched
+    a real export; every payload silently fell back to the file's mtime.
+    """
+    csv_path = tmp_path / "report.csv"
+    csv_path.write_text(
+        "Protein Name,Total Area,"
+        "Results!*.Value.PrecursorResult.ResultFile.AcquiredTime,"
+        "Results!*.Value.PrecursorResult.ResultFile.ModifiedTime\n"
+        "Targets,1234,2026-02-02 13:40:31,2026-02-02 14:02:00\n",
+        encoding="utf-8",
+    )
+    acquired, modified = parse_skyline_run_metadata(csv_path)
+    assert acquired is not None and acquired.startswith("2026-02-02T13:40:31")
+    assert modified is not None and modified.startswith("2026-02-02T14:02:00")
+
+
+def test_run_metadata_still_matches_a_plain_caption(tmp_path: Path) -> None:
+    csv_path = tmp_path / "report.csv"
+    csv_path.write_text(
+        "Protein Name,AcquiredTime\nTargets,2026-02-02 13:40:31\n", encoding="utf-8"
+    )
+    acquired, _ = parse_skyline_run_metadata(csv_path)
+    assert acquired is not None and acquired.startswith("2026-02-02T13:40:31")
+
+
+def test_run_metadata_absent_columns_return_none(tmp_path: Path) -> None:
+    csv_path = tmp_path / "report.csv"
+    csv_path.write_text("Protein Name,Total Area\nTargets,1234\n", encoding="utf-8")
+    assert parse_skyline_run_metadata(csv_path) == (None, None)
+
+
+def test_skyline_time_respects_the_machines_date_order() -> None:
+    """3/02/2026 is 3 February here and 2 March in Chicago.
+
+    The format list was built on a US pilot machine and tried month-first, so
+    every run acquired on a day <= 12 landed in the wrong month on an en-AU or
+    en-GB instrument PC.
+    """
+    from mdqc.extractor.report import _parse_skyline_time
+
+    au = _parse_skyline_time("3/02/2026 12:40:31 AM", day_first=True)
+    us = _parse_skyline_time("3/02/2026 12:40:31 AM", day_first=False)
+    assert au is not None and au.startswith("2026-02-03")
+    assert us is not None and us.startswith("2026-03-02")
+
+
+def test_skyline_time_unambiguous_and_iso_values() -> None:
+    from mdqc.extractor.report import _parse_skyline_time
+
+    # A day > 12 can only be read one way, whatever the locale.
+    for day_first in (True, False):
+        parsed = _parse_skyline_time("22/07/2026 02:44:30", day_first=day_first) or ""
+        iso = _parse_skyline_time("2026-07-22 02:44:30", day_first=day_first) or ""
+        assert iso.startswith("2026-07-22")
+        if day_first:
+            assert parsed.startswith("2026-07-22")
+
+
+def test_locale_day_first_is_a_boolean() -> None:
+    """Whatever the host, detection must resolve rather than raise."""
+    from mdqc.extractor.report import locale_prefers_day_first
+
+    assert isinstance(locale_prefers_day_first(), bool)
