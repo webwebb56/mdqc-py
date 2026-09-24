@@ -15,14 +15,47 @@ from uuid import UUID, uuid4
 
 
 class ControlType(StrEnum):
+    """The kind of injection a run is. Values are payload wire values.
+
+    Schema 1.3 adopted the names customers see (Sep 2026): the process
+    control is PCD, Process Control Digest, and the routine system-suitability
+    run is SSC. Until 1.2 these went out as QC_A and QC_B.
+    """
+
     SSC0 = "SSC0"
-    QC_A = "QC_A"
-    QC_B = "QC_B"
+    PCD = "PCD"
+    SSC = "SSC"
     BLANK = "BLANK"
     SAMPLE = "SAMPLE"
 
+    # Pre-1.3 member names. Same values, so these are aliases of PCD and SSC,
+    # not further types.
+    QC_A = "PCD"
+    QC_B = "SSC"
+
+    @classmethod
+    def _missing_(cls, value: object) -> ControlType | None:
+        # Pre-1.3 wire values still arrive from config.toml files and custom
+        # rules written before the rename. Resolve them rather than raise:
+        # an old config must keep classifying.
+        if not isinstance(value, str):
+            return None
+        key = value.strip().upper()
+        for member in cls:
+            if member.value == key:
+                return member
+        return _LEGACY_CONTROL_TYPES.get(key)
+
     def is_qc(self) -> bool:
         return self is not ControlType.SAMPLE
+
+
+_LEGACY_CONTROL_TYPES: dict[str, ControlType] = {
+    "QC_A": ControlType.PCD,
+    "QCA": ControlType.PCD,
+    "QC_B": ControlType.SSC,
+    "QCB": ControlType.SSC,
+}
 
 
 class Vendor(StrEnum):
@@ -121,6 +154,12 @@ class RunClassification:
     # the log folders carry no reliable link back to the raw file (matching on
     # timestamp breaks at fast SPD, where runs are minutes apart).
     lc_serial: str | None = None
+    # Well-plate format of the digestion kit a process control came from —
+    # 96 or 384, parsed from `PCD96` / `PCD384`. The two are one control type
+    # and are treated identically; the format is recorded so a site can still
+    # tell which kit a run used. ``None`` for every other type, and for a bare
+    # `PCD` whose kit wasn't named.
+    kit_format: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -133,6 +172,7 @@ class RunClassification:
             "spd": self.spd,
             "dilution_pct": self.dilution_pct,
             "lc_serial": self.lc_serial,
+            "kit_format": self.kit_format,
         }
 
 
@@ -204,6 +244,10 @@ class ExtractionResult:
     # no AcquiredTime column — the spool then falls back to the file mtime.
     acquired_time: str | None = None
     modified_time: str | None = None
+    # Where acquired_time came from: "instrument" (the raw-file header, via the
+    # report) or "file_mtime" (the fallback). Travels in the payload so a
+    # fallback is visible on the run itself, not only in a log line.
+    acquired_time_source: str | None = None
 
 
 @dataclass

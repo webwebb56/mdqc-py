@@ -30,7 +30,7 @@ CORRELATION_ID_RE = re.compile(r"^[\w-]+-\d{14}-[0-9a-f]{8}$")
 
 def _classification(instrument_id: str = "INSTR1") -> RunClassification:
     return RunClassification(
-        control_type=ControlType.QC_A,
+        control_type=ControlType.PCD,
         well_position=WellPosition("A", 1),
         instrument_id=instrument_id,
         plate_id="P01",
@@ -90,7 +90,7 @@ def test_round_trip_enqueue_claim_complete(tmp_data_dir: Path) -> None:
     assert payload["agent_version"] == "0.1.0"
     assert payload["run"]["run_id"] == str(extraction.run_id)
     assert payload["run"]["raw_file_hash"] == "deadbeef"
-    assert payload["run"]["control_type"] == "QC_A"
+    assert payload["run"]["control_type"] == "PCD"
     assert payload["extraction"]["template_hash"] == "cafef00d"
     assert payload["target_metrics"][0]["target_id"] == "PEPTIDE_1"
     assert payload["run_metrics"]["targets_found"] == 1

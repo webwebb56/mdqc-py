@@ -327,7 +327,7 @@
           <td>
             <select name="rule_type_{{ loop.index0 }}">
               {% for ct in control_types %}
-              <option value="{{ ct }}" {% if rule.control_type == ct %}selected{% endif %}>{{ ct }}</option>
+              <option value="{{ ct }}" {% if rule.control_type == ct %}selected{% endif %}>{{ control_type_labels.get(ct, ct) }}</option>
               {% endfor %}
             </select>
           </td>
@@ -659,6 +659,7 @@ function removeInstrument(btn) {
 
 // ── Classifier rules ──────────────────────────────────────────────────────
 const CONTROL_TYPES = {{ control_types | tojson }};
+const CONTROL_TYPE_LABELS = {{ control_type_labels | tojson }};
 
 function ruleRowIdx() {
   return document.querySelectorAll('#rules-body .rule-row').length;
@@ -674,7 +675,7 @@ function reindexRules() {
 
 function addRule() {
   const idx = ruleRowIdx();
-  const opts = CONTROL_TYPES.map(ct => `<option value="${ct}">${ct}</option>`).join('');
+  const opts = CONTROL_TYPES.map(ct => `<option value="${ct}">${CONTROL_TYPE_LABELS[ct] || ct}</option>`).join('');
   const row = document.createElement('tr');
   row.draggable = true;
   row.className = 'rule-row';

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QC Payload Field Reference &middot; MD QC agent</title>
-<meta name="description" content="Every field in an mdqc QC payload: what it means, whether it was measured or derived, and the exact calculation behind each derived value. Schema 1.2.">
+<meta name="description" content="Every field in an mdqc QC payload: what it means, whether it was measured or derived, and the exact calculation behind each derived value. Schema 1.3.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
@@ -169,9 +169,9 @@
   <p class="standfirst">
     One JSON file per run. This is what each field means, whether it was
     <strong>measured or derived</strong>, and for the derived ones, the exact calculation.
-    Example values are from <code>payload_02_qcb_healthy.json</code> in the repo &mdash; a synthetic reference payload, modelled on a diagnostic panel at 200 SPD. Real values will differ; the field names and calculations will not.
+    Example values are from <code>payload_02_ssc_healthy.json</code> in the repo &mdash; a synthetic reference payload, modelled on a diagnostic panel at 200 SPD. Real values will differ; the field names and calculations will not.
   </p>
-  <div class="schema-badge"><strong>schema_version</strong> 1.2</div>
+  <div class="schema-badge"><strong>schema_version</strong> 1.3</div>
 </header>
 
 <section>
@@ -221,7 +221,7 @@
   <div class="tbl"><table>
     <thead><tr><th style="width:15rem">Field</th><th style="width:6rem">Type</th><th>Meaning</th><th style="width:12rem">Example</th></tr></thead>
     <tbody>
-      <tr><td class="f">schema_version</td><td class="t">string</td><td>Payload contract version. String-compared, not semver-parsed. Bumped on any rename or removal.<span class="why">1.2 renamed <code>column_info</code> → <code>lc_column</code> and added <code>lc_serial</code>.</span></td><td class="eg">"1.2"</td></tr>
+      <tr><td class="f">schema_version</td><td class="t">string</td><td>Payload contract version. String-compared, not semver-parsed. Bumped on any rename or removal, and on any change to the values an enumerated field can take.<span class="why">1.2 renamed <code>column_info</code> → <code>lc_column</code> and added <code>lc_serial</code>. 1.3 renamed the <code>control_type</code> values <code>QC_A</code> → <code>PCD</code> and <code>QC_B</code> → <code>SSC</code>, and added <code>kit_format</code> and <code>acquisition_time_source</code>.</span></td><td class="eg">"1.3"</td></tr>
       <tr><td class="f">payload_id</td><td class="t">uuid</td><td>Unique per payload. Use for idempotent ingest.</td><td class="eg">uuid4</td></tr>
       <tr><td class="f">correlation_id</td><td class="t">uuid</td><td>Ties a payload to the agent-side processing attempt.</td><td class="eg">uuid4</td></tr>
       <tr><td class="f">agent_id</td><td class="t">string</td><td>Stable per installation. Identifies the machine, not the instrument.</td><td class="eg">"agent-…"</td></tr>
@@ -241,37 +241,38 @@
   <div class="tbl"><table>
     <thead><tr><th style="width:16rem">Field</th><th style="width:7rem">Source</th><th>Meaning &amp; derivation</th><th style="width:11rem">Example</th></tr></thead>
     <tbody>
-      <tr><td class="f">raw_file_name</td><td><span class="pill raw">measured</span></td><td>Acquisition filename, extension included.</td><td class="eg">QCB_…_A2.d</td></tr>
+      <tr><td class="f">raw_file_name</td><td><span class="pill raw">measured</span></td><td>Acquisition filename, extension included.</td><td class="eg">SSC_…_A2.d</td></tr>
       <tr><td class="f">raw_file_hash</td><td><span class="pill der">derived</span></td><td>SHA-256 of the raw file, capped at the first 50 MB for speed. For directory formats (Bruker <code>.d</code>) it hashes the sorted name+size listing instead.<span class="calc">sha256(first 50 MB) — or sha256("relpath:size\n" per file, sorted)</span></td><td class="eg">sha256:…</td></tr>
       <tr><td class="f">acquisition_time</td><td><span class="pill der">derived</span></td><td>When the sample was run. <strong>Use this for the x-axis</strong>, not <code>timestamp</code>. ISO 8601, always offset-aware — never naive — but <strong>the offset is not always UTC</strong>, and the format is <code>+00:00</code> rather than <code>Z</code>.<span class="calc">AcquiredTime column present → naive wall clock + <em>instrument PC's local offset</em><br>column absent → file mtime, emitted as +00:00</span><span class="why">The bundled MD_QC_Report.skyr does not currently emit AcquiredTime, so most installs take the mtime path today. Parse the offset, do not assume it.</span></td><td class="eg">2026-08-11T11:16:00+00:00</td></tr>
+      <tr><td class="f">acquisition_time_source</td><td><span class="pill der">derived</span></td><td>Where <code>acquisition_time</code> came from: <code>"instrument"</code> — the raw-file header, read through the report's Acquired Time column — or <code>"file_mtime"</code>, the fallback. <strong>Only <code>"instrument"</code> is safe for ordering runs or matching duplicates</strong>: any copy that doesn't preserve a file's mtime rewrites the fallback silently.<span class="why">Added at 1.3 after a site's report exported <code>#COLUMN … NOT FOUND#</code> for Acquired Time and the agent fell back to mtimes that everyone read as real.</span><span class="calc">Acquired Time parsed from the report → "instrument" · otherwise the file mtime → "file_mtime" · neither → null</span></td><td class="eg">"instrument"</td></tr>
       <tr><td class="f">instrument_id</td><td><span class="pill raw">measured</span></td><td>From the agent's configuration, not the filename. Baselines are held per instrument.</td><td class="eg">"Astral_0001"</td></tr>
       <tr><td class="f">vendor</td><td><span class="pill der">derived</span></td><td>Inferred from the raw file extension.<span class="calc">.raw→thermo · .d→bruker · .wiff→sciex · .lcd→shimadzu</span></td><td class="eg">"bruker"</td></tr>
-      <tr><td class="f">control_type</td><td><span class="pill der">derived</span></td><td>Classified from filename markers. <strong>Stored values are unchanged from the old naming</strong> — see the mapping note below.<span class="calc">SSC-gold → "SSC0" · PC → "QC_A" · SSC → "QC_B" · blank → "BLANK" · else "SAMPLE"</span></td><td class="eg">"QC_B"</td></tr>
+      <tr><td class="f">control_type</td><td><span class="pill der">derived</span></td><td>Classified from filename markers. These are the names customers see — the platform shows the value as sent. Payloads from before 1.3 carry the old names; see the note below.<span class="calc">PCD96 / PCD384 / PCD → "PCD" · SSC → "SSC" · SSC_GOLD → "SSC0" · blank → "BLANK" · else "SAMPLE"<br>older markers: QCA, QC_A, PC → "PCD" · QCB, QC_B → "SSC" · SSC0 → "SSC0"</span></td><td class="eg">"SSC"</td></tr>
       <tr><td class="f">spd</td><td><span class="pill der">derived</span></td><td>Samples-per-day, parsed from a <code>200SPD</code>-style marker. Baselines are per instrument <em>and</em> per SPD.</td><td class="eg">200</td></tr>
       <tr><td class="f">lc_serial</td><td><span class="pill der">derived</span></td><td>LC serial from the filename. Matched as <code>S</code> + exactly five digits, so other S-prefixed tokens are left alone.<span class="why">A site can swap which LC feeds a mass spec day to day. Without splitting on this, a trend silently mixes two instruments.</span></td><td class="eg">"S00462"</td></tr>
+      <tr><td class="f">kit_format</td><td><span class="pill der">derived</span></td><td>For a PCD run, the plate format of the digestion kit it came from: <code>96</code> or <code>384</code>, read from <code>PCD96</code> / <code>PCD384</code>. <code>null</code> for every other control type, and for a bare <code>PCD</code> that names no kit.<span class="why">PCD96 and PCD384 are one control type and are scored identically. This is how the two kits stay distinguishable without splitting the process control into two series.</span></td><td class="eg">96</td></tr>
       <tr><td class="f">well_position</td><td><span class="pill der">derived</span></td><td>Plate well <code>A1</code>–<code>H12</code>. Raises classification confidence and can infer control type where the filename has no marker.</td><td class="eg">"A2"</td></tr>
       <tr><td class="f">plate_id</td><td><span class="pill der">derived</span></td><td>Plate identifier where the filename carries one.</td><td class="eg">null</td></tr>
       <tr><td class="f">dilution_pct</td><td><span class="pill der">derived</span></td><td>Deliberate dilution level, 1–100. <strong>Service use only</strong> — customers don't have the material, so expect null in the field.</td><td class="eg">100</td></tr>
       <tr><td class="f">classification_confidence</td><td><span class="pill der">derived</span></td><td>HIGH where a filename marker matched; lower where inferred from well position alone.</td><td class="eg">"HIGH"</td></tr>
       <tr><td class="f">classification_source</td><td><span class="pill der">derived</span></td><td>FILENAME, WELL or DEFAULT — how the control type was decided.</td><td class="eg">"FILENAME"</td></tr>
       <tr><td class="f">lc_column</td><td><span class="pill null">always null</span></td><td>Analytical LC column. Renamed from <code>column_info</code> at schema 1.2. There is no machine-readable column identifier yet.</td><td class="eg">null</td></tr>
-      <tr><td class="f">column_info</td><td><span class="pill null">always null</span></td><td><strong>Deprecated alias of <code>lc_column</code></strong>, emitted through the 1.2 series so a 1.1-era consumer doesn't break on ingest. Removed at 1.3.</td><td class="eg">null</td></tr>
+      <tr><td class="f">column_info</td><td><span class="pill null">always null</span></td><td><strong>Deprecated alias of <code>lc_column</code></strong>, so a 1.1-era consumer doesn't break on ingest. Was due to go at 1.3; kept until the platform confirms it reads <code>lc_column</code>.</td><td class="eg">null</td></tr>
       <tr><td class="f">method_name</td><td><span class="pill null">always null</span></td><td>Reserved for the LC automation metadata file.</td><td class="eg">null</td></tr>
     </tbody>
   </table></div>
 
   <div class="callout warnbox" style="margin-top:1.4rem;">
-    <span class="lbl">Display names differ from stored values</span>
+    <span class="lbl">Control types were renamed at schema 1.3</span>
     <p>
-      The controls were renamed in the August 2026 SOP review. The payload keeps the original
-      <code>control_type</code> values because the platform already consumes them — renaming
-      those is a schema change, not a documentation one. Apply this mapping wherever control
-      type is shown to a user:
+      From 1.3 the payload carries the names customers see, so it can be displayed as sent.
+      Payloads from 1.2 and earlier are still valid and use the old values — apply this mapping
+      when reading them, or the same control appears as two:
     </p>
     <p style="font-family:'IBM Plex Mono',monospace; font-size:.85rem;">
-      <code>QC_A</code> → display <strong>PC</strong> (process control) &nbsp;·&nbsp;
-      <code>QC_B</code> → display <strong>SSC</strong> (system suitability control) &nbsp;·&nbsp;
-      <code>SSC0</code> → display <strong>SSC-gold</strong>
+      <code>QC_A</code> → <strong>PCD</strong> (process control digest) &nbsp;·&nbsp;
+      <code>QC_B</code> → <strong>SSC</strong> (system suitability control) &nbsp;·&nbsp;
+      <code>SSC0</code> unchanged, shown as <strong>SSC-gold</strong>
     </p>
   </div>
 </section>
@@ -322,7 +323,7 @@
       <tr><td class="f">target_recovery_pct</td><td><span class="pill der">derived</span></td><td>Detection rate, not a signal level. A drop here is a different fault from a drop in area.<span class="calc">targets_found ÷ targets_expected × 100</span></td><td class="eg">100.0</td></tr>
       <tr><td class="f">median_rt_shift</td><td><span class="pill null">null in practice</span></td><td>Median of per-peptide <code>rt_delta</code> over <strong>all</strong> targets, unfiltered. <strong>But <code>rt_delta</code> requires an expected-RT column that the current <code>.skyr</code> does not emit</strong>, so this resolves to <code>null</code> on real runs. Use <code>comparison_metrics.per_peptide[].rt_delta_from_baseline</code> instead — that is computed against the gold standard and is populated.<span class="calc">median(rt_delta for all targets where not null)</span></td><td class="eg">null <span class="why">(0.004 in the example payload is hand-set)</span></td></tr>
       <tr><td class="f">median_mass_error_ppm</td><td><span class="pill der">derived</span></td><td>Median across all targets.<span class="calc">median(mass_error_ppm for all targets where not null)</span></td><td class="eg">−2.4</td></tr>
-      <tr><td class="f">digest_efficiency_pct</td><td><span class="pill der">derived</span></td><td>Completeness of digestion, from the miss-cleavage pair. <strong>PC only</strong> — null wherever no digest-efficiency class is configured or neither peptide was detected. The shorter sequence is taken as the 0-miss form.<span class="calc">area(0-miss) ÷ (area(0-miss) + area(1-miss)) × 100</span></td><td class="eg">95.2</td></tr>
+      <tr><td class="f">digest_efficiency_pct</td><td><span class="pill der">derived</span></td><td>Completeness of digestion, from the miss-cleavage pair. <strong>PCD only</strong> — null wherever no digest-efficiency class is configured or neither peptide was detected. The shorter sequence is taken as the 0-miss form.<span class="calc">area(0-miss) ÷ (area(0-miss) + area(1-miss)) × 100</span></td><td class="eg">95.2</td></tr>
       <tr><td class="f">chromatography_score</td><td><span class="pill null">always null</span></td><td>Scaffolded and never defined. Either specify it or drop it — don't build against it.</td><td class="eg">null</td></tr>
     </tbody>
   </table></div>
@@ -372,7 +373,7 @@
       <tr><td class="f">median_rt_deviation_pct</td><td>Median of per-peptide RT deviation percentages.<span class="calc">median(rt_deviation_pct across compared peptides)</span></td><td class="eg">0.0</td></tr>
       <tr><td class="f">targets_extraction_suspect</td><td>Count of peptides flagged as probably the wrong peak. A non-zero value means <strong>read the area numbers with suspicion</strong>.</td><td class="eg">0</td></tr>
       <tr><td class="f">peak_area_verdict</td><td><code>"ok"</code> / <code>"warn"</code> / <code>"fail"</code>, or <code>null</code> when withheld. Tested fail-first, so an inverted threshold pair can't silently disable the warn band.<span class="calc">|dev| ≥ fail(25%) → "fail"<br>|dev| ≥ warn(15%) → "warn"<br>else → "ok"</span></td><td class="eg">"ok"</td></tr>
-      <tr><td class="f">peak_area_verdict_note</td><td>Populated only when the verdict is withheld, so <strong><code>null</code> verdict + note ≠ missing data</strong>. Withheld for PC (expected ratio up to ~6, not 1.0) and blanks (expected ≈ 0).</td><td class="eg">null</td></tr>
+      <tr><td class="f">peak_area_verdict_note</td><td>Populated only when the verdict is withheld, so <strong><code>null</code> verdict + note ≠ missing data</strong>. Withheld for PCD — the PCD-to-SSC ratio has not been established yet, and is up to ~6×, not 1.0 — and for blanks (expected ≈ 0).</td><td class="eg">null</td></tr>
       <tr><td class="f">thresholds_applied</td><td>The full threshold set in force for <em>this</em> run. Travels with the payload so a verdict stays interpretable after the defaults change.</td><td class="eg">{…}</td></tr>
       <tr><td class="f">thresholds_source</td><td><code>"default"</code> or <code>"custom"</code>. The platform can't infer this from the values without tracking shipped defaults per agent version — and a warn on a tuned instrument doesn't mean what a warn on a stock one means.</td><td class="eg">"default"</td></tr>
     </tbody>
@@ -420,8 +421,8 @@
 </section>
 
 <footer>
-  Generated against mdqc v0.5.21, schema 1.2. Example values from
-  <code>docs/examples/payload_02_qcb_healthy.json</code>; nine reference payloads covering every
+  Generated against mdqc v1.1.0, schema 1.3. Example values from
+  <code>docs/examples/payload_02_ssc_healthy.json</code>; nine reference payloads covering every
   state are in <code>docs/examples/</code>, regenerable with
   <code>python scripts/gen_example_payloads.py</code>.
 </footer>

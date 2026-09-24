@@ -174,7 +174,7 @@ def test_infer_ignores_non_dates() -> None:
 def test_month_first_file_parses_on_a_day_first_host(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Regression: an Evosep export read 2026-01-09 instead of 2026-09-01.
+    """Regression: a site's export read 2026-01-09 instead of 2026-09-01.
 
     The run is named for the day it started, 31 Aug, so 9/1/2026 can only be
     1 September. The modified column carries the value that proves the order.
@@ -233,3 +233,78 @@ def test_order_is_inferred_from_later_rows_too(
     )
     acquired, _ = parse_skyline_run_metadata(csv)
     assert acquired is not None and acquired.startswith("2026-09-01T03:58:34")
+
+
+# ─── A .skyr path that doesn't resolve ────────────────────────────────────────
+#
+# Skyline doesn't reject a report whose column path is wrong; it writes this
+# marker into every row. A site's log showed it read as a bad date, followed by
+# a quiet fall back to the file mtime — and the site believed it was working.
+
+_NOT_FOUND = "#COLUMN Results!*.Value.PeptideResult.ResultFile.AcquiredTime NOT FOUND#"
+
+
+def test_column_not_found_is_reported_as_a_report_problem(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    csv = tmp_path / "not_found.csv"
+    csv.write_text(f"Peptide,Acquired Time\nPEP_A,{_NOT_FOUND}\nPEP_B,{_NOT_FOUND}\n")
+    with caplog.at_level("INFO"):
+        acquired, _ = parse_skyline_run_metadata(csv)
+    assert acquired is None
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1
+    message = errors[0].getMessage()
+    assert message.startswith("skyr_column_not_found")
+    assert "Results!*.Value.PeptideResult.ResultFile.AcquiredTime" in message
+    assert "row source" in message
+    # Not the old, misleading reading of it as an unparseable date.
+    assert not [r for r in caplog.records if "could not parse" in r.getMessage()]
+
+
+@pytest.mark.asyncio
+async def test_extraction_marks_a_not_found_column_as_a_file_mtime_fallback(
+    tmp_path: Path,
+) -> None:
+    exe = tmp_path / "SkylineCmd.exe"
+    exe.write_text("fake")
+    template = tmp_path / "template.sky"
+    template.write_text("t")
+    raw = tmp_path / "sample.raw"
+    raw.write_text("r")
+    ex = Extractor(SkylineConfig(path=str(exe), timeout_seconds=30), work_dir=tmp_path / "work")
+
+    async def side_effect(**kwargs):
+        out = kwargs["output_csv"]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(f"Acquired Time,Peptide,Total Area\n{_NOT_FOUND},PEP,1000\n")
+        return SkylineRunResult(returncode=0, stdout="ok", stderr="", duration_ms=1, version="26")
+
+    with patch("mdqc.extractor.run_skyline", new=AsyncMock(side_effect=side_effect)):
+        result = await ex.extract(template=template, raw_file=raw)
+
+    assert result.status == ExtractionStatus.SUCCESS
+    assert result.acquired_time is not None          # the mtime, not nothing
+    assert result.acquired_time_source == "file_mtime"
+
+
+@pytest.mark.asyncio
+async def test_extraction_marks_a_reported_time_as_instrument(tmp_path: Path) -> None:
+    exe = tmp_path / "SkylineCmd.exe"
+    exe.write_text("fake")
+    template = tmp_path / "template.sky"
+    template.write_text("t")
+    raw = tmp_path / "sample.raw"
+    raw.write_text("r")
+    ex = Extractor(SkylineConfig(path=str(exe), timeout_seconds=30), work_dir=tmp_path / "work")
+
+    async def side_effect(**kwargs):
+        out = kwargs["output_csv"]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("Acquired Time,Peptide,Total Area\n7/22/2026 2:44:30 AM,PEP,1000\n")
+        return SkylineRunResult(returncode=0, stdout="ok", stderr="", duration_ms=1, version="26")
+
+    with patch("mdqc.extractor.run_skyline", new=AsyncMock(side_effect=side_effect)):
+        result = await ex.extract(template=template, raw_file=raw)
+
+    assert result.acquired_time_source == "instrument"

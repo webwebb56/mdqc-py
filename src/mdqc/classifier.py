@@ -23,25 +23,34 @@ if TYPE_CHECKING:
 _DELIM_BEFORE = r"(?:^|[_\-\s.])"
 _DELIM_AFTER = r"(?:$|[_\-\s.])"
 
-# Control-type markers. These were renamed in the August 2026 SOP review:
-# QC A -> PC (process control), QC B -> SSC (system suitability control),
-# SSC0 -> SSC-gold. Both spellings are accepted so existing acquisition
-# batches keep classifying, but note the one deliberate behaviour change:
+# Control-type markers, and how they got their names.
 #
-#   a bare `SSC` used to mean the gold standard and now means a routine
-#   system-suitability run.
+# August 2026 SOP review: QC A -> PC (process control), QC B -> SSC (system
+# suitability control), SSC0 -> SSC-gold. That changed the filename markers
+# only; the payload kept sending QC_A and QC_B, on the grounds that renaming a
+# wire value is a schema change.
 #
-# That is forced by the rename — under the new scheme SSC *is* the routine
-# control and the baseline is SSC-gold, so leaving bare SSC pointing at the
-# baseline would make the filename mean the opposite of the SOP. Gold-standard
-# files must therefore carry `SSC0` (legacy) or `SSCGOLD` / `SSC_GOLD`.
+# September 2026: the process control became PCD, Process Control Digest,
+# written PCD96 or PCD384 for the kit it came from. The vendor asked that customers
+# see these names from launch, and the platform shows `control_type` exactly as
+# the payload sends it — so this time the wire values changed too (schema 1.3):
+# QC_A -> PCD, QC_B -> SSC.
 #
-# ControlType values are unchanged: they are payload wire values the platform
-# already consumes, so renaming them is a schema_version change rather than a
-# documentation one. The SOP carries the marker -> term -> wire mapping.
+# Every earlier spelling is still accepted, so batches named the old way keep
+# classifying. Two behaviours worth knowing:
+#
+#   * a bare `SSC` means a routine system-suitability run. Gold-standard files
+#     carry `SSC0` (legacy) or `SSCGOLD` / `SSC_GOLD`; under the SOP the gold
+#     standard is chosen in the web UI rather than named in a file anyway.
+#   * `PCD96` and `PCD384` are one control type. The number is the kit's plate
+#     format and travels separately, as kit_format.
 _SSC_GOLD_RE = re.compile(
     rf"{_DELIM_BEFORE}(SSC[_-]?GOLD|SSC[_-]?0){_DELIM_AFTER}", re.IGNORECASE
 )
+_PCD_RE = re.compile(
+    rf"{_DELIM_BEFORE}PCD(?:[_-]?(96|384))?{_DELIM_AFTER}", re.IGNORECASE
+)
+# Pre-PCD spellings of the process control.
 _PC_RE = re.compile(rf"{_DELIM_BEFORE}(PC|QC[_-]?A|QCA){_DELIM_AFTER}", re.IGNORECASE)
 _SSC_RE = re.compile(rf"{_DELIM_BEFORE}(SSC|QC[_-]?B|QCB){_DELIM_AFTER}", re.IGNORECASE)
 
@@ -107,6 +116,7 @@ def classify_filename(
                     spd=spd,
                     dilution_pct=dilution,
                     lc_serial=lc_serial,
+                    kit_format=_extract_kit_format(stem, ct),
                 )
 
     control_type, source = _extract_control_type(stem)
@@ -127,7 +137,21 @@ def classify_filename(
         spd=spd,
         dilution_pct=dilution,
         lc_serial=lc_serial,
+        kit_format=_extract_kit_format(stem, control_type),
     )
+
+
+def _extract_kit_format(stem: str, control_type: ControlType) -> int | None:
+    """The digestion kit's plate format (96 or 384) for a process control.
+
+    Read from `PCD96` / `PCD384` whichever way the type was decided — a legacy
+    custom rule can still classify a file named the new way. Only a PCD run
+    has a kit format; anything else returns ``None``.
+    """
+    if control_type is not ControlType.PCD:
+        return None
+    m = _PCD_RE.search(stem)
+    return int(m.group(1)) if m and m.group(1) else None
 
 
 def _extract_lc_serial(stem: str) -> str | None:
@@ -177,10 +201,10 @@ def _extract_control_type(
     # Gold standard first: `SSC_GOLD` also contains a bare `SSC`.
     if _SSC_GOLD_RE.search(stem):
         return ControlType.SSC0, ClassificationSource.FILENAME
-    if _PC_RE.search(stem):
-        return ControlType.QC_A, ClassificationSource.FILENAME
+    if _PCD_RE.search(stem) or _PC_RE.search(stem):
+        return ControlType.PCD, ClassificationSource.FILENAME
     if _SSC_RE.search(stem):
-        return ControlType.QC_B, ClassificationSource.FILENAME
+        return ControlType.SSC, ClassificationSource.FILENAME
     if _BLANK_RE.search(stem):
         return ControlType.BLANK, ClassificationSource.FILENAME
     well = _extract_well(stem)
@@ -207,7 +231,7 @@ def _extract_plate(stem: str) -> str | None:
 def _extract_instrument(stem: str) -> str | None:
     # Leading [A-Z0-9_]+ token before the first control/well/date marker.
     candidates: list[int] = []
-    for pat in (_SSC_GOLD_RE, _PC_RE, _SSC_RE, _BLANK_RE, _WELL_RE, _DATE_RE):
+    for pat in (_SSC_GOLD_RE, _PCD_RE, _PC_RE, _SSC_RE, _BLANK_RE, _WELL_RE, _DATE_RE):
         m = pat.search(stem)
         if m is not None:
             candidates.append(m.start())
@@ -224,9 +248,9 @@ def _extract_instrument(stem: str) -> str | None:
 def _infer_from_well(well: WellPosition) -> ControlType:
     if well.row == "A":
         if well.column in (1, 2):
-            return ControlType.QC_A
+            return ControlType.PCD
         if well.column in (3, 4):
-            return ControlType.QC_B
+            return ControlType.SSC
     return ControlType.SAMPLE
 
 

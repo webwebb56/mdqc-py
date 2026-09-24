@@ -53,8 +53,8 @@ def test_classifier_corpus(
     ("token", "expected"),
     [
         ("SSC0", ControlType.SSC0),
-        ("QCA", ControlType.QC_A),
-        ("QCB", ControlType.QC_B),
+        ("QCA", ControlType.PCD),
+        ("QCB", ControlType.SSC),
         ("BLANK", ControlType.BLANK),
     ],
 )
@@ -69,7 +69,7 @@ def test_each_control_each_extension(
 
 def test_mixed_delimiters_underscore_dash_dot() -> None:
     result = classify_filename("EXPLORIS01_QCB-A3.raw")
-    assert result.control_type is ControlType.QC_B
+    assert result.control_type is ControlType.SSC
     assert result.well_position == WellPosition(row="A", column=3)
     assert result.confidence is Confidence.HIGH
 
@@ -83,19 +83,19 @@ def test_dot_delimited_token() -> None:
 @pytest.mark.parametrize("variant", ["qca", "QCA", "QcA", "qC_a", "Qc-A"])
 def test_case_insensitive_qca(variant: str) -> None:
     result = classify_filename(f"INST_{variant}_A1.raw")
-    assert result.control_type is ControlType.QC_A
+    assert result.control_type is ControlType.PCD
 
 
 def test_well_position_inference_qca() -> None:
     result = classify_filename("EXPLORIS_A1_2026-01-27.raw")
-    assert result.control_type is ControlType.QC_A
+    assert result.control_type is ControlType.PCD
     assert result.source is ClassificationSource.POSITION
     assert result.confidence is Confidence.MEDIUM
 
 
 def test_well_position_inference_qcb() -> None:
     result = classify_filename("EXPLORIS_A3_2026-01-27.raw")
-    assert result.control_type is ControlType.QC_B
+    assert result.control_type is ControlType.SSC
     assert result.source is ClassificationSource.POSITION
 
 
@@ -175,7 +175,7 @@ def test_dilution_extracted_perc() -> None:
         "QCB_75perc_2026-07-24_ss_50ng_Manual_200spd_k562_S1-H5_1.d"
     )
     assert result.dilution_pct == 75
-    assert result.control_type is ControlType.QC_B
+    assert result.control_type is ControlType.SSC
     assert result.spd == 200
 
 
@@ -207,7 +207,7 @@ def test_dilution_survives_custom_classifier_rule() -> None:
     """The custom-rule early-return path must populate dilution too."""
     rules = [ClassifierRule(pattern="QCB", control_type="QC_B")]
     result = classify_filename("QCB_50perc_300spd_k562.raw", rules=rules)
-    assert result.control_type is ControlType.QC_B
+    assert result.control_type is ControlType.SSC
     assert result.dilution_pct == 50
     assert result.spd == 300
 
@@ -222,7 +222,7 @@ def test_classify_file_uses_basename(tmp_path: Path) -> None:
     p = tmp_path / "EXPLORIS01_QCA_A1_2026-01-27.raw"
     p.write_bytes(b"")
     result = classify_file(p)
-    assert result.control_type is ControlType.QC_A
+    assert result.control_type is ControlType.PCD
     assert result.well_position == WellPosition(row="A", column=1)
 
 
@@ -241,26 +241,31 @@ def test_high_confidence_requires_well_and_token() -> None:
     assert without_well.confidence is Confidence.MEDIUM
 
 
-# ── August 2026 naming: PC / SSC / SSC-gold ─────────────────────────────────
-# QC A -> PC (process control), QC B -> SSC (system suitability control),
-# SSC0 -> SSC-gold. Both spellings classify; ControlType wire values are
-# deliberately unchanged because the platform already consumes them.
+# ── Control-type naming: PCD / SSC / SSC-gold ───────────────────────────────
+# August 2026 renamed the filename markers (QC A -> PC, QC B -> SSC, SSC0 ->
+# SSC-gold). September 2026 made the process control PCD and, because the
+# platform shows control_type verbatim, renamed the wire values too (schema
+# 1.3). Every earlier spelling still classifies.
 
 
 @pytest.mark.parametrize(
     ("stem", "expected"),
     [
-        # New markers
-        ("INST_PC_200SPD", ControlType.QC_A),
-        ("INST_SSC_200SPD", ControlType.QC_B),
+        # Current markers
+        ("INST_PCD96_200SPD", ControlType.PCD),
+        ("INST_PCD384_200SPD", ControlType.PCD),
+        ("INST_PCD_200SPD", ControlType.PCD),
+        ("INST_SSC_200SPD", ControlType.SSC),
         ("INST_SSCGOLD_200SPD", ControlType.SSC0),
         ("INST_SSC_GOLD_200SPD", ControlType.SSC0),
         ("INST_SSC-GOLD_200SPD", ControlType.SSC0),
-        # Legacy markers still classify
-        ("INST_QCA_200SPD", ControlType.QC_A),
-        ("INST_QC_A_200SPD", ControlType.QC_A),
-        ("INST_QCB_200SPD", ControlType.QC_B),
-        ("INST_QC-B_200SPD", ControlType.QC_B),
+        # August 2026 marker
+        ("INST_PC_200SPD", ControlType.PCD),
+        # Earlier markers still classify
+        ("INST_QCA_200SPD", ControlType.PCD),
+        ("INST_QC_A_200SPD", ControlType.PCD),
+        ("INST_QCB_200SPD", ControlType.SSC),
+        ("INST_QC-B_200SPD", ControlType.SSC),
         ("INST_SSC0_200SPD", ControlType.SSC0),
     ],
 )
@@ -276,7 +281,7 @@ def test_bare_ssc_now_means_routine_not_gold_standard() -> None:
     SSC-gold, so leaving it pointing at the baseline would make the filename
     mean the opposite of the SOP.
     """
-    assert classify_filename("INST_SSC_A1.raw").control_type is ControlType.QC_B
+    assert classify_filename("INST_SSC_A1.raw").control_type is ControlType.SSC
     # The gold standard still has unambiguous markers.
     assert classify_filename("INST_SSC0_A1.raw").control_type is ControlType.SSC0
     assert classify_filename("INST_SSCGOLD_A1.raw").control_type is ControlType.SSC0
@@ -292,6 +297,59 @@ def test_pc_marker_does_not_match_inside_a_word() -> None:
     """`PC` is short; it must only match as a delimited token."""
     assert classify_filename("my_pcr_sample_200SPD.raw").control_type is ControlType.SAMPLE
     assert classify_filename("hpc_run_200SPD.raw").control_type is ControlType.SAMPLE
+
+
+# ── PCD kit format ───────────────────────────────────────────────────────────
+# PCD96 and PCD384 are one control type. The number is the digestion kit's
+# plate format, recorded so a site can still tell the kits apart.
+
+
+@pytest.mark.parametrize(
+    ("name", "kit"),
+    [
+        ("ASTRAL_PCD96_200SPD_S00572.raw", 96),
+        ("ASTRAL_PCD384_200SPD_S00572.raw", 384),
+        ("ASTRAL_PCD_96_200SPD_S00572.raw", 96),
+        ("ASTRAL_PCD-384_200SPD_S00572.raw", 384),
+        ("ASTRAL_pcd96_200SPD_S00572.raw", 96),
+        # A bare PCD names no kit.
+        ("ASTRAL_PCD_200SPD_S00572.raw", None),
+    ],
+)
+def test_kit_format_read_from_the_pcd_marker(name: str, kit: int | None) -> None:
+    result = classify_filename(name)
+    assert result.control_type is ControlType.PCD
+    assert result.kit_format == kit
+
+
+def test_kit_format_only_belongs_to_a_process_control() -> None:
+    assert classify_filename("ASTRAL_SSC_200SPD.raw").kit_format is None
+    assert classify_filename("ASTRAL_BLANK_200SPD.raw").kit_format is None
+    # The pre-PCD process-control markers name no kit either.
+    assert classify_filename("ASTRAL_PC_200SPD.raw").kit_format is None
+    assert classify_filename("ASTRAL_QCA_200SPD.raw").kit_format is None
+
+
+def test_pcd_marker_needs_a_real_kit_size() -> None:
+    """96 and 384 are the only kits; PCD960 is not a marker at all."""
+    assert classify_filename("run_PCD960_200SPD.raw").control_type is ControlType.SAMPLE
+    assert classify_filename("run_PCDx_200SPD.raw").control_type is ControlType.SAMPLE
+
+
+def test_kit_format_survives_a_legacy_custom_rule() -> None:
+    """A site's pre-1.3 config can still classify a file named the new way.
+
+    Its rule decides the type — here via the old QC_A spelling — but the kit is
+    read from the filename regardless, so the format isn't lost.
+    """
+    rules = [ClassifierRule(pattern="ASTRAL", control_type="QC_A")]
+    result = classify_filename("ASTRAL_PCD384_200SPD.raw", rules=rules)
+    assert result.control_type is ControlType.PCD
+    assert result.kit_format == 384
+
+
+def test_kit_format_reaches_classification_dict() -> None:
+    assert classify_filename("X_PCD96_200SPD.raw").to_dict()["kit_format"] == 96
 
 
 # ── LC serial ───────────────────────────────────────────────────

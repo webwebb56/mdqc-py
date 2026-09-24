@@ -64,6 +64,20 @@ def load_config(path: Path | None = None, *, strict_cert_guard: bool = True) -> 
             extra={"saved": saved_endpoint, "using": cfg.cloud.endpoint},
         )
 
+    # Pre-1.3 rules say QC_A / QC_B. They are translated on load; the file
+    # keeps the old values until the next save from the Settings page.
+    saved_rules = raw.get("classifier_rules") or []
+    renamed = [
+        f"{r.get('control_type')} -> {healed.control_type}"
+        for r, healed in zip(saved_rules, cfg.classifier_rules, strict=False)
+        if isinstance(r, dict) and r.get("control_type") != healed.control_type
+    ]
+    if renamed:
+        log.warning(
+            "classifier_rules_migrated",
+            extra={"count": len(renamed), "changes": sorted(set(renamed))},
+        )
+
     if strict_cert_guard:
         msg = cfg.cert_thumbprint_unsupported()
         if msg:

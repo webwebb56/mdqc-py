@@ -272,3 +272,69 @@ def test_startup_is_quiet_for_a_compatible_template(
         _log_templates_newer_than_skyline(cfg, "26.1.0.57")
 
     assert caplog.records == []
+
+
+# ── Where acquisition times came from ─────────────────────────────────────────
+#
+# A site's report exported `#COLUMN … NOT FOUND#` for Acquired Time and the
+# agent fell back to file mtimes without anyone noticing. Diagnostics now says
+# how many recent runs did that.
+
+
+def _seed_payload(folder: Path, name: str, source: str | None) -> None:
+    import json
+
+    folder.mkdir(parents=True, exist_ok=True)
+    run: dict[str, object] = {"control_type": "SSC"}
+    if source is not None:
+        run["acquisition_time_source"] = source
+    (folder / name).write_text(json.dumps({"run": run}), encoding="utf-8")
+
+
+def test_recent_fallbacks_are_counted(tmp_data_dir: Path) -> None:
+    from mdqc.diagnostics import _recent_acquisition_fallbacks
+
+    done = tmp_data_dir / "spool" / "completed"
+    _seed_payload(done, "a_payload.json", "instrument")
+    _seed_payload(done, "b_payload.json", "file_mtime")
+    _seed_payload(done, "c_payload.json", "file_mtime")
+    # Pre-1.3 payloads can't say where their time came from; left out, not guessed.
+    _seed_payload(done, "d_payload.json", None)
+
+    assert _recent_acquisition_fallbacks() == (2, 3)
+
+
+def test_acquisition_time_summary_states() -> None:
+    from mdqc.diagnostics import acquisition_time_summary
+
+    def report(fallbacks: int, examined: int) -> DiagnosticsReport:
+        return DiagnosticsReport(
+            agent_version="t",
+            config_path=Path("c"),
+            config_ok=True,
+            recent_mtime_fallbacks=fallbacks,
+            recent_payloads_examined=examined,
+        )
+
+    assert acquisition_time_summary(report(0, 0))[0] == "unknown"
+    assert acquisition_time_summary(report(0, 12)) == (
+        "ok",
+        "from the instrument on all 12 recent runs",
+    )
+    state, sentence = acquisition_time_summary(report(3, 12))
+    assert state == "fail"
+    assert sentence.startswith("3 of 12 recent runs used the file mtime")
+    assert "skyr_column_not_found" in sentence
+
+
+def test_doctor_text_shows_the_fallback_line() -> None:
+    report = DiagnosticsReport(
+        agent_version="t",
+        config_path=Path("c"),
+        config_ok=True,
+        recent_mtime_fallbacks=5,
+        recent_payloads_examined=5,
+    )
+    assert "[!!] Acquisition time: 5 of 5 recent runs used the file mtime" in (
+        render_text_report(report)
+    )

@@ -80,7 +80,7 @@ def test_record_ssc0_run_appends_snapshot(tmp_data_dir: Path) -> None:
 
 
 def test_record_ssc0_run_ignores_non_ssc0(tmp_data_dir: Path) -> None:
-    gs.record_ssc0_run(_classification(control_type=ControlType.QC_A), _extraction([_pep("A")]))
+    gs.record_ssc0_run(_classification(control_type=ControlType.PCD), _extraction([_pep("A")]))
     assert gs.list_ssc0_runs("Astral_0001", 200) == []
 
 
@@ -478,22 +478,22 @@ def test_comparison_reports_whether_thresholds_are_stock() -> None:
     ("control_type", "expect_verdict"),
     [
         (ControlType.SSC0, True),
-        (ControlType.QC_B, True),
-        (ControlType.QC_A, False),
+        (ControlType.SSC, True),
+        (ControlType.PCD, False),
         (ControlType.BLANK, False),
     ],
 )
 def test_area_verdict_only_where_the_expected_ratio_is_one(
     control_type: ControlType, expect_verdict: bool
 ) -> None:
-    """QC A runs ~6x the SSC0 load, so QC B's bands would fail every one.
+    """PCD runs ~6x the SSC0 load, so SSC's bands would fail every one.
 
-    Surfaced while generating reference payloads for the platform team: a QC A
-    run scored 5.88x baseline and came back "fail", which would have marked
-    every process control as failing in the app.
+    Surfaced while generating reference payloads for the platform team: a
+    process-control run scored 5.88x baseline and came back "fail", which would
+    have marked every process control as failing in the app.
     """
     baseline = _baseline_with(area=1000.0, rt=5.0)
-    targets = [_target(area=5900.0, rt=5.0)]  # ~6x, as QC A is by design
+    targets = [_target(area=5900.0, rt=5.0)]  # ~6x, as a PCD is by design
     m = gs.compute_comparison_metrics(targets, baseline, control_type=control_type)
 
     if expect_verdict:
@@ -504,6 +504,25 @@ def test_area_verdict_only_where_the_expected_ratio_is_one(
         assert control_type.value in m["peak_area_verdict_note"]
     # The underlying ratio is emitted either way — only the judgement is withheld.
     assert m["median_peak_area_ratio"] == pytest.approx(5.9)
+
+
+def test_withheld_verdict_notes_say_why_in_the_customers_terms() -> None:
+    """The platform shows this note verbatim, next to the run.
+
+    On the HUPO call the old wording — "not applicable for QC_A: its expected
+    ratio … is not 1.0" — was read as a fault in how the baseline was set. The
+    real reason is that the PCD-to-SSC ratio hasn't been measured yet.
+    """
+    baseline = _baseline_with(area=1000.0, rt=5.0)
+    targets = [_target(area=5900.0, rt=5.0)]
+    pcd = gs.compute_comparison_metrics(targets, baseline, control_type=ControlType.PCD)
+    blank = gs.compute_comparison_metrics(targets, baseline, control_type=ControlType.BLANK)
+
+    assert pcd["peak_area_verdict_note"] == (
+        "not scored for PCD: the expected PCD-to-SSC ratio has not been established yet"
+    )
+    assert "near zero" in blank["peak_area_verdict_note"]
+    assert "QC_A" not in pcd["peak_area_verdict_note"]
 
 
 def test_area_verdict_still_produced_when_control_type_unknown() -> None:
@@ -612,7 +631,7 @@ def test_build_payload_comparison_populates_both_fields(tmp_data_dir: Path) -> N
     gs.save_baseline("Astral_0001", 200, run_ids, label="Install")
 
     context, metrics = gs.build_payload_comparison(
-        _classification(control_type=ControlType.QC_B),
+        _classification(control_type=ControlType.SSC),
         _extraction([_pep("PEPA", area=1020.0, rt=5.0)]),
     )
 
@@ -673,7 +692,7 @@ def test_routine_ssc_runs_are_baseline_candidates(tmp_data_dir: Path) -> None:
     Before this, only SSC0-typed runs were indexed, so a site following
     the new naming would open the Gold standards page and find it empty.
     """
-    gs.record_ssc0_run(_classified(ControlType.QC_B), _extracted())
+    gs.record_ssc0_run(_classified(ControlType.SSC), _extracted())
     runs = gs.list_ssc0_runs("inst-1", 200)
     assert len(runs) == 1
 
@@ -686,15 +705,15 @@ def test_ssc0_marked_runs_remain_baseline_candidates(tmp_data_dir: Path) -> None
 
 def test_process_control_runs_are_not_baseline_candidates(tmp_data_dir: Path) -> None:
     """PC carries digestion at up to ~6x the load; it can never be the reference."""
-    gs.record_ssc0_run(_classified(ControlType.QC_A), _extracted())
+    gs.record_ssc0_run(_classified(ControlType.PCD), _extracted())
     gs.record_ssc0_run(_classified(ControlType.BLANK), _extracted())
     assert gs.list_ssc0_runs("inst-1", 200) == []
 
 
 def test_baseline_candidate_types_are_explicit() -> None:
-    assert ControlType.QC_B in gs.BASELINE_CANDIDATE_TYPES
+    assert ControlType.SSC in gs.BASELINE_CANDIDATE_TYPES
     assert ControlType.SSC0 in gs.BASELINE_CANDIDATE_TYPES
-    assert ControlType.QC_A not in gs.BASELINE_CANDIDATE_TYPES
+    assert ControlType.PCD not in gs.BASELINE_CANDIDATE_TYPES
 
 
 # ── deleting runs and baselines (v0.5.25) ───────────────────────────────────

@@ -152,16 +152,25 @@ class Spool:
         raw_file_path = extraction.raw_file_path
         template_path = extraction.template_path
 
+        # Prefer the real acquisition time Skyline read from the raw-file
+        # header; fall back to the file mtime when the report has no usable
+        # AcquiredTime column. Either way, say which it was.
+        if extraction.acquired_time:
+            acquisition_time = extraction.acquired_time
+            acquisition_source = extraction.acquired_time_source or "instrument"
+        else:
+            acquisition_time = _file_acquisition_time(raw_file_path)
+            acquisition_source = "file_mtime" if acquisition_time else None
+
         run_info: dict[str, Any] = {
             "run_id": str(run_id),
             "raw_file_name": raw_file_path.name if raw_file_path else None,
             "raw_file_hash": extraction.raw_file_hash,
-            # Prefer the real acquisition time Skyline read from the raw-file
-            # header; fall back to the file mtime when the report has no
-            # AcquiredTime column (older .skyr).
-            "acquisition_time": (
-                extraction.acquired_time or _file_acquisition_time(raw_file_path)
-            ),
+            "acquisition_time": acquisition_time,
+            # "instrument" or "file_mtime". A copy that doesn't preserve mtime
+            # rewrites the fallback time silently, so a consumer ordering runs
+            # or matching duplicates needs to know which one it has.
+            "acquisition_time_source": acquisition_source,
             "instrument_id": classification.instrument_id,
             "vendor": _vendor_from_extension(raw_file_path),
             "control_type": classification.control_type.value,
@@ -174,6 +183,9 @@ class Spool:
             # LC serial, so a trend can be split by which LC was in
             # front of the mass spectrometer that day.
             "lc_serial": classification.lc_serial,
+            # 96 or 384 for a PCD run — which digestion kit it came from. PCD96
+            # and PCD384 are one control type; this is how they stay apart.
+            "kit_format": classification.kit_format,
             "classification_confidence": classification.confidence.value,
             "classification_source": classification.source.value,
             "method_name": None,
@@ -183,11 +195,11 @@ class Spool:
             # always null — there is no machine-readable column identifier
             # yet, though they are building one.
             "lc_column": None,
-            # Deprecated alias, emitted through the 1.2 series so a consumer
-            # written against 1.1 does not KeyError on ingest. A null value is
-            # no defence: `payload["run"]["column_info"]` fails on the missing
-            # key regardless of what the value would have been. Remove at 1.3,
-            # once the platform confirms it reads lc_column.
+            # Deprecated alias, so a consumer written against 1.1 does not
+            # KeyError on ingest. A null value is no defence:
+            # `payload["run"]["column_info"]` fails on the missing key
+            # regardless of what the value would have been. Due to go at 1.3;
+            # kept until the platform confirms it reads lc_column.
             "column_info": None,
             # Underscore-prefixed = Python-only debug metadata, not part of cross-language schema.
             "_raw_file_path": str(raw_file_path) if raw_file_path else None,

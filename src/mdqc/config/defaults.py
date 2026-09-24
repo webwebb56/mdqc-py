@@ -126,12 +126,19 @@ SHUTDOWN_GRACE_S = 30
 """Hard timeout for graceful shutdown after SIGTERM."""
 
 # ─── Schema ─────────────────────────────────────────────────────────────────
-PAYLOAD_SCHEMA_VERSION = "1.2"
-"""Payload schema version. Bump on any removal or rename of a field.
+PAYLOAD_SCHEMA_VERSION = "1.3"
+"""Payload schema version. Bump on any removal or rename of a field, and on
+any change to the values an enumerated field can take.
 
 1.2 - `run.column_info` renamed to `run.lc_column`, and `run.lc_serial` added
       (SOP review, August 2026). `column_info` is still emitted as a
-      deprecated alias so a 1.1-era consumer keeps working; it will be removed
-      at 1.3. Renaming without bumping this is what the schema policy
-      exists to prevent, and it has been briefly violated once.
+      deprecated alias so a 1.1-era consumer keeps working. Renaming without
+      bumping this is what the schema policy exists to prevent, and it has
+      been briefly violated once.
+1.3 - `run.control_type` values renamed to the names customers see:
+      QC_A -> PCD (Process Control Digest), QC_B -> SSC (System Suitability
+      Control). SSC0, BLANK and SAMPLE are unchanged. Added `run.kit_format`
+      (96 or 384 for a PCD run, else null) and `run.acquisition_time_source`
+      ("instrument" or "file_mtime"). `column_info` was due to go at 1.3 but
+      stays until the platform confirms it reads `lc_column`.
 """

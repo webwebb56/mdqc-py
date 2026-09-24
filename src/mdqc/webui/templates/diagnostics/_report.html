@@ -109,4 +109,9 @@
     </span>
   </p>
   <p>Pending: {{ report.pending_count }} &middot; Failed: {{ report.failed_count }}</p>
+  {% set acq_state, acq_text = report.acquisition_time %}
+  <p>
+    Acquisition time:
+    <span class="{% if acq_state == 'ok' %}ok{% elif acq_state == 'fail' %}bad{% else %}muted{% endif %}">{{ acq_text }}</span>
+  </p>
 </section>

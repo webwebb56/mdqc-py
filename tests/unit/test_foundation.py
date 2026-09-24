@@ -28,16 +28,31 @@ def test_version_string() -> None:
 
 def test_control_type_is_qc() -> None:
     assert ControlType.SSC0.is_qc()
-    assert ControlType.QC_A.is_qc()
-    assert ControlType.QC_B.is_qc()
+    assert ControlType.PCD.is_qc()
+    assert ControlType.SSC.is_qc()
     assert ControlType.BLANK.is_qc()
     assert not ControlType.SAMPLE.is_qc()
 
 
 def test_control_type_serialization_format() -> None:
-    """Schema contract: serialize as SCREAMING_SNAKE."""
-    assert ControlType.QC_A.value == "QC_A"
-    assert ControlType.SSC0.value == "SSC0"
+    """Schema contract: these exact strings are what the platform displays."""
+    assert [ct.value for ct in ControlType] == ["SSC0", "PCD", "SSC", "BLANK", "SAMPLE"]
+
+
+def test_pre_1_3_control_type_names_still_resolve() -> None:
+    """Configs and custom rules written before 1.3 say QC_A and QC_B.
+
+    Rejecting those would stop an upgraded agent from classifying anything its
+    old rules matched, so they resolve to the renamed types instead.
+    """
+    assert ControlType("QC_A") is ControlType.PCD
+    assert ControlType("QC_B") is ControlType.SSC
+    assert ControlType("qca") is ControlType.PCD
+    # The old member names are aliases, not extra types.
+    assert ControlType.QC_A is ControlType.PCD
+    assert len(list(ControlType)) == 5
+    with pytest.raises(ValueError):
+        ControlType("QC_C")
 
 
 def test_vendor_is_directory_artifact() -> None:
@@ -247,6 +262,79 @@ def test_load_config_bad_toml_raises(tmp_data_dir: Path) -> None:
     p = _write(tmp_data_dir, "this is not = valid = toml { ")
     with pytest.raises(ConfigError):
         load_config(p)
+
+
+# The rules block as every 0.5.x Settings save wrote it, verbatim apart from
+# the last rule, which stands in for one an operator wrote themselves.
+_PRE_1_3_RULES = """
+classifier_rules = [
+    { pattern = "SSC0", control_type = "SSC0", notes = "System suitability control" },
+    { pattern = "QCA", control_type = "QC_A", notes = "QC level A" },
+    { pattern = "QCB", control_type = "QC_B", notes = "QC level B" },
+    { pattern = "QC_A", control_type = "QC_A", notes = "QC level A (underscore form)" },
+    { pattern = "QC_B", control_type = "QC_B", notes = "QC level B (underscore form)" },
+    { pattern = "MYLAB_PROC", control_type = "QC_A", notes = "our own process control" },
+]
+
+[[instruments]]
+id = "EXPLORIS01"
+vendor = "thermo"
+watch_path = "C:/data"
+file_pattern = "*.raw"
+template = "t.sky"
+"""
+
+
+def test_pre_1_3_rules_load_as_the_renamed_types(tmp_data_dir: Path) -> None:
+    """Regression guard for the upgrade itself.
+
+    Before the validator learned to translate, a QC_A in config.toml failed
+    validation outright — which would have stopped every upgraded agent from
+    starting, not just misclassified a file.
+    """
+    cfg = load_config(_write(tmp_data_dir, _PRE_1_3_RULES))
+    types = {r.pattern: r.control_type for r in cfg.classifier_rules}
+    assert types == {
+        "SSC0": "SSC0", "QCA": "PCD", "QCB": "SSC",
+        "QC_A": "PCD", "QC_B": "SSC", "MYLAB_PROC": "PCD",
+    }
+
+
+def test_pre_1_3_rules_migration_is_logged(
+    tmp_data_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The file on disk still says QC_A until the next save — so say so."""
+    with caplog.at_level("WARNING"):
+        load_config(_write(tmp_data_dir, _PRE_1_3_RULES))
+    records = [r for r in caplog.records if r.getMessage() == "classifier_rules_migrated"]
+    assert len(records) == 1
+    assert records[0].count == 5
+    assert records[0].changes == ["QC_A -> PCD", "QC_B -> SSC"]
+
+
+def test_current_rules_load_silently(
+    tmp_data_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    body = _PRE_1_3_RULES.replace('"QC_A"', '"PCD"').replace('"QC_B"', '"SSC"')
+    with caplog.at_level("WARNING"):
+        load_config(_write(tmp_data_dir, body))
+    assert not [r for r in caplog.records if r.getMessage() == "classifier_rules_migrated"]
+
+
+def test_only_the_shipped_default_notes_are_rewritten(tmp_data_dir: Path) -> None:
+    """A default rule's note follows the rename; an operator's own note doesn't."""
+    cfg = load_config(_write(tmp_data_dir, _PRE_1_3_RULES))
+    notes = {r.pattern: r.notes for r in cfg.classifier_rules}
+    assert notes["QCA"] == "Process Control Digest (pre-2026 name)"
+    assert notes["QC_B"] == "System Suitability Control (pre-2026 name)"
+    assert notes["SSC0"] == "SSC-gold (gold standard)"
+    assert notes["MYLAB_PROC"] == "our own process control"
+
+
+def test_unknown_rule_type_still_rejected(tmp_data_dir: Path) -> None:
+    body = _PRE_1_3_RULES.replace('"QC_B", notes = "QC level B" ', '"QC_C", notes = "QC level B" ')
+    with pytest.raises(ConfigError, match="control_type must be one of"):
+        load_config(_write(tmp_data_dir, body))
 
 
 def test_default_endpoint() -> None:

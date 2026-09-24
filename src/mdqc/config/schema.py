@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mdqc.config import defaults
-from mdqc.types import Vendor
+from mdqc.types import ControlType, Vendor
 
 
 class AgentConfig(BaseModel):
@@ -150,7 +150,41 @@ class WatcherOverrides(BaseModel):
     stability_window_seconds: int | None = None
 
 
-CONTROL_TYPE_VALUES = ["QC_A", "QC_B", "SSC0", "BLANK", "SAMPLE"]
+# Wire values, in the order an operator meets them.
+CONTROL_TYPE_VALUES = ["PCD", "SSC", "SSC0", "BLANK", "SAMPLE"]
+
+# What people call them. The web UI and `mdqc classify` show these; the
+# payload carries the wire value.
+CONTROL_TYPE_LABELS = {
+    "PCD": "PCD — Process Control Digest",
+    "SSC": "SSC — System Suitability Control",
+    "SSC0": "SSC-gold — gold standard",
+    "BLANK": "Blank",
+    "SAMPLE": "Sample",
+}
+
+
+def normalise_control_type(raw: str) -> str:
+    """Current wire value for a control type, healing pre-1.3 spellings.
+
+    Configs written before schema 1.3 say QC_A and QC_B. Rejecting those would
+    stop an upgraded agent from starting at all, so they are translated — the
+    same treatment a retired cloud endpoint gets."""
+    try:
+        return ControlType(raw).value
+    except ValueError:
+        raise ValueError(f"control_type must be one of {CONTROL_TYPE_VALUES}") from None
+
+
+# Notes carried by the default rules before 1.3, and what they say now. Only
+# these exact strings are rewritten; a note an operator wrote is left alone.
+_LEGACY_RULE_NOTES = {
+    "QC level A": "Process Control Digest (pre-2026 name)",
+    "QC level A (underscore form)": "Process Control Digest (pre-2026 name)",
+    "QC level B": "System Suitability Control (pre-2026 name)",
+    "QC level B (underscore form)": "System Suitability Control (pre-2026 name)",
+    "System suitability control": "SSC-gold (gold standard)",
+}
 
 
 class PeptideClassRule(BaseModel):
@@ -317,15 +351,18 @@ class ClassifierRule(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     pattern: str
-    control_type: str = "QC_A"
+    control_type: str = "PCD"
     notes: str = ""
 
     @field_validator("control_type")
     @classmethod
     def _valid_control_type(cls, v: str) -> str:
-        if v not in CONTROL_TYPE_VALUES:
-            raise ValueError(f"control_type must be one of {CONTROL_TYPE_VALUES}")
-        return v
+        return normalise_control_type(v)
+
+    @field_validator("notes")
+    @classmethod
+    def _refresh_default_note(cls, v: str) -> str:
+        return _LEGACY_RULE_NOTES.get(v, v)
 
     @field_validator("pattern")
     @classmethod
@@ -366,12 +403,12 @@ class Config(BaseModel):
     instruments: list[InstrumentConfig] = Field(default_factory=list)
     classifier_rules: list[ClassifierRule] = Field(
         default_factory=lambda: [
-            ClassifierRule(pattern="SSC0",        control_type="SSC0",   notes="System suitability control"),
-            ClassifierRule(pattern="QCA",         control_type="QC_A",   notes="QC level A"),
-            ClassifierRule(pattern="QCB",         control_type="QC_B",   notes="QC level B"),
-            ClassifierRule(pattern="QC_A",        control_type="QC_A",   notes="QC level A (underscore form)"),
-            ClassifierRule(pattern="QC_B",        control_type="QC_B",   notes="QC level B (underscore form)"),
-            ClassifierRule(pattern="Hela_QC",     control_type="QC_A",   notes="HeLa QC injection"),
+            ClassifierRule(pattern="SSC0",        control_type="SSC0",   notes="SSC-gold (gold standard)"),
+            ClassifierRule(pattern="QCA",         control_type="PCD",    notes="Process Control Digest (pre-2026 name)"),
+            ClassifierRule(pattern="QCB",         control_type="SSC",    notes="System Suitability Control (pre-2026 name)"),
+            ClassifierRule(pattern="QC_A",        control_type="PCD",    notes="Process Control Digest (pre-2026 name)"),
+            ClassifierRule(pattern="QC_B",        control_type="SSC",    notes="System Suitability Control (pre-2026 name)"),
+            ClassifierRule(pattern="Hela_QC",     control_type="PCD",    notes="HeLa QC injection"),
             ClassifierRule(pattern="eb_inbetween",control_type="BLANK",  notes="Between-run blank"),
             ClassifierRule(pattern="BLANK",       control_type="BLANK",  notes="Blank injection"),
             ClassifierRule(pattern="BLK",         control_type="BLANK",  notes="Blank (short form)"),

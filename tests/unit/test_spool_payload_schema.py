@@ -22,7 +22,7 @@ from mdqc.types import (
 
 def _make_classification(instrument_id: str | None = "EXPLORIS01") -> RunClassification:
     return RunClassification(
-        control_type=ControlType.QC_A,
+        control_type=ControlType.PCD,
         well_position=WellPosition(row="A", column=1),
         instrument_id=instrument_id,
         plate_id=None,
@@ -86,10 +86,15 @@ def template_file(tmp_path: Path) -> Path:
 # the failure mode it now catches.
 EXPECTED_RUN_KEYS = {
     "run_id", "raw_file_name", "raw_file_hash", "acquisition_time",
+    "acquisition_time_source",  # 1.3
     "instrument_id", "vendor", "control_type", "well_position", "plate_id",
-    "spd", "dilution_pct", "lc_serial", "classification_confidence",
+    "spd", "dilution_pct", "lc_serial",
+    "kit_format",  # 1.3
+    "classification_confidence",
     "classification_source", "method_name", "lc_column",
-    "column_info",  # deprecated alias, remove at 1.3
+    # Deprecated alias. Due to go at 1.3, kept until the platform confirms it
+    # reads lc_column.
+    "column_info",
 }
 
 
@@ -109,7 +114,7 @@ def test_payload_schema_version_and_run_shape_move_together(
     spool_path = spool.enqueue(classification, extraction)
     payload = json.loads(spool_path.read_text(encoding="utf-8"))
 
-    assert payload["schema_version"] == "1.2"
+    assert payload["schema_version"] == "1.3"
     emitted = {k for k in payload["run"] if not k.startswith("_")}
     assert emitted == EXPECTED_RUN_KEYS, (
         f"run block changed shape — "
@@ -305,3 +310,60 @@ def test_payload_extraction_does_not_use_old_template_path_field(
 
     assert "template_path" not in payload["extraction"]
     assert "_template_path" in payload["extraction"]
+
+
+# ── Schema 1.3 ───────────────────────────────────────────────────────────────
+
+
+def test_payload_carries_the_1_3_control_type_names(
+    tmp_data_dir: Path, thermo_raw: Path, template_file: Path
+) -> None:
+    """The platform shows control_type verbatim, so these are what customers read."""
+    spool = Spool(agent_id="test-agent", agent_version="0.0.0")
+    payload = json.loads(
+        spool.enqueue(
+            _make_classification(), _make_extraction(thermo_raw, template_file)
+        ).read_text(encoding="utf-8")
+    )
+    assert payload["run"]["control_type"] == "PCD"
+
+
+def test_payload_carries_kit_format(
+    tmp_data_dir: Path, thermo_raw: Path, template_file: Path
+) -> None:
+    spool = Spool(agent_id="test-agent", agent_version="0.0.0")
+    classification = _make_classification()
+    classification.kit_format = 384
+    payload = json.loads(
+        spool.enqueue(classification, _make_extraction(thermo_raw, template_file))
+        .read_text(encoding="utf-8")
+    )
+    assert payload["run"]["kit_format"] == 384
+
+
+def test_acquisition_time_source_is_instrument_when_skyline_reported_it(
+    tmp_data_dir: Path, thermo_raw: Path, template_file: Path
+) -> None:
+    spool = Spool(agent_id="test-agent", agent_version="0.0.0")
+    extraction = _make_extraction(thermo_raw, template_file)
+    extraction.acquired_time = "2026-09-01T03:58:34+10:00"
+    extraction.acquired_time_source = "instrument"
+    payload = json.loads(
+        spool.enqueue(_make_classification(), extraction).read_text(encoding="utf-8")
+    )
+    assert payload["run"]["acquisition_time"] == "2026-09-01T03:58:34+10:00"
+    assert payload["run"]["acquisition_time_source"] == "instrument"
+
+
+def test_acquisition_time_source_is_file_mtime_on_the_spool_fallback(
+    tmp_data_dir: Path, thermo_raw: Path, template_file: Path
+) -> None:
+    """No time from the extractor at all: the spool reads the mtime, and says so."""
+    spool = Spool(agent_id="test-agent", agent_version="0.0.0")
+    extraction = _make_extraction(thermo_raw, template_file)
+    assert extraction.acquired_time is None
+    payload = json.loads(
+        spool.enqueue(_make_classification(), extraction).read_text(encoding="utf-8")
+    )
+    assert payload["run"]["acquisition_time"] is not None
+    assert payload["run"]["acquisition_time_source"] == "file_mtime"

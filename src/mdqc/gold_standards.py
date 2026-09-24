@@ -81,12 +81,13 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 # type declared in a filename. The vendor's position (SOP review, annotations 3
 # and 4): "SSC-gold will be set as such in the dashboard setting; the file
 # names then only need to differentiate between PC (QCA) and SSC (QCB)", with
-# the engineer selecting the gold standards "from respective SSC (QCB)".
+# the engineer selecting the gold standards "from respective SSC (QCB)". The
+# process control has since been renamed PCD; the rule is unchanged.
 #
 # So routine SSC runs are the candidate pool. SSC0 stays eligible because
 # earlier acquisition batches declare it in the filename, and because an
 # explicit SSCGOLD marker is still accepted for sites that prefer it.
-BASELINE_CANDIDATE_TYPES = (ControlType.SSC0, ControlType.QC_B)
+BASELINE_CANDIDATE_TYPES = (ControlType.SSC0, ControlType.SSC)
 
 
 def record_ssc0_run(classification: RunClassification, extraction: ExtractionResult) -> None:
@@ -338,18 +339,32 @@ def _pct_deviation(value: float | None, reference: float | None) -> float | None
 
 The warn/fail bands are deviations from a ratio of 1.0, so they only mean
 anything where the run is expected to match the SSC0 reference. SSC0 measures
-against its own baseline; QC B is the same material at the same load and
+against its own baseline; SSC is the same material at the same load and
 bypasses digestion, so it too should read ~1.0.
 
-PC (QC A) is a 1 ug lysate input with a 30% Evotip load, so roughly 300 ng on
-Evotip against a ~50 ng reference: up to ~6x, and probably nearer 4x after
-digest losses (vendor guidance, 2 Sep 2026). A 20x figure was briefly used
-after the August SOP review and was withdrawn because it ignored the 30%
-load step. The exact ratio is still to be pinned from data, which is why the
-verdict is withheld rather than scored against a guess. Blanks should read near zero by design. Scoring either against QC B's bands would mark every run
-as failing, so the verdict is withheld rather than fabricated.
+PCD (the process control, formerly QC A) is a 1 ug lysate input with a 30%
+Evotip load, so roughly 300 ng on Evotip against a ~50 ng reference: up to
+~6x, and probably nearer 4x after digest losses (vendor guidance, 2 Sep 2026).
+A 20x figure was briefly used after the August SOP review and was withdrawn
+because it ignored the 30% load step. The exact ratio is still to be pinned
+from data, which is why the verdict is withheld rather than scored against a
+guess. Blanks should read near zero by design. Scoring either against SSC's
+bands would mark every run as failing, so the verdict is withheld rather than
+fabricated.
 """
-_AREA_VERDICT_CONTROL_TYPES = frozenset({ControlType.SSC0, ControlType.QC_B})
+_AREA_VERDICT_CONTROL_TYPES = frozenset({ControlType.SSC0, ControlType.SSC})
+
+# Why a verdict was withheld, in the words the platform shows a customer. The
+# PCD wording is the honest state of things: the vendor is running the stress
+# experiment that will establish the ratio (HUPO alignment call, 23 Sep 2026).
+_VERDICT_WITHHELD_NOTES = {
+    ControlType.PCD: (
+        "not scored for PCD: the expected PCD-to-SSC ratio has not been established yet"
+    ),
+    ControlType.BLANK: (
+        "not scored for BLANK: a blank is expected to read near zero, not near the baseline"
+    ),
+}
 
 
 def compute_comparison_metrics(
@@ -445,9 +460,10 @@ def compute_comparison_metrics(
     verdict_note: str | None = None
     if control_type is not None and control_type not in _AREA_VERDICT_CONTROL_TYPES:
         area_verdict = None
-        verdict_note = (
-            f"not applicable for {control_type.value}: its expected ratio to the "
-            "SSC0 baseline is not 1.0"
+        verdict_note = _VERDICT_WITHHELD_NOTES.get(
+            control_type,
+            f"not scored for {control_type.value}: its expected ratio to the "
+            "SSC0 baseline is not 1.0",
         )
     elif median_area_dev is None:
         area_verdict = None

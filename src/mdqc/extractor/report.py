@@ -595,17 +595,42 @@ def parse_skyline_run_metadata(path: Path) -> tuple[str | None, str | None]:
                 locale_prefers_day_first(),
             )
 
-        acquired = (
-            _parse_skyline_time(first[acq_idx].strip(), day_first=day_first)
-            if acq_idx is not None and acq_idx < len(first)
-            else None
-        )
-        modified = (
-            _parse_skyline_time(first[mod_idx].strip(), day_first=day_first)
-            if mod_idx is not None and mod_idx < len(first)
-            else None
-        )
-        return acquired, modified
+        def read(idx: int | None) -> str | None:
+            if idx is None or idx >= len(first):
+                return None
+            cell = first[idx].strip()
+            missing = _COLUMN_NOT_FOUND_RE.match(cell)
+            if missing:
+                _report_column_not_found(missing.group(1), path)
+                return None
+            return _parse_skyline_time(cell, day_first=day_first)
+
+        return read(acq_idx), read(mod_idx)
+
+
+# What Skyline writes into every cell of a report column whose property path
+# does not resolve, instead of failing the export.
+_COLUMN_NOT_FOUND_RE = re.compile(r"^#COLUMN\s+(.+?)\s+NOT FOUND#$")
+
+
+def _report_column_not_found(column_path: str, report: Path) -> None:
+    """Say plainly that a .skyr path is wrong, rather than that a date is odd.
+
+    Skyline doesn't reject a report with an unresolvable column; it exports the
+    marker text in every row. Treated as a date, that produced "could not parse
+    Skyline time" and a quiet fall back to the file mtime, which a site read as
+    working. The usual cause is a path written for one row source used in a
+    report built on another: `Results!*.Value.PeptideResult.ResultFile...`
+    exists when the rows are precursors, not when they are peptides.
+    """
+    logger.error(
+        "skyr_column_not_found: %s does not exist for this report's row source; "
+        "acquisition time falls back to the file mtime. Add Acquired Time with "
+        "Skyline's report editor rather than pasting a path, so Skyline writes "
+        "the one that fits the report.",
+        column_path,
+        extra={"column_path": column_path, "report": str(report)},
+    )
 
 
 def collapse_transitions_to_peptides(metrics: list[TargetMetric]) -> list[TargetMetric]:

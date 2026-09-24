@@ -115,10 +115,10 @@ class TestClassifierAudit:
             pytest.fail(
                 f"{sample_pct:.0f}% of files classified as SAMPLE (LOW confidence).\n\n"
                 "The site naming convention ('QC_2026-...', 'Hela_QC_...', 'eb_inbetween_...')\n"
-                "does not match the classifier patterns (QC_A, QC_B, SSC0, BLANK).\n\n"
+                "does not match the classifier patterns (PCD, SSC, SSC0, BLANK).\n\n"
                 "Options:\n"
-                "  1. Rename files to include QCA/QCB/SSC0 tokens, e.g. Hela_QCA_2026-02-03_...\n"
-                "  2. Extend the classifier to recognise 'Hela_QC' → QC_A, 'eb_inbetween' → BLANK\n"
+                "  1. Rename files to include PCD96/PCD384/SSC tokens, e.g. PCD96_2026-02-03_...\n"
+                "  2. Extend the classifier to recognise 'Hela_QC' → PCD, 'eb_inbetween' → BLANK\n"
                 "  3. Use the config 'control_type_override' field (if added) to map per-instrument"
             )
 
@@ -126,8 +126,8 @@ class TestClassifierAudit:
         """Verify that standard MD naming conventions still work."""
         cases = [
             ("SSC0_2024-01-15.raw",          ControlType.SSC0),
-            ("InstrA_QCA_2024-01-15.raw",     ControlType.QC_A),
-            ("InstrA_QCB_A3_2024-01-15.raw",  ControlType.QC_B),
+            ("InstrA_QCA_2024-01-15.raw",     ControlType.PCD),
+            ("InstrA_QCB_A3_2024-01-15.raw",  ControlType.SSC),
             ("InstrA_BLANK_2024-01-15.raw",   ControlType.BLANK),
         ]
         for name, expected in cases:
@@ -306,7 +306,7 @@ class TestPayloadSchema:
         spool = Spool(agent_id="replay-test", agent_version="0.1.0", root=tmp_path)
 
         classification = RunClassification(
-            control_type=ControlType.QC_A,
+            control_type=ControlType.PCD,
             well_position=None,
             instrument_id="Astral_001",
             plate_id=None,
@@ -354,9 +354,13 @@ class TestPayloadSchema:
 
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
 
-        # Schema contract checks
-        assert payload["schema_version"] == "1.2", \
-            f"Expected schema 1.2, got {payload['schema_version']}"
+        # Schema contract checks. The version itself is pinned by
+        # test_spool_payload_schema; here it only has to be the declared one,
+        # so a deliberate bump doesn't strand this test on an old literal.
+        from mdqc.config.defaults import PAYLOAD_SCHEMA_VERSION
+
+        assert payload["schema_version"] == PAYLOAD_SCHEMA_VERSION, \
+            f"Expected schema {PAYLOAD_SCHEMA_VERSION}, got {payload['schema_version']}"
         assert "payload_id" in payload
         assert "timestamp" in payload
         assert "run" in payload

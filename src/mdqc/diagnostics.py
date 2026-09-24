@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,7 +68,17 @@ class DiagnosticsReport:
     spool_writable: bool = False
     pending_count: int = 0
     failed_count: int = 0
+    # Of the most recent payloads that record it, how many took their
+    # acquisition time from the file mtime rather than the instrument. Not part
+    # of overall_ok: the agent works either way, but the timeline doesn't.
+    recent_mtime_fallbacks: int = 0
+    recent_payloads_examined: int = 0
     overall_ok: bool = False
+
+    @property
+    def acquisition_time(self) -> tuple[str, str]:
+        """(state, sentence) — see acquisition_time_summary."""
+        return acquisition_time_summary(self)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -105,6 +116,8 @@ class DiagnosticsReport:
             "spool_writable": self.spool_writable,
             "pending_count": self.pending_count,
             "failed_count": self.failed_count,
+            "recent_mtime_fallbacks": self.recent_mtime_fallbacks,
+            "recent_payloads_examined": self.recent_payloads_examined,
             "overall_ok": self.overall_ok,
         }
 
@@ -170,6 +183,40 @@ def _spool_counts() -> tuple[int, int]:
             1 for p in failed.iterdir() if p.is_file() and p.suffix == ".json"
         )
     return pending_count, failed_count
+
+
+# Enough recent runs to notice a bad report definition without reading an
+# overnight batch's worth of JSON on every page load.
+_RECENT_PAYLOAD_SAMPLE = 50
+
+
+def _recent_acquisition_fallbacks(limit: int = _RECENT_PAYLOAD_SAMPLE) -> tuple[int, int]:
+    """(file-mtime fallbacks, payloads examined) over the newest payloads.
+
+    Only payloads that record `acquisition_time_source` (schema 1.3 on) are
+    counted; older ones can't say where their time came from, and guessing
+    would be worse than leaving them out.
+    """
+    candidates: list[Path] = []
+    for folder in (paths.spool_pending(), paths.spool_completed()):
+        if folder.exists():
+            candidates.extend(p for p in folder.iterdir() if p.suffix == ".json")
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    fallbacks = examined = 0
+    for p in candidates[:limit]:
+        try:
+            source = json.loads(p.read_text(encoding="utf-8"))["run"].get(
+                "acquisition_time_source"
+            )
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if source is None:
+            continue
+        examined += 1
+        if source == "file_mtime":
+            fallbacks += 1
+    return fallbacks, examined
 
 
 def _classify_auth(cfg: Config) -> tuple[CloudAuthMode, bool]:
@@ -272,6 +319,7 @@ async def run_diagnostics(*, check_cloud: bool = False) -> DiagnosticsReport:
 
     spool_writable = _spool_writable()
     pending_count, failed_count = _spool_counts()
+    mtime_fallbacks, payloads_examined = _recent_acquisition_fallbacks()
 
     overall_ok = (
         config_ok
@@ -299,6 +347,8 @@ async def run_diagnostics(*, check_cloud: bool = False) -> DiagnosticsReport:
         spool_writable=spool_writable,
         pending_count=pending_count,
         failed_count=failed_count,
+        recent_mtime_fallbacks=mtime_fallbacks,
+        recent_payloads_examined=payloads_examined,
         overall_ok=overall_ok,
     )
 
@@ -317,6 +367,30 @@ def _fail(label: str, value: str = "") -> str:
 
 def _muted(label: str, value: str = "") -> str:
     return f"[--] {label}{f': {value}' if value else ''}"
+
+
+def acquisition_time_summary(report: DiagnosticsReport) -> tuple[str, str]:
+    """(state, sentence) for where recent acquisition times came from.
+
+    state is "ok", "fail" or "unknown"; shared by `mdqc doctor` and the
+    Diagnostics page so the two can't disagree.
+    """
+    n, of = report.recent_mtime_fallbacks, report.recent_payloads_examined
+    if of == 0:
+        return "unknown", "no recent runs record their time source yet"
+    if n == 0:
+        return "ok", f"from the instrument on all {of} recent runs"
+    return "fail", (
+        f"{n} of {of} recent runs used the file mtime - the report's Acquired "
+        "Time column is missing or its path does not fit the report; see the "
+        "skyr_column_not_found line in the log"
+    )
+
+
+def _acquisition_time_line(report: DiagnosticsReport) -> str:
+    state, sentence = acquisition_time_summary(report)
+    render = {"ok": _ok, "fail": _fail}.get(state, _muted)
+    return render("Acquisition time", sentence)
 
 
 def _template_format_lines(t: TemplateCheck, skyline_version: str | None) -> list[str]:
@@ -418,6 +492,7 @@ def render_text_report(report: DiagnosticsReport) -> str:
     )
     lines.append(_ok("Pending items", str(report.pending_count)))
     lines.append(_ok("Failed items", str(report.failed_count)))
+    lines.append(_acquisition_time_line(report))
     lines.append("")
     lines.append(f"Overall: {'HEALTHY' if report.overall_ok else 'NEEDS ATTENTION'}")
     return "\n".join(lines)

@@ -23,12 +23,12 @@ only what genuinely moved.
 | File | Covers |
 |---|---|
 | `payload_01_ssc0_baseline_source.json` | SSC₀ — one of the runs the baseline was built from |
-| `payload_02_qcb_healthy.json` | QC B at full load → `peak_area_verdict: "ok"` |
-| `payload_03_qcb_75pct_reads_ok.json` | SSC at 75% load → **`"ok"`**, `dilution_pct: 75` — see below |
-| `payload_04_qcb_50pct_fail.json` | QC B at 50% → `"fail"`, `dilution_pct: 50` |
+| `payload_02_ssc_healthy.json` | SSC at full load → `peak_area_verdict: "ok"` |
+| `payload_03_ssc_75pct_reads_ok.json` | SSC at 75% load → **`"ok"`**, `dilution_pct: 75` — see below |
+| `payload_04_ssc_50pct_fail.json` | SSC at 50% → `"fail"`, `dilution_pct: 50` |
 | `payload_05_mis_extracted_target.json` | One target wrongly integrated → `target_extraction_suspect: true` on that peptide |
 | `payload_06_custom_thresholds.json` | Same run as 03 on tuned thresholds → **`"warn"`**, `thresholds_source: "custom"` |
-| `payload_07_qca.json` | QC A → verdict **withheld**, see below |
+| `payload_07_pcd.json` | PCD from a 96-well kit → verdict **withheld**, `kit_format: 96`, see below |
 | `payload_08_no_baseline.json` | No baseline recorded → `baseline_context` and `comparison_metrics` both `null` |
 | `payload_09_failed_extraction.json` | Failed extraction — still spooled, empty `target_metrics` |
 
@@ -62,12 +62,12 @@ exists.** An instrument is in that state from installation until an engineer
 saves a gold standard on the agent's Gold Standards page. Payload 08 is that
 state — treat it as normal, not as an error.
 
-**2. `peak_area_verdict` is withheld for QC A and blanks.** The warn/fail
+**2. `peak_area_verdict` is withheld for PCD and blanks.** The warn/fail
 bands measure deviation from a ratio of 1.0, which only holds where the run
-should match the SSC-gold reference — SSC-gold itself and SSC. PC is a 1 µg
+should match the SSC-gold reference — SSC-gold itself and SSC. PCD is a 1 µg
 lysate input with a 30% Evotip load — about 300 ng on Evotip, **up to ~6×** the
 ~50 ng SSC load, and probably nearer 4× after digest losses. The exact figure is
-still to be established. Scoring it against QC B's bands marked every QC A run as
+still to be established. Scoring it against SSC's bands marked every PCD run as
 failing. When the verdict is withheld, `peak_area_verdict` is `null` and
 `peak_area_verdict_note` says why — so a withheld verdict is distinguishable
 from missing data. `median_peak_area_ratio` is still emitted either way.
@@ -191,7 +191,10 @@ Suggested validation rules (server-side):
 
 - `schema_version`: must be present, accept any `1.x`, reject `2.x` (forward-only)
 - `payload_id` / `correlation_id` / `agent_id` / `agent_version`: must be present and non-empty
-- `run.control_type`: must be one of `SSC0` / `QC_A` / `QC_B` / `BLANK` / `SAMPLE`
+- `run.control_type`: must be one of `PCD` / `SSC` / `SSC0` / `BLANK` / `SAMPLE`
+  from schema 1.3; `QC_A` / `QC_B` in 1.2 and earlier payloads mean `PCD` / `SSC`
+- `run.kit_format` (1.3): `96`, `384` or `null`
+- `run.acquisition_time_source` (1.3): `instrument`, `file_mtime` or `null`
 - `extraction.status`: must be one of `SUCCESS` / `FAILED` / `SKIPPED`
 - When `status == SUCCESS`, `target_metrics` must be non-empty
 - When `status == FAILED`, `error_message` must be present and `target_metrics` may be empty

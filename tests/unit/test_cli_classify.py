@@ -32,7 +32,7 @@ def test_classify_reports_control_type_and_spd() -> None:
 
 def test_classify_reports_dilution() -> None:
     out = _run("QCB_75perc_2026-07-24_ss_50ng_200spd_k562_S1-F8_53137.d")
-    assert "Control Type: QC_B" in out
+    assert "Control Type: SSC (System Suitability Control)" in out
     assert "Dilution: 75%" in out
     assert "SPD: 200" in out
 

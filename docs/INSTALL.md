@@ -78,7 +78,7 @@ In **PowerShell**, with Python 3.11 or newer installed (§2):
 
 ```powershell
 py -3 -m venv C:\MassDynamics\mdqc
-C:\MassDynamics\mdqc\Scripts\pip install https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.0.2.tar.gz
+C:\MassDynamics\mdqc\Scripts\pip install https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.1.0.tar.gz
 ```
 
 Calling the environment's `pip` and `mdqc` by full path means you never have to
@@ -101,7 +101,7 @@ Either way you should now be able to run:
 ```powershell
 C:\MassDynamics\mdqc\Scripts\mdqc version
 ```
-and see `mdqc 1.0.2`.
+and see `mdqc 1.1.0`.
 
 To build a single-file executable or the Inno Setup installer (service
 registration, tray shortcut, uninstaller) for sites that cannot install Python,
@@ -163,7 +163,10 @@ timeout_seconds = 900
 process_priority = "below_normal"
 # report_skyr_path: which Skyline report (.skyr) defines the CSV columns.
 #   "auto" (default) uses the bundled MD_QC_Report.skyr in the methods folder.
-#   Point it at your own .skyr to change the exported metrics without renaming:
+#   Point it at your own .skyr to change the exported metrics without renaming.
+#   Give yours its own name: the agent restores its bundled copy over
+#   methods\MD_QC_Report.skyr whenever the bundled one is newer, so edits
+#   saved under that name are lost on upgrade.
 # report_skyr_path = "C:\\ProgramData\\MassDynamics\\QC\\methods\\MD_QC_Report_20260723.skyr"
 # collapse_transitions_to_peptides: fold Skyline's per-transition rows down to
 #   one row per peptide (default true). Leave on for the diagnostic-peptide QC.
@@ -218,6 +221,31 @@ Should print `Config OK`. If it errors, fix the file before continuing.
 
 ---
 
+### 4d. Name your QC files
+
+The agent decides what a run is from its filename. Put one of these markers
+in the name, separated from the rest by `_`, `-`, `.` or a space:
+
+| Marker | What it is | Reported as |
+|---|---|---|
+| `PCD96`, `PCD384` | Process Control Digest, from a 96- or 384-well kit | `PCD`, with `kit_format` 96 or 384 |
+| `SSC` | System Suitability Control | `SSC` |
+| `SSC_GOLD` | A run you intend as a gold standard | `SSC0` |
+| `BLANK` | Blank injection | `BLANK` |
+
+PCD96 and PCD384 are the same control and are treated identically; the kit
+size is recorded so the two can still be told apart. Any other file is
+treated as an experimental sample. Earlier names — `QCA`, `QC_A`, `PC`,
+`QCB`, `QC_B`, `SSC0` — are still recognised, so existing batches don't need
+renaming. Check a name before relying on it:
+
+```powershell
+C:\MassDynamics\mdqc\Scripts\mdqc classify PCD96_2026-09-23_200SPD_S00572_r01.raw
+```
+
+It uses your `config.toml` rules as the agent does, and prints the type,
+kit, SPD and LC serial it found.
+
 ## 5. Run the agent
 
 In a PowerShell window:
@@ -247,7 +275,7 @@ that deviates from the currently-ticked set, so an equilibration outlier is
 visible before you save.
 
 The baseline is stored locally per (instrument, SPD) under
-`gold_standards\` (see §11). From then on, every QC A / QC B payload
+`gold_standards\` (see §11). From then on, every PCD / SSC payload
 carries `baseline_context` and `comparison_metrics`: per-peptide ratios
 against that baseline plus a peak-area verdict. Runs acquired *before* a
 baseline exists keep their measurements but carry no verdict.
@@ -277,6 +305,7 @@ the acquisition. See *Troubleshooting* below.
 |---------|--------------|-----|
 | Dashboard shows "No `*_payload.json` files found" and the log has repeated `processed_callback_failed: SkylineNotFound: SkylineCmd.exe not found` | Skyline isn't installed at any default location and `[skyline].path` isn't set in config | Install Skyline at default path, OR add `[skyline] path = "C:\\path\\to\\SkylineCmd.exe"` to `config.toml`. Verify with the `find_skyline` snippet in §2 |
 | `0/48 targets found` on every run | Skyline template doesn't match acquisition method | Open `QC_Method.sky` in Skyline GUI, drag in one raw file, confirm peaks ARE found there. If not, the libraries are wrong-method (e.g., 200 SPD libraries vs 500 SPD acquisition) |
+| Log shows `skyr_column_not_found`, and Diagnostics says runs "used the file mtime" | The report's Acquired Time column path doesn't exist for the report's row source. `Results!*.Value.PeptideResult.ResultFile.AcquiredTime` works in a precursor-level report like the one that ships; a peptide-level report needs a different path. Skyline writes `#COLUMN … NOT FOUND#` instead of failing | Add **Acquired Time** with Skyline's report editor rather than pasting a path — Skyline then writes the one that fits. Each payload's `acquisition_time_source` says `instrument` once it works |
 | Agent log says `MD_QC_Report does not exist` | `MD_QC_Report.skyr` missing from `methods/` | Copy it in. It ships with the agent under `src/mdqc/methods/`. |
 | Skyline error: `file is being used by another process` | Concurrent Skyline runs writing to the same `.skyd` cache | Already handled in code via per-extraction temp dir + library hardlinking. If you still see this, kill all stuck `SkylineCmd.exe` processes via Task Manager and restart the agent. |
 | `instrument_id` shows as filename prefix instead of your config ID | The watch path differs from `instrument.watch_path` after `.resolve()` (mapped/UNC drive issue) | The agent has a single-instrument fallback; if you have one instrument configured, this works automatically. For multi-instrument setups use UNC paths consistently. |

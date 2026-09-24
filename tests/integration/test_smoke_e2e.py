@@ -282,7 +282,7 @@ async def test_drop_file_observed_extracted_spooled_completed(smoke_env: dict) -
     assert payload["correlation_id"].startswith("smoke-test-")
     assert payload["agent_id"] == "smoke-test"
     assert "run_id" in payload["run"]
-    assert payload["run"]["control_type"] == "QC_A"
+    assert payload["run"]["control_type"] == "PCD"  # a QCA-named file, schema 1.3
     assert payload["run"]["raw_file_name"] == "20260426_smoke_QCA_A1_run01.raw"
     assert payload["extraction"]["status"] == "SUCCESS"
     assert len(payload["target_metrics"]) == 5

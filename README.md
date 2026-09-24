@@ -24,7 +24,8 @@ Dynamics platform.*
 
 - **Watches** any folder containing raw files (Thermo, Sciex, Bruker, Agilent)
 - **Detects** stable files (configurable size/mtime quiescence window) and
-  classifies them by filename: QC A / QC B / SSC₀ / blank / sample
+  classifies them by filename: PCD (process control digest, 96- or
+  384-well kit) / SSC (system suitability control) / SSC-gold / blank / sample
 - **Extracts** per-peptide QC metrics with a real Skyline run — no copies,
   no proxies, the same numbers an analyst would get manually
 - **Scores** each run against a gold-standard baseline you record in the web
@@ -49,7 +50,7 @@ installed. Everything goes in one virtual environment:
 
 ```powershell
 py -3 -m venv C:\MassDynamics\mdqc
-C:\MassDynamics\mdqc\Scripts\pip install https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.0.2.tar.gz
+C:\MassDynamics\mdqc\Scripts\pip install https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.1.0.tar.gz
 C:\MassDynamics\mdqc\Scripts\mdqc version
 ```
 
@@ -99,8 +100,8 @@ Payloads are JSON files, one per run, with a stable, versioned schema:
 
 ```jsonc
 {
-  "schema_version": "1.2",
-  "run":          { "instrument_id": "...", "raw_file_name": "...", "acquisition_time": "...", "control_type": "QC_B", "spd": 200 },
+  "schema_version": "1.3",
+  "run":          { "instrument_id": "...", "raw_file_name": "...", "acquisition_time": "...", "acquisition_time_source": "instrument", "control_type": "SSC", "spd": 200 },
   "extraction":   { "status": "SUCCESS", "extraction_time_ms": 22450, "backend_version": "..." },
   "run_metrics":  { "targets_found": 48, "targets_expected": 48, "median_rt_shift": 0.012, "median_mass_error_ppm": -3.21 },
   "target_metrics": [
@@ -142,7 +143,7 @@ printed at startup:
 
 ## Status
 
-**v1.0.2.** The pipeline is end-to-end on Windows: watcher, classifier,
+**v1.1.0.** The pipeline is end-to-end on Windows: watcher, classifier,
 Skyline extraction, spool, gold-standard comparison, and cloud upload to the
 Mass Dynamics platform. Validated by replay tests against real acquisitions at
 48/48 target recovery.

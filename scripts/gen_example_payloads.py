@@ -194,6 +194,7 @@ def extraction(
             )
         ),
         acquired_time=when.isoformat(),
+        acquired_time_source="instrument",
     )
 
 
@@ -267,11 +268,11 @@ def main() -> None:
         spool, classification(ControlType.SSC0, well="A1"), ssc0_ids[0][2],
         "payload_01_ssc0_baseline_source.json"))
 
-    # 02/03/04 — QC B at 100 / 75 / 50 % load
+    # 02/03/04 — SSC at 100 / 75 / 50 % load
     for n, (pct, scale, well) in enumerate(
         [(100, 1.00, "A2"), (75, 0.905, "B2"), (50, 0.725, "C2")], start=2
     ):
-        name = f"QCB_{pct}perc_2026-08-11_ss_50ng_200spd_k562_S1-{well}.d"
+        name = f"SSC_{pct}perc_2026-08-11_ss_50ng_200spd_k562_S1-{well}.d"
         e = extraction(f"qcb-{pct}", name, targets(scale=scale, nudge=pct),
                        T0 + timedelta(hours=2, minutes=n * 8))
         # 75% is deliberately named "boundary", not "warn": it medians at
@@ -282,49 +283,51 @@ def main() -> None:
         label = {100: "healthy", 75: "75pct_reads_ok", 50: "50pct_fail"}[pct]
         written.append(emit(
             spool,
-            classification(ControlType.QC_B, well=well, dilution=pct),
-            e, f"payload_0{n}_qcb_{label}.json"))
+            classification(ControlType.SSC, well=well, dilution=pct),
+            e, f"payload_0{n}_ssc_{label}.json"))
 
     # 05 — one wrongly integrated target
     e = extraction(
-        "qcb-misx", "QCB_100perc_2026-08-11_ss_50ng_200spd_k562_S1-D2.d",
+        "qcb-misx", "SSC_100perc_2026-08-11_ss_50ng_200spd_k562_S1-D2.d",
         targets(nudge=5, mis_extract="RISGLIYEETR"), T0 + timedelta(hours=3))
     written.append(emit(
-        spool, classification(ControlType.QC_B, well="D2", dilution=100), e,
+        spool, classification(ControlType.SSC, well="D2", dilution=100), e,
         "payload_05_mis_extracted_target.json"))
 
     # 06 — same run as 03, but on tuned thresholds
-    e = extraction("qcb-75-custom", "QCB_75perc_2026-08-11_ss_50ng_200spd_k562_S1-E2.d",
+    e = extraction("qcb-75-custom", "SSC_75perc_2026-08-11_ss_50ng_200spd_k562_S1-E2.d",
                    targets(scale=0.905, nudge=75), T0 + timedelta(hours=4))
     written.append(emit(
-        spool, classification(ControlType.QC_B, well="E2", dilution=75), e,
+        spool, classification(ControlType.SSC, well="E2", dilution=75), e,
         "payload_06_custom_thresholds.json",
         thresholds=QcThresholdsConfig(peak_area_deviation_pct_warn=8.0,
                                       peak_area_deviation_pct_fail=20.0)))
 
-    # 07 — PC (QC A): up to ~6x the SSC-gold load (1 ug input, 30% Evotip
-    # load, ~300 ng on Evotip against ~50 ng), so the verdict is withheld.
-    # 20x was briefly used after the August SOP review; it was withdrawn on
-    # 2 Sep 2026 because it ignored the 30% load step.
-    e = extraction("qca", "PC_2026-08-11_ss_1ug_200spd_S00462_k562_S1-F2.d",
+    # 07 — PCD from a 96-well kit: up to ~6x the SSC-gold load (1 ug input,
+    # 30% Evotip load, ~300 ng on Evotip against ~50 ng), so the verdict is
+    # withheld until the PCD-to-SSC ratio is established. 20x was briefly used
+    # after the August SOP review; it was withdrawn on 2 Sep 2026 because it
+    # ignored the 30% load step.
+    e = extraction("qca", "PCD96_2026-08-11_ss_1ug_200spd_S00462_k562_S1-F2.d",
                    targets(scale=5.9, nudge=9), T0 + timedelta(hours=5))
-    written.append(emit(
-        spool, classification(ControlType.QC_A, well="F2"), e, "payload_07_qca.json"))
+    pcd = classification(ControlType.PCD, well="F2")
+    pcd.kit_format = 96
+    written.append(emit(spool, pcd, e, "payload_07_pcd.json"))
 
     # 08 — an instrument with no baseline yet (different SPD, none recorded)
-    e = extraction("qcb-nobase", "QCB_100perc_2026-08-11_ss_50ng_500spd_k562_S1-G2.d",
+    e = extraction("qcb-nobase", "SSC_100perc_2026-08-11_ss_50ng_500spd_k562_S1-G2.d",
                    targets(nudge=3), T0 + timedelta(hours=6))
     written.append(emit(
-        spool, classification(ControlType.QC_B, well="G2", spd=500, dilution=100), e,
+        spool, classification(ControlType.SSC, well="G2", spd=500, dilution=100), e,
         "payload_08_no_baseline.json"))
 
     # 09 — failed extraction, still spooled
-    e = extraction("qcb-failed", "QCB_100perc_2026-08-11_ss_50ng_200spd_k562_S1-H2.d",
+    e = extraction("qcb-failed", "SSC_100perc_2026-08-11_ss_50ng_200spd_k562_S1-H2.d",
                    [], T0 + timedelta(hours=7),
                    status=ExtractionStatus.FAILED,
                    error="Skyline extraction timed out after 900 s")
     written.append(emit(
-        spool, classification(ControlType.QC_B, well="H2", dilution=100), e,
+        spool, classification(ControlType.SSC, well="H2", dilution=100), e,
         "payload_09_failed_extraction.json"))
 
     for f in written:

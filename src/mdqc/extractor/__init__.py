@@ -306,18 +306,22 @@ class Extractor:
         finally:
             self._cleanup(output_csv)
 
+        acquired_source: str | None = "instrument" if acquired_time else None
         if acquired_time is None:
-            # No AcquiredTime column (a template older than v0.5.25). The
-            # file's mtime is the only clue left - it is usually close, but
-            # any copy or transfer that does not preserve it rewrites the QC
-            # timeline silently, so say so in the log.
+            # No usable AcquiredTime column: an older report, or a path that
+            # doesn't resolve for this report's row source. The file's mtime
+            # is the only clue left - it is usually close, but any copy or
+            # transfer that does not preserve it rewrites the QC timeline
+            # silently, so the payload says which one it carries.
             acquired_time = _file_mtime_iso(raw_file)
             if acquired_time is not None:
+                acquired_source = "file_mtime"
                 logger.info(
                     "acquisition_time_from_file_mtime",
                     extra={"raw_file": raw_file.name, "acquired_time": acquired_time},
                 )
         result.acquired_time = acquired_time
+        result.acquired_time_source = acquired_source
         result.modified_time = modified_time
 
         # Collapse transition-level rows to one row per peptide (see report.py).
