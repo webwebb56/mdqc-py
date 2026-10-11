@@ -51,7 +51,19 @@ def common_context(request: Request) -> dict[str, Any]:
         "request": request,
         "agent_version": __version__,
         "platform_app_url": platform_app_url(request),
+        "upload_gate_held": _upload_gate_held(request),
     }
+
+
+def _upload_gate_held(request: Request) -> list[dict[str, Any]]:
+    """Held buckets for the banner on every page. Never fails a page render."""
+    try:
+        from mdqc import upload_gate
+
+        spool = getattr(get_state(request), "spool", None)
+        return upload_gate.held_summary(spool) if spool is not None else []
+    except Exception:
+        return []
 
 
 __all__ = ["common_context", "get_state", "get_templates", "platform_app_url"]

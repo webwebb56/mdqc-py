@@ -98,6 +98,15 @@ def _vendor_from_extension(path: Path | None) -> str | None:
     return None
 
 
+def _write_atomic(final_path: Path, data: bytes) -> None:
+    tmp_path = final_path.with_name(f".{final_path.name}.tmp")
+    with open(tmp_path, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, final_path)
+
+
 class Spool:
     def __init__(
         self,
@@ -112,12 +121,16 @@ class Spool:
         self.uploading_dir = self.root / "uploading"
         self.completed_dir = self.root / "completed"
         self.failed_dir = self.root / "failed"
+        # Runs waiting for their instrument's gold standard. Never claimed by
+        # the uploader; the upload gate moves them to pending, re-scored.
+        self.held_dir = self.root / "held"
         for d in (
             self.root,
             self.pending_dir,
             self.uploading_dir,
             self.completed_dir,
             self.failed_dir,
+            self.held_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)
 
@@ -141,6 +154,7 @@ class Spool:
         baseline_context: dict[str, Any] | None = None,
         max_pending_mb: int = MAX_PENDING_MB,
         comparison_metrics: dict[str, Any] | None = None,
+        held: bool = False,
     ) -> Path:
         size_mb = self.pending_size_mb()
         if size_mb >= max_pending_mb:
@@ -236,15 +250,9 @@ class Spool:
         )
 
         filename = f"{run_id}_payload.json"
-        final_path = self.pending_dir / filename
-        tmp_path = self.pending_dir / f".{filename}.tmp"
-
-        json_bytes = json.dumps(_payload_to_dict(payload), indent=2).encode("utf-8")
-        with open(tmp_path, "wb") as f:
-            f.write(json_bytes)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, final_path)
+        folder = self.held_dir if held else self.pending_dir
+        final_path = folder / filename
+        _write_atomic(final_path, json.dumps(_payload_to_dict(payload), indent=2).encode("utf-8"))
 
         log.info(
             "Payload spooled",
@@ -255,6 +263,23 @@ class Spool:
             },
         )
         return final_path
+
+    def held_payloads(self) -> list[tuple[Path, dict[str, Any]]]:
+        """Every held payload, oldest first. Unreadable files are skipped."""
+        out: list[tuple[Path, dict[str, Any]]] = []
+        for p in sorted(self.held_dir.glob("*_payload.json"), key=lambda q: q.stat().st_mtime):
+            try:
+                out.append((p, json.loads(p.read_text(encoding="utf-8"))))
+            except (OSError, ValueError):
+                log.warning("held_payload_unreadable", extra={"path": str(p)})
+        return out
+
+    def release_held(self, held_path: Path, payload: dict[str, Any]) -> Path:
+        """Write a (possibly re-scored) held payload into pending, then drop it from held."""
+        dst = self.pending_dir / held_path.name
+        _write_atomic(dst, json.dumps(payload, indent=2).encode("utf-8"))
+        held_path.unlink(missing_ok=True)
+        return dst
 
     def claim_next(self) -> tuple[Path, dict[str, Any]] | None:
         candidates: list[tuple[float, Path]] = []

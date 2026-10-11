@@ -85,15 +85,30 @@ _LC_SERIAL_RE = re.compile(rf"{_DELIM_BEFORE}(S\d{{5}}){_DELIM_AFTER}", re.IGNOR
 def classify_file(
     path: Path,
     rules: list[ClassifierRule] | None = None,
+    mode: str = "lenient",
 ) -> RunClassification:
-    return classify_filename(path.name, rules=rules)
+    return classify_filename(path.name, rules=rules, mode=mode)
 
 
 def classify_filename(
     name: str,
     rules: list[ClassifierRule] | None = None,
+    mode: str = "lenient",
 ) -> RunClassification:
+    """Classify a raw file from its name.
+
+    mode="lenient" finds a control-type marker anywhere in the name, in any
+    spelling since the first pilot. mode="lupo" only accepts one as the first
+    part of the name, where the Lupo writes it, and never infers a type from
+    the well — a customer sample in well A1 is still a sample.
+    """
     stem = _strip_vendor_ext(name)
+
+    # The shipped default rules are legacy substring matches (QCB, BLK, ...).
+    # Under Lupo naming they would reintroduce exactly the false positives the
+    # mode exists to prevent, so only rules an operator wrote apply.
+    if mode == "lupo" and rules:
+        rules = [r for r in rules if not _is_shipped_default_rule(r)]
 
     # Custom rules (case-insensitive substring) take priority over built-ins.
     if rules:
@@ -119,7 +134,10 @@ def classify_filename(
                     kit_format=_extract_kit_format(stem, ct),
                 )
 
-    control_type, source = _extract_control_type(stem)
+    if mode == "lupo":
+        control_type, source = _extract_control_type_lupo(stem)
+    else:
+        control_type, source = _extract_control_type(stem)
     well = _extract_well(stem)
     plate = _extract_plate(stem)
     instrument = _extract_instrument(stem)
@@ -138,6 +156,15 @@ def classify_filename(
         dilution_pct=dilution,
         lc_serial=lc_serial,
         kit_format=_extract_kit_format(stem, control_type),
+    )
+
+
+def _is_shipped_default_rule(rule: ClassifierRule) -> bool:
+    from mdqc.config.schema import Config
+
+    return any(
+        rule.pattern == d.pattern and rule.control_type == d.control_type
+        for d in Config.model_fields["classifier_rules"].default_factory()  # type: ignore[misc]
     )
 
 
@@ -212,6 +239,26 @@ def _extract_control_type(
         inferred = _infer_from_well(well)
         if inferred is not ControlType.SAMPLE:
             return inferred, ClassificationSource.POSITION
+    return ControlType.SAMPLE, ClassificationSource.DEFAULT
+
+
+# The QC types a Lupo writes as the first part of a raw file name.
+_LUPO_FIRST_TOKEN = {
+    "PCD": ControlType.PCD,
+    "PCD96": ControlType.PCD,
+    "PCD384": ControlType.PCD,
+    "SSC": ControlType.SSC,
+    "SSCGOLD": ControlType.SSC0,
+    "SSC-GOLD": ControlType.SSC0,
+    "BLANK": ControlType.BLANK,
+}
+
+
+def _extract_control_type_lupo(stem: str) -> tuple[ControlType, ClassificationSource]:
+    first = stem.split("_", 1)[0].strip().upper()
+    ct = _LUPO_FIRST_TOKEN.get(first)
+    if ct is not None:
+        return ct, ClassificationSource.FILENAME
     return ControlType.SAMPLE, ClassificationSource.DEFAULT
 
 

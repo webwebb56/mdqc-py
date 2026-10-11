@@ -545,6 +545,7 @@ async def settings_cloud_post(request: Request) -> HTMLResponse:
                 api_token=api_token,
                 certificate_thumbprint=prev.cloud.certificate_thumbprint,
                 proxy=prev.cloud.proxy,
+                hold_until_gold_standard=prev.cloud.hold_until_gold_standard,
             )
         }
     )
@@ -651,6 +652,9 @@ async def settings_post(request: Request) -> HTMLResponse:
             classifier_rules=classifier_rules,
             peptide_classes=prev.peptide_classes,
             qc_thresholds=qc_thresholds,
+            # Not on this form yet; carried forward so a save can't reset them.
+            qc_thresholds_by_spd=prev.qc_thresholds_by_spd,
+            classification_mode=prev.classification_mode,
         )
 
         # The running Uploader was built once at startup from a snapshot of

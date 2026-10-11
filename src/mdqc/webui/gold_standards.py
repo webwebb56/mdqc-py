@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from mdqc import gold_standards as gs
+from mdqc import upload_gate
 from mdqc.webui._deps import common_context, get_state, get_templates
 
 router = APIRouter(prefix="/gold-standards")
@@ -51,6 +52,7 @@ async def _page_context(
     spd: int | None,
     saved: bool = False,
     error: str | None = None,
+    released: int | None = None,
 ) -> dict[str, Any]:
     state = get_state(request)
     cfg = state.cfg
@@ -58,14 +60,30 @@ async def _page_context(
 
     runs = gs.list_ssc0_runs(instrument_id, spd) if instrument_id else []
     active = gs.get_active_baseline(instrument_id, spd) if instrument_id else None
-    default_checked = (
-        set(active["source_run_ids"]) if active else {r["run_id"] for r in runs}
+    # Runs that arrived marked as gold standards are the ones to tick: that is
+    # what the operator came here to save.
+    marked = set(upload_gate.gold_run_ids(instrument_id, spd)) if instrument_id else set()
+    known = {r["run_id"] for r in runs}
+    if marked & known:
+        default_checked = marked & known
+    else:
+        default_checked = (
+            set(active["source_run_ids"]) if active else known
+        )
+    gate_reason = (
+        upload_gate.hold_reason(instrument_id, spd)
+        if instrument_id and upload_gate.enabled(cfg) else None
     )
+    held_here = sum(
+        1 for _p, d in state.spool.held_payloads()
+        if (d.get("run") or {}).get("instrument_id") == instrument_id
+        and (d.get("run") or {}).get("spd") == spd
+    ) if getattr(state, "spool", None) is not None and instrument_id else 0
 
     # The heatmap shades against the same warn/fail percentages that decide a
     # run's payload verdict. Two sets of numbers for the same judgement is how
     # a page ends up disagreeing with the verdict it sits next to.
-    th = cfg.qc_thresholds
+    th = cfg.thresholds_for(spd)
     ctx.update(
         {
             "instruments": _instrument_ids(cfg),
@@ -82,6 +100,11 @@ async def _page_context(
             "rt_dev_pct_max": th.rt_deviation_pct_max,
             "saved": saved,
             "error": error,
+            "gate_enabled": upload_gate.enabled(cfg),
+            "gate_reason": gate_reason,
+            "gate_reason_text": upload_gate.REASON_TEXT.get(gate_reason or "", ""),
+            "gate_held_count": held_here,
+            "released": released,
         }
     )
     return ctx
@@ -154,9 +177,41 @@ async def gold_standards_save(request: Request) -> HTMLResponse:
         gs.save_baseline(instrument_id, spd, run_ids, label, cfg.peptide_classes)
         saved = True
 
+    # A new baseline is what held runs were waiting for: re-score them
+    # against it and let them upload.
+    released: int | None = None
+    if saved and getattr(state, "spool", None) is not None:
+        released = upload_gate.release(cfg, state.spool, instrument_id, spd, rescore=True)
+
     templates = get_templates(request)
-    ctx = await _page_context(request, instrument_id, spd, saved=saved, error=error)
+    ctx = await _page_context(
+        request, instrument_id, spd, saved=saved, error=error, released=released
+    )
     return templates.TemplateResponse(request, "gold_standards/index.html", ctx)
+
+
+@router.post("/gate/pause", response_class=HTMLResponse)
+async def gold_standards_gate_pause(request: Request) -> HTMLResponse:
+    """Hold uploads while a new baseline is set — for gold-standard runs that
+    arrived without their marker, which the agent cannot recognise itself."""
+    form = await request.form()
+    instrument_id = str(form.get("instrument_id") or "") or None
+    spd = _parse_spd(form.get("spd"))
+    upload_gate.pause(instrument_id, spd)
+    ctx = await _page_context(request, instrument_id, spd)
+    return get_templates(request).TemplateResponse(request, "gold_standards/index.html", ctx)
+
+
+@router.post("/gate/release", response_class=HTMLResponse)
+async def gold_standards_gate_release(request: Request) -> HTMLResponse:
+    """Upload the held runs as they are, without saving a new baseline."""
+    state = get_state(request)
+    form = await request.form()
+    instrument_id = str(form.get("instrument_id") or "") or None
+    spd = _parse_spd(form.get("spd"))
+    released = upload_gate.release(state.cfg, state.spool, instrument_id, spd, rescore=False)
+    ctx = await _page_context(request, instrument_id, spd, released=released)
+    return get_templates(request).TemplateResponse(request, "gold_standards/index.html", ctx)
 
 
 __all__ = ["router"]

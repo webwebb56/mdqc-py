@@ -58,6 +58,11 @@ class CloudConfig(BaseModel):
     api_token: str | None = None
     certificate_thumbprint: str | None = None
     proxy: str | None = None
+    # Hold an instrument's uploads at an SPD until it has a gold standard, and
+    # again while new gold-standard runs are waiting to be saved as one. Held
+    # runs are re-scored against the new baseline before they upload, so
+    # nothing reaches the platform compared against the wrong reference.
+    hold_until_gold_standard: bool = True
 
     @field_validator("endpoint")
     @classmethod
@@ -372,6 +377,30 @@ class ClassifierRule(BaseModel):
         return v.strip()
 
 
+def default_peptide_classes() -> list[PeptideClassRule]:
+    """Classes for the Evosep diagnostic panel, matched on Skyline's Protein column.
+
+    Without a digest_efficiency rule digest efficiency is never calculated.
+    The pair's protein is spelled two ways in templates in the field —
+    "Miss-cleavage_pair" in the vendor's current report, "Miss-clevage_pair"
+    in an earlier one — and a rule only matches its own spelling, so both are
+    covered.
+    """
+    return [
+        PeptideClassRule(
+            protein_name="Non_reactive_Targets", label="Non-reactive targets", purpose="recovery"
+        ),
+        PeptideClassRule(
+            protein_name="Miss-cleavage_pair", label="Miss-cleavage pair",
+            purpose="digest_efficiency",
+        ),
+        PeptideClassRule(
+            protein_name="Miss-clevage_pair", label="Miss-cleavage pair",
+            purpose="digest_efficiency",
+        ),
+    ]
+
+
 class InstrumentConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -414,8 +443,63 @@ class Config(BaseModel):
             ClassifierRule(pattern="BLK",         control_type="BLANK",  notes="Blank (short form)"),
         ]
     )
-    peptide_classes: list[PeptideClassRule] = Field(default_factory=list)
+    peptide_classes: list[PeptideClassRule] = Field(default_factory=lambda: default_peptide_classes())
     qc_thresholds: QcThresholdsConfig = Field(default_factory=QcThresholdsConfig)
+    # Per-SPD overrides of individual thresholds, keyed by SPD:
+    #   [qc_thresholds_by_spd.500]
+    #   rt_deviation_pct_max = 1.0
+    # Anything not overridden comes from [qc_thresholds]. A 500 SPD gradient is
+    # under half the length of a 200 SPD one, so a retention-time tolerance
+    # that suits 200 SPD is too loose there.
+    qc_thresholds_by_spd: dict[int, dict[str, float]] = Field(default_factory=dict)
+    # "lenient" recognises a control-type marker anywhere in a filename,
+    # including every pre-PCD spelling. "lupo" recognises one only as the first
+    # part of the name, where the Lupo writes it — so a customer sample that
+    # happens to contain PC or SSC can't be taken for a QC run. Custom
+    # classifier_rules apply in both modes.
+    classification_mode: Literal["lenient", "lupo"] = "lenient"
+
+    @field_validator("peptide_classes")
+    @classmethod
+    def _peptide_classes_default_when_empty(
+        cls, v: list[PeptideClassRule]
+    ) -> list[PeptideClassRule]:
+        # Every Settings save before 1.2 wrote `peptide_classes = []`, so an
+        # empty list means "never configured", not "configured to nothing".
+        # The defaults only match two protein names; for any other panel they
+        # do nothing.
+        return v or default_peptide_classes()
+
+    @field_validator("qc_thresholds_by_spd")
+    @classmethod
+    def _known_threshold_fields(
+        cls, v: dict[int, dict[str, float]]
+    ) -> dict[int, dict[str, float]]:
+        for spd, overrides in v.items():
+            unknown = sorted(set(overrides) - set(QC_THRESHOLD_FIELDS))
+            if unknown:
+                raise ValueError(
+                    f"qc_thresholds_by_spd.{spd}: unknown threshold(s) {unknown}; "
+                    f"valid names are {list(QC_THRESHOLD_FIELDS)}"
+                )
+        return v
+
+    @model_validator(mode="after")
+    def _per_spd_thresholds_are_coherent(self) -> Config:
+        # Build each merged set now, so an override that makes warn exceed
+        # fail is rejected at load rather than on the first run at that SPD.
+        for spd in self.qc_thresholds_by_spd:
+            self.thresholds_for(spd)
+        return self
+
+    def thresholds_for(self, spd: int | None) -> QcThresholdsConfig:
+        """The thresholds that apply at this SPD: global values plus overrides."""
+        overrides = self.qc_thresholds_by_spd.get(spd) if spd is not None else None
+        if not overrides:
+            return self.qc_thresholds
+        merged = self.qc_thresholds.model_dump()
+        merged.update(overrides)
+        return QcThresholdsConfig(**merged)
 
     # ─── Cross-field validation ─────────────────────────────────────────────
 

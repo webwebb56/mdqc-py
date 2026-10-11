@@ -72,9 +72,23 @@ starting the agent — extraction will fail on every file otherwise.
 
 ## 3. Install the agent
 
-### Option A — into its own virtual environment (recommended for operators)
+### Option A — the install script (recommended for operators)
 
-In **PowerShell**, with Python 3.11 or newer installed (§2):
+With Python 3.11 or newer installed (§2), from the folder holding `install.ps1`
+(it ships in the repository's `scripts\` folder):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+It finds a suitable Python, creates or upgrades the environment at
+`C:\MassDynamics\mdqc`, installs the pinned release, checks the installed
+version, and runs `mdqc doctor`. Re-running it upgrades in place and never
+touches an existing `config.toml`. Add `-Service -NssmPath <path to nssm.exe>`
+to register and start the Windows service with the same settings as the
+installer; `-Version` picks another release.
+
+The same thing by hand:
 
 ```powershell
 py -3 -m venv C:\MassDynamics\mdqc
@@ -192,21 +206,28 @@ template = "QC_Method.sky"
 # method_name and lc_column are reserved: the payload carries them, but the
 # agent has no source for either yet, so both are always null.
 
-# Peptide classes — map the Skyline Protein column to a purpose. The
-# miss-cleavage pair drives the digest-efficiency % in the payload and is
-# excluded from target recovery (the 1-miss peptide is often below LOQ, so
-# counting it would drag recovery down). Match the exact Protein names in
-# your .skyr.
-[[peptide_classes]]
-protein_name = "Non_reactive_Targets"
-label = "Non-reactive targets"
-purpose = "recovery"
+# Peptide classes — map the Skyline Protein column to a purpose. With none
+# configured, the agent uses the Evosep panel's: Non_reactive_Targets
+# (recovery) and the miss-cleavage pair (digest efficiency, which needs this
+# rule to be calculated at all) under both spellings found in templates,
+# Miss-cleavage_pair and Miss-clevage_pair. Configure your own only for a different panel;
+# protein_name must match the Protein column, so copy it from the .skyr export.
+# [[peptide_classes]]
+# protein_name = "My_Targets"                               # <-- EDIT
+# label = "My targets"
+# purpose = "recovery"
 
-[[peptide_classes]]
-protein_name = "Miss-clevage_pair"                           # <-- EDIT (your exact Protein name)
-label = "Miss-cleavage pair"
-purpose = "digest_efficiency"
-exclude_from_recovery = true
+# Per-SPD thresholds — override any [qc_thresholds] value at one SPD. A 500 SPD
+# gradient is under half the length of a 200 SPD one, so a retention-time
+# tolerance that suits 200 SPD is too loose there. Anything not listed is
+# inherited.
+# [qc_thresholds_by_spd.500]
+# rt_deviation_pct_max = 1.0
+
+# Lupo mode — only a QC type at the very start of the name (PCD96_…, SSC_…,
+# SSCGOLD_…) counts, and wells never imply one. Use it once the Lupo names
+# the files, so a customer sample can't be taken for a QC run.
+# classification_mode = "lupo"
 ```
 
 > **File encoding matters.** Save as **plain UTF-8 (no BOM)**. Notepad's
@@ -246,6 +267,10 @@ C:\MassDynamics\mdqc\Scripts\mdqc classify PCD96_2026-09-23_200SPD_S00572_r01.ra
 It uses your `config.toml` rules as the agent does, and prints the type,
 kit, SPD and LC serial it found.
 
+When the Lupo writes the file names, set `classification_mode = "lupo"` (§4b).
+Then only the first part of a name decides its type — `SSCGOLD` for
+gold-standard runs — and customers must not start a sample name with a QC type.
+
 ## 5. Run the agent
 
 In a PowerShell window:
@@ -277,8 +302,19 @@ visible before you save.
 The baseline is stored locally per (instrument, SPD) under
 `gold_standards\` (see §11). From then on, every PCD / SSC payload
 carries `baseline_context` and `comparison_metrics`: per-peptide ratios
-against that baseline plus a peak-area verdict. Runs acquired *before* a
-baseline exists keep their measurements but carry no verdict.
+against that baseline plus a peak-area verdict.
+
+**Uploads wait for the gold standard.** With cloud upload configured, an
+instrument's runs at an SPD are held on the PC — not uploaded — until a
+baseline exists for it, and again whenever gold-standard runs (`SSCGOLD`, or
+the older `SSC0`) arrive, until they are saved as the new baseline. Every page
+shows a red banner while anything is held. Saving the baseline re-scores the
+held runs against it and uploads them, so nothing reaches the platform compared
+against the wrong reference. Two buttons on the Gold standards page cover the
+exceptions: **Pause uploads for a new baseline**, for gold-standard runs that
+weren't marked as such, and **Upload as they are**, to release held runs
+without a new baseline. To turn the hold off entirely, set
+`hold_until_gold_standard = false` under `[cloud]`.
 
 ---
 

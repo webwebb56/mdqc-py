@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from mdqc import __version__ as _agent_version
+from mdqc import upload_gate
 from mdqc.activity_log import ActivityEntry, ActivityLog
 from mdqc.classifier import classify_file
 from mdqc.config import load_or_exit, paths
@@ -504,7 +505,9 @@ async def _build_state(cfg: Config) -> AppState:
                 {"path": str(path), "instrument_id": instrument_id},
             )
 
-            classification = classify_file(path, rules=state.cfg.classifier_rules)
+            classification = classify_file(
+                path, rules=state.cfg.classifier_rules, mode=state.cfg.classification_mode
+            )
             if instrument_id is not None:
                 classification.instrument_id = instrument_id
 
@@ -549,13 +552,20 @@ async def _build_state(cfg: Config) -> AppState:
             # None) until an engineer saves a baseline on the Gold Standards
             # page, in which case the payload carries absolute values only.
             baseline_context, comparison_metrics = build_payload_comparison(
-                classification, extraction_result, state.cfg.qc_thresholds
+                classification, extraction_result,
+                state.cfg.thresholds_for(classification.spd),
+            )
+            # Held until this instrument's gold standard is in place; saving
+            # the baseline re-scores and releases it (see upload_gate).
+            held = upload_gate.should_hold(
+                state.cfg, classification, str(extraction_result.run_id)
             )
             spool_path = state.spool.enqueue(
                 classification,
                 extraction_result,
                 baseline_context=baseline_context,
                 comparison_metrics=comparison_metrics,
+                held=held,
             )
             record_ssc0_run(classification, extraction_result)
 

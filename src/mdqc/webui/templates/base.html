@@ -21,7 +21,11 @@
         } catch (e) {}
       })();
     </script>
-  </head>
+    <style>
+    .gate-banner { padding:0.55rem 0.8rem; margin:0 0 1rem; font-size:0.9em; background:#fdf0f0; border:1px solid #b42318; color:#b42318; }
+    .gate-banner a { color:inherit; font-weight:600; }
+  </style>
+</head>
   <body>
     <header class="topbar">
       <a href="/" class="brand">
@@ -41,6 +45,13 @@
       </nav>
     </header>
     <main>
+      {% for h in upload_gate_held %}
+      <div class="banner bad gate-banner">
+        &#9888; Uploads paused for <strong>{{ h.instrument_id }}</strong>{% if h.spd %} at {{ h.spd }} SPD{% endif %}:
+        {{ h.count }} run{{ "s" if h.count != 1 }} waiting because {{ h.reason_text }}.
+        <a href="/gold-standards?instrument={{ h.instrument_id }}{% if h.spd %}&amp;spd={{ h.spd }}{% endif %}">Set the gold standard</a>
+      </div>
+      {% endfor %}
       {% block content %}{% endblock %}
     </main>
     <footer>

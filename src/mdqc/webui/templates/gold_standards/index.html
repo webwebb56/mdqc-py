@@ -18,6 +18,8 @@
   .banner { padding:0.5rem 0.75rem; margin-bottom:1rem; font-size:0.9em; }
   .banner.ok  { background:#eef8ee; border:1px solid var(--good); color:var(--good); }
   .banner.bad { background:#fdf0f0; border:1px solid var(--bad);  color:var(--bad); }
+  .upload-gate { display:flex; gap:0.75rem; align-items:center; justify-content:space-between; padding:0.5rem 0.75rem; margin:0.5rem 0 1rem; font-size:0.9em; border:1px solid var(--rule, #ddd); }
+  .upload-gate.held { background:#fdf0f0; border-color:var(--bad); }
 
   .baseline-chip {
     display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0.9rem;
@@ -78,7 +80,8 @@
   {% endif %}
 </div>
 
-{% if saved %}<div class="banner ok">&#10003; Baseline saved and set active.</div>{% endif %}
+{% if saved %}<div class="banner ok">&#10003; Baseline saved and set active.{% if released %} {{ released }} held run{{ "s" if released != 1 }} re-scored against it and released for upload.{% endif %}</div>{% endif %}
+{% if released and not saved %}<div class="banner ok">&#10003; {{ released }} held run{{ "s" if released != 1 }} released for upload as {{ "they were" if released != 1 else "it was" }}.</div>{% endif %}
 {% if error %}<div class="banner bad">&#10007; {{ error }}</div>{% endif %}
 
 {% if not instrument_id %}
@@ -148,6 +151,29 @@
 <div class="baseline-chip none">
   <span class="dot">&#9679;</span>
   <span>No baseline saved yet for {{ spd }} SPD &mdash; select representative runs below and save.</span>
+</div>
+{% endif %}
+
+{% if gate_enabled %}
+<div class="upload-gate {% if gate_reason %}held{% else %}open{% endif %}">
+  {% if gate_reason %}
+  <span><strong>Uploads paused</strong> for {{ instrument_id }} at {{ spd }} SPD &mdash; {{ gate_reason_text }}.
+  {{ gate_held_count }} run{{ "s" if gate_held_count != 1 }} waiting. Saving a baseline re-scores them against it and uploads them.</span>
+  <form method="post" action="/gold-standards/gate/release" style="display:inline"
+        onsubmit="return confirm('Upload the held runs as they are, without a new baseline?');">
+    <input type="hidden" name="instrument_id" value="{{ instrument_id }}">
+    <input type="hidden" name="spd" value="{{ spd }}">
+    <button type="submit" class="secondary">Upload as they are</button>
+  </form>
+  {% else %}
+  <span>Uploads running for {{ instrument_id }} at {{ spd }} SPD. Setting a new baseline from runs that
+  weren't marked as gold standards? Pause first, so nothing uploads against the old one.</span>
+  <form method="post" action="/gold-standards/gate/pause" style="display:inline">
+    <input type="hidden" name="instrument_id" value="{{ instrument_id }}">
+    <input type="hidden" name="spd" value="{{ spd }}">
+    <button type="submit" class="secondary">Pause uploads for a new baseline</button>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 

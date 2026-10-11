@@ -495,6 +495,19 @@ def compute_comparison_metrics(
     }
 
 
+def baseline_context(baseline: dict[str, Any]) -> dict[str, Any]:
+    """The `baseline_context` block a payload carries for this baseline."""
+    return {
+        "baseline_id": baseline.get("baseline_id"),
+        "label": baseline.get("label"),
+        "created_at": baseline.get("created_at"),
+        "instrument_id": baseline.get("instrument_id"),
+        "spd": baseline.get("spd"),
+        "source_run_count": len(baseline.get("source_run_ids", [])),
+        "per_peptide": baseline.get("per_peptide", {}),
+    }
+
+
 def build_payload_comparison(
     classification: RunClassification,
     extraction: ExtractionResult,
@@ -513,20 +526,11 @@ def build_payload_comparison(
         baseline = get_active_baseline(classification.instrument_id, classification.spd)
         if baseline is None:
             return None, None
-        context = {
-            "baseline_id": baseline.get("baseline_id"),
-            "label": baseline.get("label"),
-            "created_at": baseline.get("created_at"),
-            "instrument_id": baseline.get("instrument_id"),
-            "spd": baseline.get("spd"),
-            "source_run_count": len(baseline.get("source_run_ids", [])),
-            "per_peptide": baseline.get("per_peptide", {}),
-        }
         metrics = compute_comparison_metrics(
             extraction.target_metrics, baseline, thresholds,
             control_type=classification.control_type,
         )
-        return context, metrics
+        return baseline_context(baseline), metrics
     except Exception as exc:  # enrichment must not fail the run
         log.warning("baseline_comparison_failed", extra={"error": str(exc)})
         return None, None

@@ -1409,3 +1409,69 @@ def test_gold_standards_selection_basis_is_the_median(
     assert 'value="mean"' not in body
     assert "(value - st.areaMedian) / st.areaMedian" in body
     assert "hasBaseline ? 'gold' : 'median'" in body
+
+
+# ─── Upload gate in the UI ───────────────────────────────────────────────────
+
+
+def _held_run(state: _FakeAppState, instrument_id: str = "qe-test", spd: int = 200) -> Path:
+    classification = RunClassification(
+        control_type=ControlType.SSC, well_position=None, instrument_id=instrument_id,
+        plate_id=None, confidence=Confidence.HIGH, source=ClassificationSource.FILENAME, spd=spd,
+    )
+    extraction = ExtractionResult(
+        run_id=uuid4(),
+        target_metrics=[TargetMetric(target_id="PEPA", peptide_sequence="PEPA",
+                                     protein_name="Targets", peak_area=1000.0, retention_time=5.0)],
+        run_metrics=RunMetrics(targets_found=1, targets_expected=1, target_recovery_pct=100.0),
+    )
+    return state.spool.enqueue(classification, extraction, held=True)
+
+
+def test_every_page_says_when_uploads_are_paused(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    _held_run(state_with_instruments)
+    client = _client(_build_app(state_with_instruments))
+    for page in ("/dashboard", "/settings", "/gold-standards"):
+        body = client.get(page).text
+        assert "Uploads paused for <strong>qe-test</strong> at 200 SPD" in body, page
+        assert "no gold standard has been saved yet" in body
+
+
+def test_no_banner_when_nothing_is_held(state_with_instruments: _FakeAppState) -> None:
+    client = _client(_build_app(state_with_instruments))
+    assert "Uploads paused" not in client.get("/dashboard").text
+
+
+def test_saving_a_baseline_releases_the_held_runs(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    gold = _seed_ssc0_run()
+    held = _held_run(state_with_instruments)
+    client = _client(_build_app(state_with_instruments))
+    response = client.post(
+        "/gold-standards/save",
+        data={"instrument_id": "qe-test", "spd": "200", "label": "gold", "run_id": [gold]},
+    )
+    assert "1 held run re-scored against it and released for upload" in response.text
+    assert not held.exists()
+    assert (state_with_instruments.spool.pending_dir / held.name).exists()
+    assert "Uploads paused" not in response.text
+
+
+def test_gate_can_be_paused_and_released_from_the_page(
+    state_with_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    gold = _seed_ssc0_run()
+    client = _client(_build_app(state_with_instruments))
+    client.post("/gold-standards/save",
+                data={"instrument_id": "qe-test", "spd": "200", "label": "g", "run_id": [gold]})
+
+    page = client.post("/gold-standards/gate/pause", data={"instrument_id": "qe-test", "spd": "200"})
+    assert "paused while a new baseline is set" in page.text
+
+    _held_run(state_with_instruments)
+    page = client.post("/gold-standards/gate/release",
+                       data={"instrument_id": "qe-test", "spd": "200"})
+    assert "1 held run released for upload as it was" in page.text

@@ -19,14 +19,16 @@ def classify_cmd(
     # a preview that ignored them could approve a naming scheme the running
     # agent then classifies differently.
     rules = None
+    mode = "lenient"
     rules_used = "built-in markers only (no config.toml found)"
     try:
-        rules = load_config(strict_cert_guard=False).classifier_rules
-        rules_used = f"config.toml rules ({len(rules)}), then built-in markers"
+        cfg = load_config(strict_cert_guard=False)
+        rules, mode = cfg.classifier_rules, cfg.classification_mode
+        rules_used = f"config.toml rules ({len(rules)}), then built-in markers ({mode} mode)"
     except Exception:  # no config, or one that doesn't validate: preview without it
         pass
 
-    result = classify_file(path, rules=rules)
+    result = classify_file(path, rules=rules, mode=mode)
     value = result.control_type.value
     label = CONTROL_TYPE_LABELS.get(value, value)
     name = label.split(" — ", 1)[1] if " — " in label else ""
