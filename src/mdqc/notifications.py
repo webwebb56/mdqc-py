@@ -1,7 +1,7 @@
 """Toast notifications for the tray process.
 
-The Notifier is process-agnostic: it renders Windows toasts when winsdk is
-available, and degrades to log lines otherwise. The
+The Notifier is process-agnostic: it renders Windows toasts when winrt (or
+the older winsdk) is available, and degrades to log lines otherwise. The
 *service* must never instantiate this — Session 0 toasts are silently dropped.
 The service should publish events on its SSE stream and let the tray decide.
 """
@@ -23,18 +23,29 @@ _WINSDK_AVAILABLE = False
 _winsdk_xml: Any = None
 _winsdk_notifications: Any = None
 
-try:
-    if sys.platform == "win32":
-        from winsdk.windows.data.xml import dom as _winsdk_xml  # type: ignore[import-not-found]
-        from winsdk.windows.ui import (
+if sys.platform == "win32":
+    # winrt first: it has wheels for every Python the agent supports. winsdk
+    # is the same projection under its old name and stops at 3.12; it is kept
+    # only for environments installed before the switch.
+    try:
+        from winrt.windows.data.xml import dom as _winsdk_xml  # type: ignore[import-not-found]
+        from winrt.windows.ui import (
             notifications as _winsdk_notifications,  # type: ignore[import-not-found]
         )
 
         _WINSDK_AVAILABLE = True
-except Exception:
-    _WINSDK_AVAILABLE = False
-    _winsdk_xml = None
-    _winsdk_notifications = None
+    except Exception:
+        try:
+            from winsdk.windows.data.xml import dom as _winsdk_xml  # type: ignore[import-not-found]
+            from winsdk.windows.ui import (
+                notifications as _winsdk_notifications,  # type: ignore[import-not-found]
+            )
+
+            _WINSDK_AVAILABLE = True
+        except Exception:
+            _WINSDK_AVAILABLE = False
+            _winsdk_xml = None
+            _winsdk_notifications = None
 
 
 def _build_toast_xml(title: str, body: str, *, sound: bool) -> str:
@@ -72,8 +83,11 @@ class Notifier:
             xml = _winsdk_xml.XmlDocument()
             xml.load_xml(_build_toast_xml(title, body, sound=sound))
             toast = _winsdk_notifications.ToastNotification(xml)
-            notifier = _winsdk_notifications.ToastNotificationManager.create_toast_notifier(
-                self.aumid
+            manager = _winsdk_notifications.ToastNotificationManager
+            # winrt names the app-id overload separately; winsdk overloads one name.
+            create = getattr(manager, "create_toast_notifier_with_id", None)
+            notifier = (
+                create(self.aumid) if create else manager.create_toast_notifier(self.aumid)
             )
             notifier.show(toast)
         except Exception as exc:

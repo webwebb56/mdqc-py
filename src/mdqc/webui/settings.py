@@ -271,6 +271,10 @@ def _close_uploader_later(old: Any, delay_s: float = 5.0) -> None:
         asyncio.get_running_loop().create_task(_close())
 
 
+def _watch_specs(cfg: Config) -> list[tuple[str, str, str]]:
+    return [(str(i.watch_path), str(i.vendor), i.file_pattern) for i in cfg.instruments]
+
+
 def _apply_cloud_live(state: Any, cfg: Config) -> bool:
     """Swap the running uploader so a saved token works without a restart.
 
@@ -666,6 +670,15 @@ async def settings_post(request: Request) -> HTMLResponse:
         state.cfg = cfg
         _clear_cloud_status_cache()
         log.info("settings_saved", extra={"path": str(paths.config_path()), "instruments": len(instruments)})
+        if _watch_specs(prev) != _watch_specs(cfg):
+            # The folder watcher is built from the instruments at startup;
+            # without this a new instrument was saved but never watched.
+            try:
+                from mdqc.service.lifecycle import reload_watcher
+
+                await reload_watcher(state)
+            except Exception as exc:
+                log.warning("watcher_reload_failed", extra={"error": str(exc)})
 
     except ValidationError as exc:
         # Surface the rule that was broken, not pydantic's full report — the

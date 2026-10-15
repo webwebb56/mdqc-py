@@ -1,7 +1,7 @@
 """mdqc run — start the agent.
 
 Two modes:
-- --foreground: dev mode, runs everything in one process (also runs the tray UI)
+- --foreground: one process in the user's session (the tray is separate: `mdqc tray`)
 - --service-mode: NSSM-managed, headless, no tray
 """
 

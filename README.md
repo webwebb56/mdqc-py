@@ -45,12 +45,24 @@ core monitoring loop.
 
 ### Install
 
-Windows, PowerShell, with [Python 3.11 or newer](https://www.python.org/downloads/)
-installed. Everything goes in one virtual environment:
+Windows, with [Python 3.11 or newer](https://www.python.org/downloads/)
+installed. In PowerShell, as the user who uses the instrument PC:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/MassDynamics/md-qc/v1.1.0/scripts/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+The script installs into `C:\MassDynamics\mdqc`, makes the agent and its tray
+icon start at login with no window, adds Start-menu shortcuts, and starts it.
+Re-run it to upgrade; `-Uninstall` removes it. Options (a Windows service,
+another release) are in [docs/INSTALL.md](./docs/INSTALL.md#3-install-the-agent).
+
+By hand, everything goes in one virtual environment:
 
 ```powershell
 py -3 -m venv C:\MassDynamics\mdqc
-C:\MassDynamics\mdqc\Scripts\pip install https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.1.0.tar.gz
+C:\MassDynamics\mdqc\Scripts\pip install "mdqc[tray] @ https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.1.0.tar.gz"
 C:\MassDynamics\mdqc\Scripts\mdqc version
 ```
 
@@ -70,13 +82,16 @@ py -3 -m venv .venv
 
 ### Run the agent
 
+Installed with the script, it is already running. Otherwise:
+
 ```powershell
-C:\MassDynamics\mdqc\Scripts\mdqc run --foreground
+C:\MassDynamics\mdqc\Scripts\mdqc start
 ```
 
-Watches the folders configured in `config.toml` and processes every new file.
-The web UI link is printed on the `service_started` line, and the tray icon
-opens the same page.
+starts the agent and tray icon in the background (`mdqc run --foreground`
+runs it in the window instead, for troubleshooting). It watches the folders
+configured in `config.toml` and processes every new file. The tray icon, or
+`mdqc open`, opens the web UI.
 
 For full operator setup — Skyline templates, configuration, recording a
 baseline, troubleshooting — see **[docs/INSTALL.md](./docs/INSTALL.md)**.

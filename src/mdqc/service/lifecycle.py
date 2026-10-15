@@ -138,6 +138,8 @@ class AppState:
     port: int = 0
     app: FastAPI | None = None
     config_path: Path = field(default_factory=paths.config_path)
+    service_mode: bool = False
+    restarting: bool = False
 
 
 def _extract_token(request: Request) -> str | None:
@@ -220,6 +222,19 @@ def build_api(state: AppState) -> FastAPI:
 
     @app.post("/api/restart")
     async def restart_endpoint() -> dict[str, bool]:
+        # As a service, NSSM starts it again. Started at login there is no
+        # supervisor, so the agent relaunches itself once it has stopped.
+        global _relaunch_after_exit
+        state.restarting = True
+        if not state.service_mode:
+            _relaunch_after_exit = True
+        loop = asyncio.get_event_loop()
+        loop.call_later(0.5, state.stop_event.set)
+        return {"ok": True}
+
+    @app.post("/api/shutdown")
+    async def shutdown_endpoint() -> dict[str, bool]:
+        """Stop and stay stopped (the install script uses this to upgrade)."""
         loop = asyncio.get_event_loop()
         loop.call_later(0.5, state.stop_event.set)
         return {"ok": True}
@@ -627,6 +642,31 @@ async def _build_state(cfg: Config) -> AppState:
     return state
 
 
+async def reload_watcher(state: AppState) -> None:
+    """Watch the instruments in state.cfg now, not those at startup.
+
+    Called after Settings saves a change to the instruments; everything else
+    reads state.cfg per run, but the observer was built once at startup.
+    """
+    old = state.observer
+    state.observer = None
+    if old is not None:
+        await asyncio.to_thread(old.stop)
+    new = _build_observer(state, asyncio.get_running_loop())
+    if new is None:
+        return
+    try:
+        new.start()
+    except Exception as exc:
+        # A watch path that doesn't exist yet; Settings shows it as such.
+        log.warning("watcher_reload_failed", extra={"error": str(exc)})
+        with contextlib.suppress(Exception):
+            new.stop()
+        return
+    state.observer = new
+    log.info("watcher_reloaded", extra={"instruments": len(state.cfg.instruments)})
+
+
 def _build_observer(
     state: AppState, loop: asyncio.AbstractEventLoop
 ) -> WatchdogObserver | None:
@@ -706,12 +746,24 @@ async def main_async(*, service_mode: bool) -> int:
     cfg = load_or_exit()
     configure_logging(level=cfg.agent.log_level)
 
+    from mdqc import single_instance
+
+    if not single_instance.acquire(single_instance.AGENT_MUTEX):
+        log.warning("agent_already_running", extra={"service_mode": service_mode})
+        if sys.stderr is not None:
+            print("\n  The MD QC agent is already running on this PC.\n", file=sys.stderr)
+        return 0
+
     state = await _build_state(cfg)
 
+    state.service_mode = service_mode
     state.spool.recover_uploading_to_pending()
     recover_orphans()
 
-    state.token = generate_token()
+    # A restart keeps the previous address and token when it can, so an open
+    # dashboard (and its session cookie) carries on instead of going dead.
+    previous = RuntimeFile().read()
+    state.token = previous.token if previous and previous.token else generate_token()
     app = build_api(state)
     attach_webui(state)
 
@@ -720,7 +772,7 @@ async def main_async(*, service_mode: bool) -> int:
     config = uvicorn.Config(
         app,
         host="127.0.0.1",
-        port=0,
+        port=_reusable_port(previous.port if previous else 0),
         log_level=cfg.agent.log_level if cfg.agent.log_level != "trace" else "debug",
         access_log=False,
         lifespan="on",
@@ -763,8 +815,8 @@ async def main_async(*, service_mode: bool) -> int:
         extra={"port": actual_port, "service_mode": service_mode, "agent_id": state.agent_id},
     )
 
-    if not service_mode:
-        import sys
+    # Under pythonw (started at login with no window) there is no stderr.
+    if not service_mode and sys.stderr is not None:
         print(
             f"\n  Web UI: http://127.0.0.1:{actual_port}/?token={state.token}\n",
             file=sys.stderr,
@@ -811,7 +863,9 @@ async def main_async(*, service_mode: bool) -> int:
         with contextlib.suppress(asyncio.TimeoutError, Exception):
             await asyncio.wait_for(server_task, timeout=SHUTDOWN_GRACE_S)
 
-        runtime_file.clear()
+        # Kept across a restart: the next start reuses its port and token.
+        if not state.restarting:
+            runtime_file.clear()
         log.info("service_stopped")
 
     return exit_code
@@ -833,12 +887,37 @@ def _resolve_port(server: Any) -> int:
     return 0
 
 
+_relaunch_after_exit = False
+
+
+def _reusable_port(port: int) -> int:
+    """`port` if nothing is listening on it, else 0 (any free port)."""
+    if not port:
+        return 0
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            return 0
+    return port
+
+
 def main_blocking(*, service_mode: bool) -> None:
     install_crash_handlers()
     try:
         code = asyncio.run(main_async(service_mode=service_mode))
     except KeyboardInterrupt:
         code = 0
+    if _relaunch_after_exit:
+        from mdqc import single_instance
+        from mdqc.cli.start import _spawn
+
+        # Let go of the one-agent lock first, or the new agent would see this
+        # one still holding it and exit.
+        single_instance.release_all()
+        _spawn("run", "--foreground")
     sys.exit(code)
 
 

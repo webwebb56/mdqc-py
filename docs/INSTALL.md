@@ -74,25 +74,50 @@ starting the agent — extraction will fail on every file otherwise.
 
 ### Option A — the install script (recommended for operators)
 
-With Python 3.11 or newer installed (§2), from the folder holding `install.ps1`
-(it ships in the repository's `scripts\` folder):
+With Python 3.11 or newer installed (§2), download the script for the release
+and run it:
 
 ```powershell
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/MassDynamics/md-qc/v1.1.0/scripts/install.ps1 -OutFile install.ps1
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-It finds a suitable Python, creates or upgrades the environment at
-`C:\MassDynamics\mdqc`, installs the pinned release, checks the installed
-version, and runs `mdqc doctor`. Re-running it upgrades in place and never
-touches an existing `config.toml`. Add `-Service -NssmPath <path to nssm.exe>`
-to register and start the Windows service with the same settings as the
-installer; `-Version` picks another release.
+Run it as the Windows user who uses the instrument PC. It:
 
-The same thing by hand:
+- finds a suitable Python and creates or upgrades the environment at
+  `C:\MassDynamics\mdqc`, with the release and the tray icon
+- checks the installed version and runs `mdqc doctor`
+- creates an empty `config.toml` if there is none, so the agent can start and
+  be set up from the dashboard's Settings page (an existing one is never
+  touched)
+- makes the agent and its tray icon **start at login, with no window**, and
+  adds a *Mass Dynamics QC* Start-menu folder: **MD QC Dashboard**, **MD QC
+  Agent** (starts it again if it was stopped) and **MD QC Diagnostics**
+- starts everything straight away
+
+After that nobody needs PowerShell: the tray icon's menu opens the dashboard,
+settings and diagnostics, and shows Windows notifications. Re-running the
+script upgrades in place: it stops the running agent first (letting it finish
+the file in hand), upgrades, and starts it again.
+
+Options:
+
+| Option | What it does |
+|---|---|
+| `-Service -NssmPath <nssm.exe>` | Run the agent as a Windows service instead, so it starts with Windows before anyone logs in. Needs an elevated PowerShell and [NSSM](https://nssm.cc). The tray icon still starts at login. |
+| `-Version <x.y.z>` | Install another release. |
+| `-Python <path\to\python.exe>` | Use this interpreter instead of the newest 3.11+ the `py` launcher finds. |
+| `-NoStart` | Install and register, but start nothing now. |
+| `-Uninstall` | Stop the agent and remove the environment, startup entry, shortcuts and service. Configuration and results in `C:\ProgramData\MassDynamics\QC` are kept. |
+
+Only one agent runs per PC: a second one, from a shortcut or another
+installation, exits straight away rather than processing every file twice.
+
+The same install by hand (no startup entry or shortcuts; start it as in §5):
 
 ```powershell
 py -3 -m venv C:\MassDynamics\mdqc
-C:\MassDynamics\mdqc\Scripts\pip install https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.1.0.tar.gz
+C:\MassDynamics\mdqc\Scripts\pip install "mdqc[tray] @ https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.1.0.tar.gz"
 ```
 
 Calling the environment's `pip` and `mdqc` by full path means you never have to
@@ -273,13 +298,21 @@ gold-standard runs — and customers must not start a sample name with a QC type
 
 ## 5. Run the agent
 
-In a PowerShell window:
+Installed with the script (§3, Option A), the agent is already running and
+starts by itself at every login. Open the dashboard from the tray icon or
+*Start menu > Mass Dynamics QC > MD QC Dashboard*. If it was stopped,
+*MD QC Agent* in the same folder starts it again, or from PowerShell:
+```powershell
+C:\MassDynamics\mdqc\Scripts\mdqc start
+```
+
+To watch it work instead — for troubleshooting — stop it and run it in a
+PowerShell window:
 ```powershell
 C:\MassDynamics\mdqc\Scripts\mdqc run --foreground
 ```
-You should see a startup line ending with `service_started`. Leave this
-window open — closing it stops the agent. (For an unattended install,
-register it as a Windows Service; see `installer\README.md`.)
+You should see a startup line ending with `service_started` and the web UI
+address. Closing that window stops the agent.
 
 The agent will now process any new `.raw` file dropped into the
 configured `watch_path`. Each file is matched against the stability
@@ -353,11 +386,15 @@ the acquisition. See *Troubleshooting* below.
 - **Activity history**: `C:\ProgramData\MassDynamics\QC\activity_log.json`
 
 ### Stopping the agent cleanly
-- **Ctrl+C** in the PowerShell window where it's running, OR
-- **HTTP shutdown** (from any other shell):
+- **Ctrl+C** in the PowerShell window, if it runs in one, OR
+- from any PowerShell window, ask it to stop (it finishes the file in hand):
   ```powershell
-  python -c "import sys, httpx; sys.path.insert(0,'src'); from mdqc.ipc.runtime import RuntimeFile; from mdqc.config.paths import runtime_file; info = RuntimeFile(path=runtime_file()).read(); httpx.post(f'http://127.0.0.1:{info.port}/api/shutdown', cookies={'mdqc_session': info.token}, timeout=3)"
+  $info = Get-Content C:\ProgramData\MassDynamics\QC\runtime.json | ConvertFrom-Json
+  Invoke-RestMethod -Method Post "http://127.0.0.1:$($info.port)/api/restart?token=$($info.token)"
   ```
+  Run as a Windows service, it is restarted by the service manager; stop the
+  service instead (`Stop-Service MassDynamicsQC`, elevated). Quitting the tray
+  icon closes only the icon, not the agent.
 
 ---
 

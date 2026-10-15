@@ -147,11 +147,15 @@ def ensure_dirs() -> None:
 def bundled_assets_dir() -> Path:
     """Locate bundled assets (Skyline template, icon, report definition).
 
-    When frozen by PyInstaller, assets live under sys._MEIPASS/assets.
-    In dev, they live at ../../assets relative to this file.
+    When frozen by PyInstaller, assets live under sys._MEIPASS/assets. A pip
+    install carries them inside the package as mdqc/_assets. In a source
+    checkout, they live at ../../assets relative to this file.
     """
     if hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / "assets"  # type: ignore[attr-defined]
+    packaged = Path(__file__).resolve().parent.parent / "_assets"
+    if packaged.is_dir():
+        return packaged
     return Path(__file__).resolve().parent.parent.parent.parent / "assets"
 
 

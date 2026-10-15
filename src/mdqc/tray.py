@@ -392,6 +392,11 @@ class TrayApp:
 
     def run(self) -> None:
         configure_logging("info", log_to_console=False)
+        from mdqc import single_instance
+
+        if not single_instance.acquire(single_instance.TRAY_MUTEX):
+            log.info("tray_already_running")
+            return
         info: RuntimeInfo | None
         try:
             info = self.runtime_file.wait_for(self.runtime_poll_timeout_s)

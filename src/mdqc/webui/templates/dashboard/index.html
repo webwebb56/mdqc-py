@@ -66,7 +66,7 @@
 
 <script>
 function confirmRestart() {
-  if (!confirm('Restart the QC agent service?\n\nThe page will become unavailable briefly while it restarts.')) return;
+  if (!confirm('Restart the QC agent service?\n\nThe page will be unavailable for up to a minute while it restarts.')) return;
   const btn = document.getElementById('restart-btn');
   btn.disabled = true;
   btn.textContent = 'Restarting…';
@@ -78,7 +78,9 @@ function confirmRestart() {
         fetch('/api/health')
           .then(r => { if (r.ok) { clearInterval(poll); window.location.reload(); } })
           .catch(() => {});
-        if (Date.now() - start > 30000) {
+        // Stopping can take ~30 s (it lets live connections close) before
+        // the agent comes back on the same address.
+        if (Date.now() - start > 90000) {
           clearInterval(poll);
           btn.textContent = 'Service stopped — restart manually';
         }

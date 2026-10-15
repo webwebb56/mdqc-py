@@ -37,8 +37,8 @@ REQUIRED_WINDOWS = [
 # on them.
 OPTIONAL = [
     ("pystray",                            "[tray]"),
-    ("winsdk.windows.ui.notifications",    "[tray]"),
-    ("winsdk.windows.data.xml.dom",        "[tray]"),
+    ("winrt.windows.ui.notifications",     "[tray]"),
+    ("winrt.windows.data.xml.dom",         "[tray]"),
 ]
 
 

@@ -38,7 +38,8 @@ def configure_logging(
     py_level = _LEVEL_MAP[level]
     handlers: list[logging.Handler] = []
 
-    if log_to_console:
+    # pythonw (the agent started at login with no window) has no stderr.
+    if log_to_console and sys.stderr is not None:
         ch = logging.StreamHandler(sys.stderr)
         ch.setLevel(py_level)
         ch.setFormatter(_ConsoleFormatter())

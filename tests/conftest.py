@@ -48,3 +48,20 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if "windows_only" in item.keywords:
             item.add_marker(skip_win)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_single_instance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give each test its own agent/tray mutex names.
+
+    The real names are PC-wide: a test agent would refuse to start while the
+    developer's own agent runs, and a mutex one test holds (handles live for
+    the process) would block the next test's agent.
+    """
+    import uuid
+
+    from mdqc import single_instance
+
+    tag = uuid.uuid4().hex
+    monkeypatch.setattr(single_instance, "AGENT_MUTEX", f"Local\\MassDynamicsQCTestAgent-{tag}")
+    monkeypatch.setattr(single_instance, "TRAY_MUTEX", f"Local\\MassDynamicsQCTestTray-{tag}")

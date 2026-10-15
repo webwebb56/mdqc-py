@@ -66,7 +66,11 @@ tray = [
     # Install with: pip install mdqc[tray]
     "pystray>=0.19",
     "pillow>=10.2",
-    "winsdk>=1.0.0b10; sys_platform == 'win32'",
+    # Toasts. winrt replaces winsdk, which has no wheels past Python 3.12 and
+    # so needed a C++ compiler to install on 3.13 and 3.14.
+    "winrt-runtime>=3.2; sys_platform == 'win32'",
+    "winrt-Windows.UI.Notifications>=3.2; sys_platform == 'win32'",
+    "winrt-Windows.Data.Xml.Dom>=3.2; sys_platform == 'win32'",
 ]
 dev = [
     "ruff>=0.3",
@@ -98,6 +102,11 @@ Issues = "https://github.com/MassDynamics/md-qc/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mdqc"]
 
+# The tray icon and report definition, for pip installs. Without this a pip
+# install had no assets folder and the tray drew a plain blue square.
+[tool.hatch.build.targets.wheel.force-include]
+"assets" = "mdqc/_assets"
+
 # ─── Tooling ────────────────────────────────────────────────────────────────
 
 [tool.ruff]
@@ -120,7 +129,7 @@ warn_unused_ignores = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["winsdk.*", "win32.*", "pywin32.*", "pystray.*", "watchdog.observers.winapi"]
+module = ["winrt.*", "winsdk.*", "win32.*", "pywin32.*", "pystray.*", "watchdog.observers.winapi"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

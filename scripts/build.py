@@ -18,8 +18,8 @@ BUILD_DIR = PROJECT_ROOT / "build"
 SPEC_PATH = PROJECT_ROOT / "mdqc.spec"
 
 HIDDEN_IMPORTS: list[str] = [
-    "winsdk.windows.ui.notifications",
-    "winsdk.windows.data.xml.dom",
+    "winrt.windows.ui.notifications",
+    "winrt.windows.data.xml.dom",
     "pystray._win32",
     "pystray._darwin",
     "pystray._gtk",

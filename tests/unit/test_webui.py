@@ -1475,3 +1475,45 @@ def test_gate_can_be_paused_and_released_from_the_page(
     page = client.post("/gold-standards/gate/release",
                        data={"instrument_id": "qe-test", "spd": "200"})
     assert "1 held run released for upload as it was" in page.text
+
+
+# ── Settings changes reach the folder watcher ────────────────────────────────
+
+
+@pytest.fixture()
+def watcher_reloads(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    from mdqc.service import lifecycle
+
+    calls: list[int] = []
+
+    async def fake_reload(state: Any) -> None:
+        calls.append(len(state.cfg.instruments))
+
+    monkeypatch.setattr(lifecycle, "reload_watcher", fake_reload)
+    return calls
+
+
+def test_adding_an_instrument_restarts_the_watcher(
+    state_without_instruments: _FakeAppState, tmp_data_dir: Path, tmp_path: Path,
+    watcher_reloads: list[int],
+) -> None:
+    """The watcher was built once at startup: an instrument added on a fresh
+    install was saved but its folder never watched until a restart."""
+    client = _client(_build_app(state_without_instruments))
+    response = client.post(
+        "/settings",
+        data=_base_settings_form(
+            instrument_id_0="NEW-01", vendor_0="thermo", watch_path_0=str(tmp_path),
+            file_pattern_0="*.raw", template_0="QC_Method.sky",
+        ),
+    )
+    assert response.status_code == 200
+    assert watcher_reloads == [1]
+
+
+def test_a_save_that_leaves_instruments_alone_keeps_the_watcher(
+    state_without_instruments: _FakeAppState, tmp_data_dir: Path, watcher_reloads: list[int]
+) -> None:
+    client = _client(_build_app(state_without_instruments))
+    assert client.post("/settings", data=_base_settings_form()).status_code == 200
+    assert watcher_reloads == []
