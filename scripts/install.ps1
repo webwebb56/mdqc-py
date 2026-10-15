@@ -367,6 +367,8 @@ if ($Service) {
 #    shortcuts, and the app id Windows needs to show the agent's notifications.
 Step "Adding startup entry and Start-menu shortcuts"
 RemoveStartup
+# A fresh Windows profile may not have the Run key yet.
+if (-not (Test-Path $RunKey)) { New-Item -Path $RunKey -Force | Out-Null }
 New-ItemProperty -Path $RunKey -Name $RunValue -Value "`"$venvPythonw`" -m mdqc start" -PropertyType String -Force | Out-Null
 New-Item -ItemType Directory -Force -Path $MenuDir | Out-Null
 # Shortcuts need an .ico; the package ships a PNG, and Pillow (a tray
