@@ -45,8 +45,13 @@ core monitoring loop.
 
 ### Install
 
-Windows, with [Python 3.11 or newer](https://www.python.org/downloads/)
-installed. In PowerShell, as the user who uses the instrument PC:
+**Easiest:** download `MDQC-Setup-<version>.exe` from the
+[latest release](https://github.com/MassDynamics/md-qc/releases/latest) and
+double-click it. It includes its own Python and works offline, so it can be
+carried on a USB stick.
+
+**With PowerShell**, if [Python 3.11 or newer](https://www.python.org/downloads/)
+is installed, as the user who uses the instrument PC:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/MassDynamics/md-qc/v1.2.0/scripts/install.ps1 -OutFile install.ps1

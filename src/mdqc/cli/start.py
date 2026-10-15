@@ -63,6 +63,9 @@ def _spawn(*args: str) -> None:
 
 def start_cmd(
     no_tray: bool = typer.Option(False, "--no-tray", help="Start only the agent."),
+    open_dashboard: bool = typer.Option(
+        False, "--open", help="Wait for the agent, then open the dashboard (after install)."
+    ),
 ) -> None:
     """Start the agent and tray icon in the background, if not already running."""
     from mdqc import single_instance
@@ -89,3 +92,22 @@ def start_cmd(
         _spawn("tray")
     if sys.stdout is not None:
         typer.echo(f"Agent: {agent}." + ("" if no_tray else " Tray icon: started."))
+    if open_dashboard:
+        _open_when_ready()
+
+
+def _open_when_ready(timeout_s: float = 60.0) -> None:
+    """Open the dashboard once the agent answers; say so if it never does."""
+    import time
+    import webbrowser
+
+    from mdqc.cli.open_cmd import NOT_RUNNING, _tell, dashboard_url
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        url = dashboard_url()
+        if url is not None:
+            webbrowser.open_new_tab(url)
+            return
+        time.sleep(1)
+    _tell(NOT_RUNNING)

@@ -1,130 +1,66 @@
-# MD QC Agent (Python) — Windows installer
+# MD QC Agent: the Windows setup program
 
-This directory holds the Inno Setup script that produces the Windows installer
-for the Python port of the MD QC Agent. The installer wraps the PyInstaller
-output from `dist/mdqc.exe`, the bundled Skyline assets, and a copy of `nssm.exe`
-into a single `.exe` and registers `MassDynamicsQC` as a Windows service via
-NSSM.
+`MDQC-Setup-<version>.exe` installs MDQC on an instrument PC with no Python, no
+PowerShell and no internet, so it can be carried on a USB stick. CI builds it on
+every run and attaches it to each GitHub release.
 
-## Files
+## What it contains
 
-| Path | Purpose |
+- **python.org's embeddable Python**, the official build signed by the Python
+  Software Foundation, with MDQC and its dependencies installed into it. It's a
+  private copy: it doesn't touch any Python already on the PC, and nothing else
+  uses it. This replaced the earlier PyInstaller executable, whose self-extracting
+  loader antivirus products often flag.
+- **Shortcuts:** a Start-menu folder, *Mass Dynamics QC*, with MD QC Dashboard,
+  MD QC Agent (with the app id Windows needs for notifications) and MD QC
+  Diagnostics.
+- **Startup:** an entry that starts the agent and tray icon at login.
+- **An uninstaller**, listed in *Settings > Apps*.
+
+## What it does
+
+| Step | |
 |---|---|
-| `mdqc.iss` | The Inno Setup script. Compiled by `iscc.exe`. |
-| `nssm.exe` | **Not checked in.** Drop the official `win64/nssm.exe` from the NSSM 2.24 release here before packaging. |
-| `README.md` | This file. |
+| First page | Install for me only (default, no admin rights) or for all users (admin) |
+| Skyline | Warns if Skyline isn't found; installing can continue |
+| Upgrade | Runs `mdqc stop` first, so the agent finishes the file in hand |
+| After install | Writes an empty `config.toml` if there is none, starts the agent and opens the dashboard |
+| Uninstall | Stops the agent and removes the program, shortcuts and startup entry. Configuration and results in `C:\ProgramData\MassDynamics\QC` are kept |
 
-## NSSM dependency
+Silent install for IT: `MDQC-Setup-1.2.1.exe /VERYSILENT /CURRENTUSER` (or
+`/ALLUSERS`). It starts the agent without opening a browser.
 
-The installer registers the agent as a Windows service via [NSSM](https://nssm.cc/),
-the Non-Sucking Service Manager. NSSM is BSD-licensed and ships as a single
-`.exe` — we do not vendor it because the upstream binary is signed.
+## Building it
 
-`scripts/package.py` calls `_verify_nssm()` before invoking `iscc.exe`. The
-preflight rejects the build if any of the following hold:
-
-- `installer/nssm.exe` does not exist
-- `installer/nssm.exe` is zero bytes (no more silent placeholder)
-- `installer/nssm.sha256` exists and its first whitespace-delimited token does
-  not match the SHA-256 of `installer/nssm.exe`
-
-**To prepare for a release build (one-time, per machine):**
-
-1. Download `https://nssm.cc/release/nssm-2.24.zip`.
-2. Verify the SHA-256 against the value published on `nssm.cc` (or against the
-   pinned value in `.github/workflows/ci.yml`).
-3. Extract `nssm-2.24/win64/nssm.exe` and place it at `installer/nssm.exe`
-   (alongside `mdqc.iss`).
-4. Optionally write the file's SHA-256 to `installer/nssm.sha256` so the
-   packaging preflight can detect tampering on subsequent builds:
-
-   ```powershell
-   (Get-FileHash installer\nssm.exe -Algorithm SHA256).Hash.ToLower() | Out-File installer\nssm.sha256 -Encoding ascii
-   ```
-
-CI provisions NSSM the same way: it downloads the zip from the pinned URL,
-asserts the expected SHA-256, extracts `win64/nssm.exe`, then writes the
-binary's SHA-256 to `installer/nssm.sha256` before invoking `package.py`. The
-CI step fails fast if `EXPECTED_NSSM_SHA256` is left as `TODO` so a release
-artifact cannot ship with an unverified NSSM.
-
-## Inno Setup version
-
-Inno Setup **6 or later** is required (the script uses `{commonappdata}` and
-`ArchitecturesInstallIn64BitMode`, both 6.x).
-
-Install from <https://jrsoftware.org/isinfo.php>. The default install location
-on a 64-bit Windows host is `C:\Program Files (x86)\Inno Setup 6\`, which is
-where `scripts/package.py` looks first.
-
-## Build flow
-
-### Dev build (Linux / macOS)
-
-The PyInstaller binary cannot be built on non-Windows for a Windows target —
-PyInstaller is not a cross-compiler. Use a Windows VM (or `windows-latest`
-GitHub runner) for actual installer builds. On Linux/macOS, `scripts/package.py`
-prints a friendly message and exits 0 so the rest of CI continues.
-
-You can still run `python scripts/build.py` on macOS to produce a Unix
-`mdqc` binary for local smoke tests; the installer step will simply skip.
-
-### Release build (Windows)
-
-From a Windows shell with Python 3.12 + the project venv activated:
+Needs Python 3.11+ and [Inno Setup 6](https://jrsoftware.org/isinfo.php).
 
 ```powershell
-pip install -e ".[dev,build]"
-python scripts/build.py --clean
-python scripts/package.py
+pip install ".[build]"
+python scripts/build_installer.py
 ```
 
-That produces:
+The script builds the wheel, downloads the embeddable Python into
+`build\cache`, installs everything into it from ready-built Windows packages
+only, smoke-tests it, and compiles `installer\mdqc.iss` into `dist\`.
+`--stage-only` stops before Inno Setup. To pin the download, set
+`MDQC_EMBED_SHA256`.
 
-- `dist/mdqc.exe`
-- `dist/installer/mdqc-setup-py-v<version>.exe`
+## Signing
 
-The installer is compiled with the version from `pyproject.toml`. To pin a
-different version: `python scripts/package.py --version 0.2.0`.
+The setup program is unsigned until the CI signing step is switched on. Unsigned,
+Windows SmartScreen shows "Windows protected your PC" (*More info > Run anyway*).
 
-### Manual rebuild from a Windows machine
+Signing uses Microsoft's **Azure Artifact Signing** (formerly Trusted Signing).
+Once the company's identity validation and certificate profile are in place:
 
-If you want to skip `package.py` and run Inno Setup by hand:
+1. In Azure, create an app registration for the GitHub build. Give it the
+   **Artifact Signing Certificate Profile Signer** role on the signing account,
+   and nothing else, then create a client secret for it.
+2. In GitHub, go to *md-qc > Settings > Secrets and variables > Actions* and add:
+   - Secrets: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`
+   - Variables: `SIGNING_ENDPOINT` (e.g. `https://eus.codesigning.azure.net/`),
+     `SIGNING_ACCOUNT`, `SIGNING_PROFILE`
+3. The next build signs the setup program and timestamps it.
 
-```powershell
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=0.1.0 installer\mdqc.iss
-```
-
-## Why NSSM (and not native pywin32 service)
-
-The Rust agent registered itself as a service via the `windows-service` crate,
-which calls `RegisterServiceCtrlHandlerExW` directly. The Python equivalent
-would be `pywin32`'s `win32serviceutil.ServiceFramework`, plus
-`pywin32_postinstall` for registration, plus `sc.exe failure` for recovery
-actions.
-
-We use NSSM instead because:
-
-- **Fewer moving parts.** NSSM is a single signed binary that translates a
-  service start request into a child-process exec of `mdqc.exe run --service-mode`.
-  The Python agent does not need to know it is running as a service; it just
-  handles `SIGTERM` (which NSSM sends on stop).
-- **Recovery is config, not code.** `nssm set ... AppExit Default Restart`,
-  `AppRestartDelay`, `AppThrottle` — all of this is set once in the installer
-  and lives in the registry. With pywin32 we would invoke `sc.exe failure` and
-  manage the same state via `subprocess`.
-- **Service-mode UX matches a normal CLI.** `mdqc.exe run --service-mode` is the
-  same code path as `mdqc.exe run --foreground` on a developer's macOS box,
-  with only the logging destination differing. There is no service-mode-only
-  bootstrap to debug.
-- **NSSM is BSD-licensed and widely accepted.** Production Windows shops
-  generally permit it. If a customer's IT review explicitly blocks third-party
-  service wrappers, a native pywin32 service is the fallback.
-
-If you ever need to switch off NSSM, the changes are confined to:
-
-1. This `README.md` and `mdqc.iss` `[Run]` / `[UninstallRun]` sections.
-2. A new pywin32 service entry point in `src/mdqc/service/` that invokes
-   `mdqc.service.lifecycle.main_blocking(service_mode=True)`.
-
-The agent's runtime behaviour does not change.
+The uninstaller inside it is signed only when signing runs locally through
+Inno Setup (`build_installer.py --sign "<signtool command> $f"`).

@@ -38,6 +38,7 @@ def _register() -> None:
     from mdqc.cli import selfcheck as _selfcheck
     from mdqc.cli import start as _start
     from mdqc.cli import status as _status
+    from mdqc.cli import stop as _stop
     from mdqc.cli import tray as _tray
 
     app.command("doctor")(_doctor.doctor_cmd)
@@ -47,6 +48,7 @@ def _register() -> None:
     app.command("tray")(_tray.tray_cmd)
     app.command("open")(_open.open_cmd)
     app.command("start")(_start.start_cmd)
+    app.command("stop")(_stop.stop_cmd)
     app.command("selfcheck")(_selfcheck.selfcheck_cmd)
     app.add_typer(_config_cmd.config_app, name="config")
     app.add_typer(_failed.failed_app, name="failed")

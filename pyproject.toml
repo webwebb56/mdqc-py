@@ -83,12 +83,8 @@ dev = [
     "tomli-w>=1.0",
 ]
 build = [
-    "pyinstaller>=6.5",
-    # Pillow lets PyInstaller convert assets/icon.png -> .ico automatically
-    # when bundling on Windows. Without it the build fails with:
-    # "Received icon image '...icon.png' which exists but is not in the
-    #  correct format. On this platform, only ('exe', 'ico') images may
-    #  be used as icons."
+    # scripts/build_installer.py: converts assets/icon.png to the .ico the
+    # setup program and its shortcuts use.
     "pillow>=10.2",
 ]
 

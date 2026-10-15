@@ -109,8 +109,10 @@ jobs:
           if (Test-Path "$env:RUNNER_TEMP\mdqc") { Write-Error "environment left behind"; exit 1 }
           if (-not (Test-Path "$env:MDQC_DATA_DIR\config.toml")) { Write-Error "data folder not kept"; exit 1 }
 
-  build-exe:
-    name: Build Windows exe
+  build-installer:
+    # MDQC-Setup-<version>.exe: MDQC with its own Python, for USB installs.
+    # Built, installed, checked and uninstalled on a clean runner.
+    name: Build setup program
     needs: test
     runs-on: windows-latest
     steps:
@@ -119,43 +121,78 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
-          cache: pip
+          python-version: "3.13"
 
-      - name: Install dev + build dependencies
+      - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,build]"
+          pip install ".[build]"
 
-      - name: Read version from pyproject.toml
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Read version
         id: version
         shell: pwsh
         run: |
           $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.*)"').Matches.Groups[1].Value
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding ascii
 
-      - name: Build PyInstaller binary
-        run: python scripts/build.py --clean
+      - name: Build
+        run: python scripts/build_installer.py
 
-      - name: Run selfcheck on built binary
-        shell: pwsh
-        run: dist\mdqc.exe selfcheck
+      # Signing turns on once the repository variable SIGNING_ACCOUNT is set
+      # (with SIGNING_ENDPOINT, SIGNING_PROFILE and the AZURE_* secrets); see
+      # installer/README.md. Until then the setup program is built unsigned.
+      - name: Sign
+        if: ${{ vars.SIGNING_ACCOUNT != '' }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\dist\MDQC-Setup-${{ steps.version.outputs.version }}.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
 
-      - name: Rename exe to include version
+      - name: Install silently, check it runs, uninstall
         shell: pwsh
         run: |
-          Rename-Item -Path dist\mdqc.exe -NewName "mdqc-${{ steps.version.outputs.version }}.exe"
+          "MDQC_DATA_DIR=$env:RUNNER_TEMP\mdqc-data" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          $env:MDQC_DATA_DIR = "$env:RUNNER_TEMP\mdqc-data"
+          $setup = "dist\MDQC-Setup-${{ steps.version.outputs.version }}.exe"
+          $dir = "$env:RUNNER_TEMP\MDQC"
+          Start-Process -Wait -FilePath $setup -ArgumentList "/VERYSILENT", "/CURRENTUSER", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir"
+          $py = "$dir\python\python.exe"
+          & $py -m mdqc version
+          $url = $null
+          foreach ($i in 1..45) { $url = & $py -m mdqc open --print-url 2>$null; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep 1 }
+          if (-not $url) { Write-Error "the installed agent never answered"; exit 1 }
+          (Invoke-WebRequest -UseBasicParsing $url).StatusCode
+          if (-not (Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run).MassDynamicsQC) { Write-Error "no startup entry"; exit 1 }
+          Start-Process -Wait -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          Start-Sleep 3
+          if (Test-Path "$dir\python") { Write-Error "uninstall left the runtime behind"; exit 1 }
+          if ((Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run).MassDynamicsQC) { Write-Error "startup entry left behind"; exit 1 }
 
-      - name: Upload exe artifact
+      - name: Upload setup program
         uses: actions/upload-artifact@v4
         with:
-          name: mdqc-exe-${{ steps.version.outputs.version }}
-          path: dist/mdqc-${{ steps.version.outputs.version }}.exe
+          name: MDQC-Setup-${{ steps.version.outputs.version }}
+          path: dist/MDQC-Setup-${{ steps.version.outputs.version }}.exe
           retention-days: 30
 
   release:
     name: GitHub Release
-    needs: build-exe
+    needs: [build-installer, install-script]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -173,13 +210,27 @@ jobs:
       # No binary is attached. The frozen build still runs in `build-exe` as a
       # packaging check, but an unsigned 31 MB executable is the hardest thing
       # to get past a lab's IT review, and pip needs no exception from anyone.
+      - name: Download setup program
+        uses: actions/download-artifact@v4
+        with:
+          name: MDQC-Setup-${{ steps.version.outputs.version }}
+          path: dist
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          files: dist/MDQC-Setup-${{ steps.version.outputs.version }}.exe
           name: MD QC Agent v${{ steps.version.outputs.version }}
           generate_release_notes: true
           body: |
-            ## Install or upgrade
+            ## Install from a USB stick (no Python or PowerShell needed)
+
+            Download **MDQC-Setup-${{ steps.version.outputs.version }}.exe** below, copy it to the
+            instrument PC (a USB stick is fine) and double-click it. It installs for the
+            current user, starts the agent with a tray icon, and opens the dashboard.
+            Running a newer setup program upgrades; remove it from *Settings > Apps*.
+
+            ## Or install with PowerShell
 
             On the instrument PC, with [Python 3.11 or newer](https://www.python.org/downloads/)
             installed, open Windows PowerShell as the user who uses the PC and run:
