@@ -78,7 +78,7 @@ With Python 3.11 or newer installed (§2), download the script for the release
 and run it:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/MassDynamics/md-qc/v1.1.0/scripts/install.ps1 -OutFile install.ps1
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/MassDynamics/md-qc/v1.2.0/scripts/install.ps1 -OutFile install.ps1
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
@@ -104,7 +104,7 @@ Options:
 
 | Option | What it does |
 |---|---|
-| `-Service -NssmPath <nssm.exe>` | Run the agent as a Windows service instead, so it starts with Windows before anyone logs in. Needs an elevated PowerShell and [NSSM](https://nssm.cc). The tray icon still starts at login. |
+| `-Service -NssmPath <nssm.exe>` | *Advanced, for IT teams.* Run the agent as a Windows service instead, so it starts with Windows before anyone logs in. Needs an elevated PowerShell and [NSSM](https://nssm.cc). The tray icon still starts at login. Starting at login (the default) is the tested, supported setup. |
 | `-Version <x.y.z>` | Install another release. |
 | `-Python <path\to\python.exe>` | Use this interpreter instead of the newest 3.11+ the `py` launcher finds. |
 | `-NoStart` | Install and register, but start nothing now. |
@@ -117,7 +117,7 @@ The same install by hand (no startup entry or shortcuts; start it as in §5):
 
 ```powershell
 py -3 -m venv C:\MassDynamics\mdqc
-C:\MassDynamics\mdqc\Scripts\pip install "mdqc[tray] @ https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.1.0.tar.gz"
+C:\MassDynamics\mdqc\Scripts\pip install "mdqc[tray] @ https://github.com/MassDynamics/md-qc/archive/refs/tags/v1.2.0.tar.gz"
 ```
 
 Calling the environment's `pip` and `mdqc` by full path means you never have to
@@ -140,7 +140,7 @@ Either way you should now be able to run:
 ```powershell
 C:\MassDynamics\mdqc\Scripts\mdqc version
 ```
-and see `mdqc 1.1.0`.
+and see `mdqc 1.2.0`.
 
 To build a single-file executable or the Inno Setup installer (service
 registration, tray shortcut, uninstaller) for sites that cannot install Python,
@@ -232,7 +232,7 @@ template = "QC_Method.sky"
 # agent has no source for either yet, so both are always null.
 
 # Peptide classes — map the Skyline Protein column to a purpose. With none
-# configured, the agent uses the Evosep panel's: Non_reactive_Targets
+# configured, the agent uses the standard QC panel's: Non_reactive_Targets
 # (recovery) and the miss-cleavage pair (digest efficiency, which needs this
 # rule to be calculated at all) under both spellings found in templates,
 # Miss-cleavage_pair and Miss-clevage_pair. Configure your own only for a different panel;
@@ -249,10 +249,10 @@ template = "QC_Method.sky"
 # [qc_thresholds_by_spd.500]
 # rt_deviation_pct_max = 1.0
 
-# Lupo mode — only a QC type at the very start of the name (PCD96_…, SSC_…,
-# SSCGOLD_…) counts, and wells never imply one. Use it once the Lupo names
-# the files, so a customer sample can't be taken for a QC run.
-# classification_mode = "lupo"
+# Strict naming — only a QC type at the very start of the name (PCD96_…,
+# SSC_…, SSCBASE_…) counts, and wells never imply one. Use it once automated
+# sample prep names the files, so a customer sample can't be taken for a QC run.
+# classification_mode = "strict"
 ```
 
 > **File encoding matters.** Save as **plain UTF-8 (no BOM)**. Notepad's
@@ -292,8 +292,9 @@ C:\MassDynamics\mdqc\Scripts\mdqc classify PCD96_2026-09-23_200SPD_S00572_r01.ra
 It uses your `config.toml` rules as the agent does, and prints the type,
 kit, SPD and LC serial it found.
 
-When the Lupo writes the file names, set `classification_mode = "lupo"` (§4b).
-Then only the first part of a name decides its type — `SSCGOLD` for
+When automated sample prep writes the file names, set
+`classification_mode = "strict"` (§4b). Then only the first part of a name
+decides its type — `SSCBASE` for
 gold-standard runs — and customers must not start a sample name with a QC type.
 
 ## 5. Run the agent

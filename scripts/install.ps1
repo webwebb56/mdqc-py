@@ -30,7 +30,7 @@
 [CmdletBinding()]
 param(
     # Release tag to install. Pinned, so every site installs the same build.
-    [string]$Version = "1.1.0",
+    [string]$Version = "1.2.0",
     # Where the virtual environment lives.
     [string]$InstallDir = "C:\MassDynamics\mdqc",
     # Install from a local checkout or another URL instead of the release

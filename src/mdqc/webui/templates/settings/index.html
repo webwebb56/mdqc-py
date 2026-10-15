@@ -302,11 +302,30 @@
   <section class="panel">
     <div class="section-heading">
       <span class="dot ok">●</span>
-      <h2>Filename Classifier Rules</h2>
+      <h2>File names</h2>
+    </div>
+    <div class="builtin-names" style="margin-bottom:0.9rem;">
+      <p class="field-hint" style="margin-bottom:0.4rem;">
+        <strong>Recognised in every file name</strong> —
+        {% if cfg.classification_mode == "strict" %}
+          as the <strong>first part</strong> of the name (strict mode), e.g. <code>PCD96_S00038_…</code>:
+        {% else %}
+          as a separate part of the name, e.g. <code>…_PCD96_…</code> or <code>SSC_S00038_…</code>:
+        {% endif %}
+      </p>
+      <table class="rules-table builtin-table">
+        <tbody>
+          <tr><td><code>PCD</code>, <code>PCD96</code>, <code>PCD384</code></td><td>PCD — Process Control Digest (the number is recorded as the kit)</td></tr>
+          <tr><td><code>SSC</code></td><td>SSC — System Suitability Control</td></tr>
+          <tr><td><code>SSCBASE</code>, <code>SSCGOLD</code>, <code>SSC0</code></td><td>SSC-gold — gold standard</td></tr>
+          <tr><td><code>BLANK</code></td><td>Blank</td></tr>
+        </tbody>
+      </table>
     </div>
     <p class="field-hint" style="margin-bottom:0.75rem;">
-      Rules are matched as case-insensitive substrings of the raw filename (stem only, no extension).
-      Evaluated top-to-bottom — first match wins. Drag rows to reorder.
+      <strong>Extra rules</strong>, checked first: for older names or a lab's own. Each matches anywhere in
+      the file name (case-insensitive, no extension), top to bottom — first match wins. Drag rows to reorder.
+      {% if cfg.classification_mode == "strict" %}The rules shipped with the agent are skipped in strict mode; your own still apply.{% endif %}
     </p>
 
     <table class="rules-table" id="rules-table">

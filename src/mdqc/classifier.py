@@ -40,12 +40,13 @@ _DELIM_AFTER = r"(?:$|[_\-\s.])"
 # classifying. Two behaviours worth knowing:
 #
 #   * a bare `SSC` means a routine system-suitability run. Gold-standard files
-#     carry `SSC0` (legacy) or `SSCGOLD` / `SSC_GOLD`; under the SOP the gold
-#     standard is chosen in the web UI rather than named in a file anyway.
+#     carry `SSCBASE` (the newest name, Oct 2026), `SSCGOLD` / `SSC_GOLD` or
+#     `SSC0` (legacy). All three mean the same thing; the wire value stays
+#     `SSC0`, so adding a name needed no schema change.
 #   * `PCD96` and `PCD384` are one control type. The number is the kit's plate
 #     format and travels separately, as kit_format.
 _SSC_GOLD_RE = re.compile(
-    rf"{_DELIM_BEFORE}(SSC[_-]?GOLD|SSC[_-]?0){_DELIM_AFTER}", re.IGNORECASE
+    rf"{_DELIM_BEFORE}(SSC[_-]?BASE|SSC[_-]?GOLD|SSC[_-]?0){_DELIM_AFTER}", re.IGNORECASE
 )
 _PCD_RE = re.compile(
     rf"{_DELIM_BEFORE}PCD(?:[_-]?(96|384))?{_DELIM_AFTER}", re.IGNORECASE
@@ -98,16 +99,16 @@ def classify_filename(
     """Classify a raw file from its name.
 
     mode="lenient" finds a control-type marker anywhere in the name, in any
-    spelling since the first pilot. mode="lupo" only accepts one as the first
-    part of the name, where the Lupo writes it, and never infers a type from
+    spelling since the first pilot. mode="strict" only accepts one as the first
+    part of the name, where automated sample prep writes it, and never infers a type from
     the well — a customer sample in well A1 is still a sample.
     """
     stem = _strip_vendor_ext(name)
 
     # The shipped default rules are legacy substring matches (QCB, BLK, ...).
-    # Under Lupo naming they would reintroduce exactly the false positives the
+    # Under strict naming they would reintroduce exactly the false positives the
     # mode exists to prevent, so only rules an operator wrote apply.
-    if mode == "lupo" and rules:
+    if mode == "strict" and rules:
         rules = [r for r in rules if not _is_shipped_default_rule(r)]
 
     # Custom rules (case-insensitive substring) take priority over built-ins.
@@ -134,8 +135,8 @@ def classify_filename(
                     kit_format=_extract_kit_format(stem, ct),
                 )
 
-    if mode == "lupo":
-        control_type, source = _extract_control_type_lupo(stem)
+    if mode == "strict":
+        control_type, source = _extract_control_type_strict(stem)
     else:
         control_type, source = _extract_control_type(stem)
     well = _extract_well(stem)
@@ -242,21 +243,23 @@ def _extract_control_type(
     return ControlType.SAMPLE, ClassificationSource.DEFAULT
 
 
-# The QC types a Lupo writes as the first part of a raw file name.
-_LUPO_FIRST_TOKEN = {
+# The QC types automated sample prep writes as the first part of a raw file name.
+_FIRST_TOKEN_TYPES = {
     "PCD": ControlType.PCD,
     "PCD96": ControlType.PCD,
     "PCD384": ControlType.PCD,
     "SSC": ControlType.SSC,
+    "SSCBASE": ControlType.SSC0,
+    "SSC-BASE": ControlType.SSC0,
     "SSCGOLD": ControlType.SSC0,
     "SSC-GOLD": ControlType.SSC0,
     "BLANK": ControlType.BLANK,
 }
 
 
-def _extract_control_type_lupo(stem: str) -> tuple[ControlType, ClassificationSource]:
+def _extract_control_type_strict(stem: str) -> tuple[ControlType, ClassificationSource]:
     first = stem.split("_", 1)[0].strip().upper()
-    ct = _LUPO_FIRST_TOKEN.get(first)
+    ct = _FIRST_TOKEN_TYPES.get(first)
     if ct is not None:
         return ct, ClassificationSource.FILENAME
     return ControlType.SAMPLE, ClassificationSource.DEFAULT

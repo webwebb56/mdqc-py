@@ -1,4 +1,4 @@
-"""v1.2 config: per-SPD thresholds, default peptide classes, Lupo mode."""
+"""v1.2 config: per-SPD thresholds, default peptide classes, strict naming."""
 
 from __future__ import annotations
 
@@ -88,16 +88,19 @@ def test_the_miss_cleavage_pair_gets_the_digest_purpose(protein: str) -> None:
     assert metrics[0].peptide_class_purpose == "digest_efficiency"
 
 
-# ── Lupo mode ────────────────────────────────────────────────────────────────
+# ── strict naming ────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
-    ("name", "lupo", "lenient"),
+    ("name", "strict", "lenient"),
     [
         ("PCD96_S00038_A12345678910_S1A1_L00001-123456.raw", ControlType.PCD, ControlType.PCD),
         ("PCD384_S00038_A12345678911_S1A1_L00001-123457.raw", ControlType.PCD, ControlType.PCD),
         ("SSC_S00038_A12345678910_S1A1_L00001-123458.raw", ControlType.SSC, ControlType.SSC),
         ("SSCGOLD_S00038_A12345678910_S1A1_L00001-1.raw", ControlType.SSC0, ControlType.SSC0),
+        ("SSCBASE_S00038_A12345678910_S1A1_L00001-2.raw", ControlType.SSC0, ControlType.SSC0),
+        # A longer word that starts the same is not the marker.
+        ("SSCBASELINE_study.raw", ControlType.SAMPLE, ControlType.SAMPLE),
         ("L00001-123459.raw", ControlType.SAMPLE, ControlType.SAMPLE),
         # Customer samples that lenient mode would take for QC runs.
         ("PC_cells_rep1.raw", ControlType.SAMPLE, ControlType.PCD),
@@ -105,28 +108,28 @@ def test_the_miss_cleavage_pair_gets_the_digest_purpose(protein: str) -> None:
         ("patient7_A1_run.raw", ControlType.SAMPLE, ControlType.PCD),
     ],
 )
-def test_lupo_mode_reads_only_the_first_part(
-    name: str, lupo: ControlType, lenient: ControlType
+def test_strict_mode_reads_only_the_first_part(
+    name: str, strict: ControlType, lenient: ControlType
 ) -> None:
-    assert classify_filename(name, mode="lupo").control_type is lupo
+    assert classify_filename(name, mode="strict").control_type is strict
     assert classify_filename(name).control_type is lenient
 
 
-def test_lupo_mode_keeps_the_kit() -> None:
-    assert classify_filename("PCD384_S00038_x.raw", mode="lupo").kit_format == 384
+def test_strict_mode_keeps_the_kit() -> None:
+    assert classify_filename("PCD384_S00038_x.raw", mode="strict").kit_format == 384
 
 
-def test_lupo_mode_ignores_the_shipped_substring_rules() -> None:
+def test_strict_mode_ignores_the_shipped_substring_rules() -> None:
     """QCB, BLK and the rest would bring the false positives straight back."""
     rules = Config().classifier_rules
-    assert classify_filename("cust_QCB_sample.raw", rules=rules, mode="lupo").control_type is (
+    assert classify_filename("cust_QCB_sample.raw", rules=rules, mode="strict").control_type is (
         ControlType.SAMPLE
     )
     assert classify_filename("cust_QCB_sample.raw", rules=rules).control_type is ControlType.SSC
 
 
-def test_lupo_mode_still_applies_an_operators_own_rule() -> None:
+def test_strict_mode_still_applies_an_operators_own_rule() -> None:
     rules = [ClassifierRule(pattern="MYQC", control_type="SSC")]
-    assert classify_filename("lab_MYQC_run.raw", rules=rules, mode="lupo").control_type is (
+    assert classify_filename("lab_MYQC_run.raw", rules=rules, mode="strict").control_type is (
         ControlType.SSC
     )

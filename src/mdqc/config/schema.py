@@ -378,7 +378,7 @@ class ClassifierRule(BaseModel):
 
 
 def default_peptide_classes() -> list[PeptideClassRule]:
-    """Classes for the Evosep diagnostic panel, matched on Skyline's Protein column.
+    """Classes for the standard QC peptide panel, matched on Skyline's Protein column.
 
     Without a digest_efficiency rule digest efficiency is never calculated.
     The pair's protein is spelled two ways in templates in the field —
@@ -453,11 +453,11 @@ class Config(BaseModel):
     # that suits 200 SPD is too loose there.
     qc_thresholds_by_spd: dict[int, dict[str, float]] = Field(default_factory=dict)
     # "lenient" recognises a control-type marker anywhere in a filename,
-    # including every pre-PCD spelling. "lupo" recognises one only as the first
-    # part of the name, where the Lupo writes it — so a customer sample that
+    # including every pre-PCD spelling. "strict" recognises one only as the first
+    # part of the name, where automated sample prep writes it — so a customer sample that
     # happens to contain PC or SSC can't be taken for a QC run. Custom
     # classifier_rules apply in both modes.
-    classification_mode: Literal["lenient", "lupo"] = "lenient"
+    classification_mode: Literal["lenient", "strict"] = "lenient"
 
     @field_validator("peptide_classes")
     @classmethod

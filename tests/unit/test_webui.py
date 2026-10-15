@@ -1517,3 +1517,14 @@ def test_a_save_that_leaves_instruments_alone_keeps_the_watcher(
     client = _client(_build_app(state_without_instruments))
     assert client.post("/settings", data=_base_settings_form()).status_code == 200
     assert watcher_reloads == []
+
+
+def test_settings_lists_the_built_in_file_names(
+    state_without_instruments: _FakeAppState, tmp_data_dir: Path
+) -> None:
+    """The rules table held only the old names, so the page read as if the
+    new ones weren't supported. They're built in; the page now says so."""
+    html = _client(_build_app(state_without_instruments)).get("/settings").text
+    for name in ("PCD96", "PCD384", "SSCBASE", "SSCGOLD", "SSC0", "BLANK"):
+        assert f"<code>{name}</code>" in html
+    assert "Extra rules" in html
