@@ -45,10 +45,15 @@ core monitoring loop.
 
 ### Install
 
-**Easiest:** download `MDQC-Setup-<version>.exe` from the
-[latest release](https://github.com/MassDynamics/md-qc/releases/latest) and
-double-click it. It includes its own Python and works offline, so it can be
-carried on a USB stick.
+**Easiest — the setup program.** Download
+**[MDQC-Setup-1.2.0.exe](https://github.com/MassDynamics/md-qc/releases/download/v1.2.0/MDQC-Setup-1.2.0.exe)**
+(also on the [latest release](https://github.com/MassDynamics/md-qc/releases/latest)
+page), copy it to the instrument PC — a USB stick is fine — and double-click
+it. It includes its own Python and needs no internet, PowerShell or
+administrator rights. It starts the agent with a tray icon and opens the
+dashboard, where you set up instruments under Settings. A newer setup program
+upgrades in place; uninstall from *Settings > Apps*. Until it is code-signed,
+Windows may show "Windows protected your PC": choose *More info > Run anyway*.
 
 **With PowerShell**, if [Python 3.11 or newer](https://www.python.org/downloads/)
 is installed, as the user who uses the instrument PC:
@@ -183,6 +188,7 @@ raw files in a watch path use the same Skyline template.
 | [docs/INSTALL.md](./docs/INSTALL.md) | **Operators** — install, configure, record a baseline, troubleshoot |
 | [docs/payload-reference/](./docs/payload-reference/index.html) | **Integrators** — every payload field, how it is derived, when it is null |
 | [docs/examples/](./docs/examples) | **Integrators** — nine sample payloads covering healthy, warn, fail, blank and failed-extraction runs |
+| [installer/README.md](./installer/README.md) | **Maintainers** — how the setup program is built, tested and signed |
 
 ---
 
@@ -201,8 +207,10 @@ test in `tests/test_live_e2e.py` need a local repository of real raw files.
 Point `MDQC_TEST_DATA_DIR` (and optionally `MDQC_TEST_RAW_DIR`) at it; both
 files skip themselves when it is absent, which is what CI does.
 
-The [installer/](./installer) directory has the Windows packaging recipe
-(PyInstaller + Inno Setup + NSSM service registration).
+The [installer/](./installer) directory builds the setup program: python.org's
+embeddable Python with MDQC installed into it, wrapped by Inno Setup
+(`python scripts/build_installer.py`). CI builds it, test-installs it on a clean
+Windows runner and attaches it to every release.
 
 ---
 

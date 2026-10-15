@@ -29,7 +29,8 @@ optional: without a token the agent is a complete local QC monitor.
 ### Hardware / OS
 - **Windows 10 or 11** (the agent is Windows-tested)
 - ~**2 GB free disk** (spectral libraries ~210 MB, spool grows ~5 KB per payload)
-- Local administrator rights for the first install only
+- No administrator rights needed with the setup program (§3, Option A), unless
+  you install for all users
 
 ### Software
 - **Skyline (64-bit)** — daily or release build. The agent auto-detects it at:
@@ -48,12 +49,15 @@ optional: without a token the agent is a complete local QC monitor.
   **ClickOnce installs are not supported** — these have paths containing
   `\apps\2.0\`. Use the regular installer from <https://skyline.ms>.
 
-- **Python 3.11 or newer** — install from <https://www.python.org/downloads>
-  with the "Add Python to PATH" option ticked. `py -0` lists what a machine
-  already has; any 3.11+ entry will do, and most instrument PCs have one.
+- **Python 3.11 or newer** — *only for the install script or a source
+  install* (§3, Options B and C); the setup program carries its own. Install
+  from <https://www.python.org/downloads> with "Add Python to PATH" ticked.
+  `py -0` lists what a machine already has; any 3.11+ entry will do.
 - **Git** (only if cloning from GitHub) — <https://git-scm.com/download/win>
 
 ### Verifying Skyline is detected (recommended before first run)
+Once MDQC is installed, *Start menu > Mass Dynamics QC > MD QC Diagnostics*
+shows whether Skyline was found. Or, after the install script:
 ```powershell
 C:\MassDynamics\mdqc\Scripts\python -c "from mdqc.extractor.skyline import find_skyline; p = find_skyline(); print(p or 'NOT FOUND - install Skyline or set [skyline].path in config.toml')"
 ```
@@ -92,6 +96,12 @@ internet.
 
 Until the setup program is code-signed, Windows may show "Windows protected
 your PC": choose *More info > Run anyway*.
+
+The commands in the rest of this guide use the install script's location,
+`C:\MassDynamics\mdqc\Scripts\mdqc`. After the setup program, use
+`mdqc.cmd` in its folder instead — for a per-user install,
+`%LOCALAPPDATA%\Programs\Mass Dynamics\MDQC\mdqc.cmd` (e.g.
+`...\mdqc.cmd doctor`).
 
 ### Option B — the install script (PowerShell, uses an installed Python)
 
@@ -163,10 +173,8 @@ C:\MassDynamics\mdqc\Scripts\mdqc version
 ```
 and see `mdqc 1.2.0`.
 
-To build a single-file executable or the Inno Setup installer (service
-registration, tray shortcut, uninstaller) for sites that cannot install Python,
-see [`installer/README.md`](../installer/README.md) — neither is published as a
-release asset.
+How the setup program in Option A is built, tested and signed is in
+[`installer/README.md`](../installer/README.md).
 
 ---
 
