@@ -179,18 +179,20 @@ jobs:
           name: MD QC Agent v${{ steps.version.outputs.version }}
           generate_release_notes: true
           body: |
-            ## Installation
+            ## Install or upgrade
 
-            Windows PowerShell, with Python 3.11 or newer installed:
+            On the instrument PC, with [Python 3.11 or newer](https://www.python.org/downloads/)
+            installed, open Windows PowerShell as the user who uses the PC and run:
 
             ```powershell
-            py -3 -m venv C:\MassDynamics\mdqc
-            C:\MassDynamics\mdqc\Scripts\pip install https://github.com/MassDynamics/md-qc/archive/refs/tags/v${{ steps.version.outputs.version }}.tar.gz
-            C:\MassDynamics\mdqc\Scripts\mdqc run --foreground
+            Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/MassDynamics/md-qc/v${{ steps.version.outputs.version }}/scripts/install.ps1 -OutFile install.ps1
+            powershell -ExecutionPolicy Bypass -File install.ps1
             ```
 
-            Calling the venv's `pip` and `mdqc` by path avoids activating it,
-            so no PowerShell execution-policy change is needed.
+            The agent then runs in the background with a tray icon and starts at
+            every login. Open it from the tray icon or *Start menu > Mass Dynamics QC >
+            MD QC Dashboard*, and set it up under Settings. Re-run the same commands to
+            upgrade; add `-Uninstall` to remove it.
 
-            See [docs/INSTALL.md](https://github.com/MassDynamics/md-qc/blob/main/docs/INSTALL.md)
-            for Skyline setup, configuration and the Windows service.
+            See [docs/INSTALL.md](https://github.com/MassDynamics/md-qc/blob/v${{ steps.version.outputs.version }}/docs/INSTALL.md)
+            for Skyline setup, configuration and options.
