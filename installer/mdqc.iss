@@ -114,8 +114,8 @@ begin
       'Skyline was not found on this PC.' + #13#10#13#10 +
       'MD QC Agent uses Skyline to read raw files. If Skyline was installed ' +
       'from its website for this user only, this check can miss it. You can ' +
-      'also install Skyline afterwards; nothing is processed until it is there.' +
-      #13#10#13#10 + 'Continue installing MD QC Agent?',
+      'also install Skyline afterwards; nothing is processed until it is there.' + #13#10#13#10 +
+      'Continue installing MD QC Agent?',
       mbConfirmation, MB_YESNO) = IDYES;
 end;
 

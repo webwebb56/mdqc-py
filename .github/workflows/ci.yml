@@ -132,7 +132,7 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
-            choco install innosetup --no-progress -y
+            choco install innosetup --version 6.7.3 --no-progress -y
           }
 
       - name: Read version
@@ -170,7 +170,8 @@ jobs:
           $env:MDQC_DATA_DIR = "$env:RUNNER_TEMP\mdqc-data"
           $setup = "dist\MDQC-Setup-${{ steps.version.outputs.version }}.exe"
           $dir = "$env:RUNNER_TEMP\MDQC"
-          Start-Process -Wait -FilePath $setup -ArgumentList "/VERYSILENT", "/CURRENTUSER", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir"
+          # Not Start-Process -Wait: that also waits for the agent setup starts.
+          (Start-Process -PassThru -FilePath $setup -ArgumentList "/VERYSILENT", "/CURRENTUSER", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir").WaitForExit()
           $py = "$dir\python\python.exe"
           & $py -m mdqc version
           $url = $null
@@ -178,7 +179,7 @@ jobs:
           if (-not $url) { Write-Error "the installed agent never answered"; exit 1 }
           (Invoke-WebRequest -UseBasicParsing $url).StatusCode
           if (-not (Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run).MassDynamicsQC) { Write-Error "no startup entry"; exit 1 }
-          Start-Process -Wait -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          (Start-Process -PassThru -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART").WaitForExit()
           Start-Sleep 3
           if (Test-Path "$dir\python") { Write-Error "uninstall left the runtime behind"; exit 1 }
           if ((Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run).MassDynamicsQC) { Write-Error "startup entry left behind"; exit 1 }

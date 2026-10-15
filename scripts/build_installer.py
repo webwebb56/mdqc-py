@@ -40,7 +40,10 @@ DIST = ROOT / "dist"
 # python.org's embeddable package. Change both together; the hash pins the
 # exact file so a tampered or truncated download fails the build.
 PYTHON_VERSION = "3.13.16"
-PYTHON_SHA256 = os.environ.get("MDQC_EMBED_SHA256", "")
+# From python.org's release page for 3.13.16 (checked 2026-10-16).
+PYTHON_SHA256 = os.environ.get(
+    "MDQC_EMBED_SHA256", "97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297"
+)
 
 # Written next to python.exe; `mdqc stop` only ends processes under its own
 # folder when it finds this (see src/mdqc/cli/stop.py).
@@ -105,6 +108,9 @@ def stage_runtime(embed_zip: Path, wheel: Path) -> None:
     major, minor = PYTHON_VERSION.split(".")[:2]
     run([
         sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+        # The build machine's Python may be a different version; its .pyc
+        # files would be dead weight. The runtime compiles its own.
+        "--no-compile",
         "--target", site,
         "--platform", "win_amd64", "--python-version", f"{major}.{minor}",
         "--implementation", "cp", "--only-binary=:all:",

@@ -42,8 +42,8 @@ python scripts/build_installer.py
 The script builds the wheel, downloads the embeddable Python into
 `build\cache`, installs everything into it from ready-built Windows packages
 only, smoke-tests it, and compiles `installer\mdqc.iss` into `dist\`.
-`--stage-only` stops before Inno Setup. To pin the download, set
-`MDQC_EMBED_SHA256`.
+`--stage-only` stops before Inno Setup. The Python download is pinned by its
+SHA-256 in the script; change `PYTHON_VERSION` and `PYTHON_SHA256` together.
 
 ## Signing
 
