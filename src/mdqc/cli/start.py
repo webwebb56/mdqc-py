@@ -17,6 +17,9 @@ import typer
 
 SERVICE_NAME = "MassDynamicsQC"
 
+# How long `start` waits for a closing agent to release the one-agent lock.
+HELD_WAIT_S = 45.0
+
 # No console, and not tied to the launching process.
 _DETACHED_PROCESS = 0x00000008
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -61,6 +64,22 @@ def _spawn(*args: str) -> None:
     )
 
 
+def _still_held(single_instance, wait_s: float) -> bool:  # type: ignore[no-untyped-def]
+    """True if another agent keeps the one-agent lock for `wait_s` seconds.
+
+    An agent that was just asked to stop (an upgrade, a restart) holds the
+    lock for ~30 s while it closes; waiting it out beats refusing to start.
+    """
+    import time
+
+    deadline = time.monotonic() + wait_s
+    while single_instance.held_elsewhere(single_instance.AGENT_MUTEX):
+        if time.monotonic() >= deadline:
+            return True
+        time.sleep(1)
+    return False
+
+
 def start_cmd(
     no_tray: bool = typer.Option(False, "--no-tray", help="Start only the agent."),
     open_dashboard: bool = typer.Option(
@@ -75,7 +94,7 @@ def start_cmd(
         agent = "already running"
     elif service_installed():
         agent = "run by the Windows service"
-    elif single_instance.held_elsewhere(single_instance.AGENT_MUTEX):
+    elif _still_held(single_instance, wait_s=HELD_WAIT_S):
         # An agent this one can't reach: another installation, or one using
         # a different data folder. Starting a second would just exit.
         if sys.stderr is not None:

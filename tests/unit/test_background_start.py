@@ -65,6 +65,7 @@ def test_start_refuses_when_an_unreachable_agent_holds_the_pc(
     """Another installation's agent: a second would exit at once, so say why."""
     monkeypatch.setattr(open_cmd, "dashboard_url", lambda page="/dashboard": None)
     monkeypatch.setattr(single_instance, "held_elsewhere", lambda _n: True)
+    monkeypatch.setattr(start, "HELD_WAIT_S", 0)
     result = runner.invoke(app, ["start"])
     assert result.exit_code == 3
     assert spawned == []
@@ -253,3 +254,14 @@ def test_install_script_parses() -> None:
 def test_install_script_is_ascii() -> None:
     """Windows PowerShell 5.1 reads a BOM-less script as the ANSI code page."""
     (ROOT / "scripts" / "install.ps1").read_bytes().decode("ascii")
+
+
+def test_start_waits_for_a_closing_agent(spawned: list, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An agent asked to stop holds the lock for ~30 s while it closes."""
+    held = iter([True, True, False])
+    monkeypatch.setattr(open_cmd, "dashboard_url", lambda page="/dashboard": None)
+    monkeypatch.setattr(single_instance, "held_elsewhere", lambda _n: next(held))
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    result = runner.invoke(app, ["start", "--no-tray"])
+    assert result.exit_code == 0
+    assert spawned == [("run", "--foreground")]

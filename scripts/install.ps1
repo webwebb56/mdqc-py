@@ -102,9 +102,13 @@ function StopAgent {
         Stop-Service -Name $ServiceName -Force
     }
     $runtime = Join-Path $DataDir "runtime.json"
+    $ours = @(AgentProcesses | ForEach-Object { [int]$_.ProcessId })
     if (Test-Path $runtime) {
         try {
             $info = Get-Content $runtime -Raw | ConvertFrom-Json
+            # Only this installation's agent. Another one - e.g. the setup
+            # program that replaced this copy - is left running.
+            if ($ours -notcontains [int]$info.pid) { throw "not ours" }
             $base = "http://127.0.0.1:$($info.port)"
             try {
                 Invoke-RestMethod -Method Post -TimeoutSec 5 -Uri "$base/api/shutdown?token=$($info.token)" | Out-Null
@@ -128,11 +132,25 @@ function StopAgent {
     }
 }
 
+# Remove this installation's startup entry and shortcuts. The setup program
+# uses the same names, so anything pointing at another installation - e.g.
+# the setup program that replaced this one - is left alone.
 function RemoveStartup {
+    $dir = [regex]::Escape($InstallDir.TrimEnd('\'))
     foreach ($v in $RunValue, $LegacyTrayRunValue) {
-        Remove-ItemProperty -Path $RunKey -Name $v -ErrorAction SilentlyContinue
+        $current = (Get-ItemProperty -Path $RunKey -Name $v -ErrorAction SilentlyContinue).$v
+        if ($current -and $current -match $dir) {
+            Remove-ItemProperty -Path $RunKey -Name $v -ErrorAction SilentlyContinue
+        }
     }
-    if (Test-Path $MenuDir) { Remove-Item -Recurse -Force $MenuDir }
+    if (Test-Path $MenuDir) {
+        $shell = New-Object -ComObject WScript.Shell
+        foreach ($lnk in Get-ChildItem $MenuDir -Filter *.lnk) {
+            $target = $shell.CreateShortcut($lnk.FullName)
+            if ("$($target.TargetPath) $($target.Arguments)" -match $dir) { Remove-Item -Force $lnk.FullName }
+        }
+        if (-not (Get-ChildItem $MenuDir)) { Remove-Item -Force $MenuDir }
+    }
     if (Test-Path $AumidKey) { Remove-Item -Recurse -Force $AumidKey }
 }
 

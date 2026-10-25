@@ -24,27 +24,50 @@ import httpx
 import typer
 
 
-def _ask_agent_to_stop() -> bool:
+def _ask_agent_to_stop() -> int | None:
+    """Ask the running agent to shut down; its process id if it agreed."""
     from mdqc.ipc.runtime import RuntimeFile
 
     info = RuntimeFile().read()
     if info is None or not info.port:
-        return False
+        return None
     base = f"http://127.0.0.1:{info.port}"
     for path in ("/api/shutdown", "/api/restart"):
         try:
             r = httpx.post(f"{base}{path}", params={"token": info.token}, timeout=5.0)
         except httpx.HTTPError:
-            return False
+            return None
         if r.status_code == 200:
-            return True
-    return False
+            return info.pid or None
+    return None
 
 
-def _agent_answers() -> bool:
-    from mdqc.cli.open_cmd import dashboard_url
+def _wait_for_exit(pid: int, seconds: float) -> bool:
+    """True once process `pid` has exited (or isn't there), within `seconds`.
 
-    return dashboard_url() is not None
+    Waiting for the process, not for the agent to stop answering: it stops
+    answering at once but takes ~30 s to close, and holds the one-agent lock
+    until then - a new agent started in between would exit straight away.
+    """
+    if sys.platform != "win32":
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return True
+            time.sleep(0.5)
+        return False
+    kernel32 = _kernel32()
+    synchronize = 0x00100000
+    handle = kernel32.OpenProcess(synchronize, False, pid)
+    if not handle:
+        return True
+    try:
+        wait_object_0 = 0
+        return bool(kernel32.WaitForSingleObject(handle, int(seconds * 1000)) == wait_object_0)
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def processes_under(folder: Path) -> list[int]:
@@ -104,6 +127,8 @@ def _kernel32():  # type: ignore[no-untyped-def]
     ]
     k.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
     k.CloseHandle.argtypes = [wintypes.HANDLE]
+    k.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    k.WaitForSingleObject.restype = wintypes.DWORD
     return k
 
 
@@ -120,11 +145,12 @@ def stop_cmd(
     wait: int = typer.Option(60, "--wait", help="Seconds to let the agent finish before ending it."),
 ) -> None:
     """Stop the agent (letting it finish the file in hand) and the tray icon."""
-    asked = _ask_agent_to_stop()
-    deadline = time.monotonic() + wait
-    while asked and time.monotonic() < deadline and _agent_answers():
-        time.sleep(1)
+    pid = _ask_agent_to_stop()
+    asked = pid is not None
     ended = 0
+    if pid is not None and not _wait_for_exit(pid, wait):
+        _end(pid)
+        ended += 1
     # Only the setup program's private interpreter owns every process under
     # its folder. A venv, or a system-wide Python, is shared with other
     # programs, so nothing is ended there.

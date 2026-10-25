@@ -131,3 +131,21 @@ def test_app_id_never_changes() -> None:
 
 def test_setup_script_is_ascii() -> None:
     (ROOT / "installer" / "mdqc.iss").read_bytes().decode("ascii")
+
+
+def test_stop_waits_for_the_agent_process_to_exit() -> None:
+    """Not just for it to stop answering: it holds the one-agent lock while
+    it closes, and a new agent started in between would exit at once."""
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1.5)"])
+    try:
+        assert not stop._wait_for_exit(child.pid, 0.2)
+        assert stop._wait_for_exit(child.pid, 10)
+    finally:
+        child.kill()
+        child.wait()
+
+
+def test_a_process_that_is_gone_counts_as_exited() -> None:
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    assert stop._wait_for_exit(child.pid, 1)

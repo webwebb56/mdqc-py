@@ -63,6 +63,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Replace the bundled Python wholesale on upgrade. Overwriting alone would
+; leave behind files a newer version no longer ships - e.g. two versions of a
+; library's metadata side by side. Runs after the old agent has been stopped.
+Type: filesandordirs; Name: "{app}\python"
+
 [Dirs]
 ; Configuration, results and logs. Users must be able to write here even when
 ; an administrator installed for all users.
@@ -84,6 +90,12 @@ Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: s
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "MassDynamicsQCTray"; Flags: deletevalue dontcreatekey
 
 [Run]
+; First, before anything starts: stop an agent running from anywhere else -
+; typically a PowerShell (install script) installation this one replaces -
+; and wait for it to exit; then end any MDQC process left. Only one agent
+; may run per PC, and Inno runs [Run] after files are in place but before
+; ssPostInstall, so this can't live in CurStepChanged.
+Filename: "{app}\python\python.exe"; Parameters: "-m mdqc stop"; WorkingDir: "{app}"; StatusMsg: "Stopping MD QC Agent..."; Flags: runhidden waituntilterminated; AfterInstall: EndLeftoverProcesses
 Filename: "{app}\python\pythonw.exe"; Parameters: "-m mdqc start --open"; WorkingDir: "{app}"; Description: "Start MD QC Agent and open the dashboard"; Flags: postinstall nowait skipifsilent
 ; Silent installs (IT rollouts) start the agent without opening a browser.
 Filename: "{app}\python\pythonw.exe"; Parameters: "-m mdqc start"; WorkingDir: "{app}"; Flags: nowait; Check: WizardSilent
@@ -133,6 +145,20 @@ end;
 
 // An empty configuration, so a fresh PC's agent can start and be set up from
 // Settings. An existing one is never touched.
+// After `mdqc stop` (see [Run]): end any MDQC agent or tray still running,
+// e.g. a tray from a PowerShell installation, so the new version is the
+// one that starts.
+procedure EndLeftoverProcesses();
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | ' +
+    'Where-Object { $_.CommandLine -match ''mdqc(\.exe)?\W{1,2}(run|tray)\b'' -and $_.ProcessId -ne $PID } | ' +
+    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Cfg: String;
