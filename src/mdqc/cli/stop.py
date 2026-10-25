@@ -52,6 +52,13 @@ def _wait_for_exit(pid: int, seconds: float) -> bool:
     if sys.platform != "win32":
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
+            # A finished child of ours lingers as a zombie, which os.kill
+            # still reports as alive until it is reaped.
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                    return True
+            except ChildProcessError:
+                pass
             try:
                 os.kill(pid, 0)
             except OSError:
