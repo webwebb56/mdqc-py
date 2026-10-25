@@ -238,3 +238,36 @@ async def test_missing_report_csv_is_not_warned_about(
         await extractor.extract(template=template, raw_file=raw_file)
 
     assert not [r for r in caplog.records if "failed to delete report csv" in r.getMessage()]
+
+
+@pytest.mark.asyncio
+async def test_payload_skyline_version_comes_from_the_installed_program(
+    tmp_path: Path, fake_skyline_exe: Path, template: Path, raw_file: Path
+) -> None:
+    """Skyline 26's console output carries no version banner, so payloads
+    from the setup program's install had an empty backend_version. The
+    version on SkylineCmd.exe itself is read instead (once)."""
+    extractor = _make_extractor(tmp_path, fake_skyline_exe)
+
+    async def side_effect(**kwargs):
+        kwargs["output_csv"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["output_csv"].write_text(_MINIMAL_CSV)
+        return SkylineRunResult(
+            returncode=2, stdout=_SKYLINE_26_STDOUT, stderr="", duration_ms=1, version=None
+        )
+
+    reads: list[Path] = []
+
+    def fake_read(exe: Path) -> str:
+        reads.append(exe)
+        return "26.1.0.57"
+
+    with (
+        patch("mdqc.extractor.run_skyline", new=AsyncMock(side_effect=side_effect)),
+        patch("mdqc.extractor.read_skyline_version", new=fake_read),
+    ):
+        first = await extractor.extract(template=template, raw_file=raw_file)
+        second = await extractor.extract(template=template, raw_file=raw_file)
+
+    assert first.backend_version == second.backend_version == "26.1.0.57"
+    assert len(reads) == 1

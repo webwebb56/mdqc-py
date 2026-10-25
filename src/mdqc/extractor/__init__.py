@@ -26,6 +26,7 @@ from mdqc.extractor.skyline import (
     find_skyline,
     has_error_marker,
     is_clickonce_install,
+    read_skyline_version,
     run_skyline,
 )
 from mdqc.peptide_classes import (
@@ -151,10 +152,22 @@ class Extractor:
         if skyline_cfg.path and skyline_cfg.path.lower() != "auto":
             explicit = Path(skyline_cfg.path)
         self._skyline_path = find_skyline(explicit=explicit)
+        self._skyline_version: str | None = None
 
     @property
     def skyline_path(self) -> Path | None:
         return self._skyline_path
+
+    def _installed_skyline_version(self) -> str | None:
+        """The version on SkylineCmd.exe itself, read once.
+
+        Preferred over scraping a run's console output, which may print no
+        banner (seen running windowless from the setup program) and whose
+        pattern takes the first number-like text it finds.
+        """
+        if self._skyline_version is None and self._skyline_path is not None:
+            self._skyline_version = read_skyline_version(self._skyline_path)
+        return self._skyline_version
 
     def _resolve_skyr_path(self) -> tuple[Path | None, str | None]:
         """Resolve the report-definition (.skyr) path from config.
@@ -249,7 +262,7 @@ class Extractor:
             return result
 
         result.extraction_time_ms = run_result.duration_ms
-        result.backend_version = run_result.version
+        result.backend_version = self._installed_skyline_version() or run_result.version
         result.stdout = run_result.stdout
         result.stderr = run_result.stderr
 
